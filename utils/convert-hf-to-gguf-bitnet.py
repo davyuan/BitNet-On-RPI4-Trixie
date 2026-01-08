@@ -884,10 +884,7 @@ class LlamaModel(Model):
                         data = data.astype(np.float32)
                     data_qtype = gguf.GGMLQuantizationType.F32
 
-                if data_qtype in (gguf.GGMLQuantizationType.TL1, gguf.GGMLQuantizationType.TL2):
-                    shape = shape_before_quant
-                else:
-                    shape = data_shape
+                shape = data.shape
                 # reverse shape to make it similar to the internal ggml dimension order
                 shape_str = f"{{{', '.join(str(n) for n in reversed(shape))}}}"
 
