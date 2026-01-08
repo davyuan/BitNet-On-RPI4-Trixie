@@ -1,3 +1,82 @@
+# Port bitnet.cpp to RPI4 on Trixie (Debian 13)
+Bitnet has been a promising direction in inference optimization. It shrinks the model size, memory consumption to leveles never-seen before, while preserving accuracy and actually incresing inference speed. People have tried to ported it to Rasperry Pi hardwares and this is the lastest attempt of it. The main contribution of my repo is a step by step guidance to install, compile and run it on Trixie (Debian 13). The similiar guides I found online is for previous OS and are a little dated. They don't really work on Trixie. 
+
+## 	Installing Prerequisites
+Run these commands to install tools required by the build process.
+```bash
+sudo apt update
+sudo apt install python3-pip python3-dev cmake build-essential git 
+```
+
+## Install Clang
+This command will download and install Clang 18 and the lld linker.
+```bash
+sudo apt install clang-18 libomp-18-dev ccache
+```
+
+## Next clone the BitNet repo:
+```bash
+git clone --recursive https://github.com/davyuan/BitNet-On-RPI4-Trixie.git
+cd BitNet-On-RPI4-Trixie
+```
+
+## Create Virtual Environment
+Create and activate a Python virtual environment with the commands below. I like to store virtual environments inside of a venvs/ folder in the home directory i.e. ~/venvs/. You can use this location, or swap in a different one in the commands.
+```bash
+python -m venv venv
+source venv/bin/activate
+```
+
+## Install the Python requirements from its requirements.txt file.
+You will see a few errors/warnings since those requirements are a little dated for Trixie. Install missing ones manually as shown below.
+
+```bash
+pip install -r requirements.txt
+#It may fail and complain about some libraies, for example, not being able to find a suitable version of torch. Install it manually then
+pip install torch 
+pip install -U "huggingface_hub[cli]"
+pip install transformers
+```
+
+## Generate LUT Kernels Header & Config
+This is a pre-build step that generates some headers and config files that the main build process will use. Skipping this step will result in errors about missing source files
+```bash
+python utils/codegen_tl1.py \
+  --model bitnet_b1_58-3B \
+  --BM 160,320,320 \
+  --BK 64,128,64 \
+  --bm 32,64,32
+```
+
+## Build bitnet.cpp
+Now to build bitnet.cpp. It's is done with these commands. Copy and run them one by one.
+```bash
+export CC=clang-18 CXX=clang++-18
+rm -rf build && mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release -DBITNET_ARM_TL1=ON
+make -j$(nproc)
+```
+
+If everything works out, it will finish building in about 10 mins. 
+![build](./assets/build.png)
+
+## Download the Model
+The following commands will move up and out of the build folder and download the quantized model files.
+```bash
+cd .. && hf download microsoft/BitNet-b1.58-2B-4T-gguf --local-dir models/BitNet-b1.58-2B-4T
+```
+
+## Run the BitNet-b1.58-2B-4T Model
+Running models with bitnet.cpp is done by invoking a Python script called run_inference.py and passing in the model to run, the starting prompt, and an optional flag for interactive conversation mode. The following command will run the BitNet-b1.58-2B-4T model.
+```bash
+python run_inference.py -m models/BitNet-b1.58-2B-4T/ggml-model-i2_s.gguf -p "Hello from BitNet on Raspberry Pi!" -cnv
+```
+
+I'm attaching a screen of it doing its magic on my Pi-4. 
+![infer](./assets/infer_on_pi4.png)
+
+For reference I'm keeping the original README below from the original [Microsoft repo.](https://github.com/microsoft/BitNet) 
+
 # bitnet.cpp
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 ![version](https://img.shields.io/badge/version-1.0-blue)
@@ -303,7 +382,7 @@ huggingface-cli download microsoft/bitnet-b1.58-2B-4T-bf16 --local-dir ./models/
 python ./utils/convert-helper-bitnet.py ./models/bitnet-b1.58-2B-4T-bf16
 ```
 
-### FAQ (Frequently Asked Questions)📌 
+### FAQ (Frequently Asked Questions) 
 
 #### Q1: The build dies with errors building llama.cpp due to issues with std::chrono in log.cpp?
 

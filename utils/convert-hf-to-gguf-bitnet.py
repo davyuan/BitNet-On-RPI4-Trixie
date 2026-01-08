@@ -294,7 +294,7 @@ class Model(ABC):
         # we will use this unique identifier to write a "tokenizer.ggml.pre" entry in the GGUF file which we can
         # use in llama.cpp to implement the same pre-tokenizer
 
-        chktxt = '\n \n\n \n\n\n \t \t\t \t\n  \n   \n    \n     \n🚀 (normal) 😶\u200d🌫️ (multiple emojis concatenated) ✅ 🦙🦙 3 33 333 3333 33333 333333 3333333 33333333 3.3 3..3 3...3 កាន់តែពិសេសអាច😁 ?我想在apple工作1314151天～ ------======= нещо на Български \'\'\'\'\'\'```````""""......!!!!!!?????? I\'ve been \'told he\'s there, \'RE you sure? \'M not sure I\'ll make it, \'D you like some tea? We\'Ve a\'lL'
+        chktxt = '\n \n\n \n\n\n \t \t\t \t\n  \n   \n    \n     \n (normal) \u200d️ (multiple emojis concatenated) ✅ 蓮蓮 3 33 333 3333 33333 333333 3333333 33333333 3.3 3..3 3...3 កាន់តែពិសេសអាច ?我想在apple工作1314151天～ ------======= нещо на Български \'\'\'\'\'\'```````""""......!!!!!!?????? I\'ve been \'told he\'s there, \'RE you sure? \'M not sure I\'ll make it, \'D you like some tea? We\'Ve a\'lL'
 
         chktok = tokenizer.encode(chktxt)
         chkhsh = sha256(str(chktok).encode()).hexdigest()
@@ -374,38 +374,97 @@ class Model(ABC):
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def _set_vocab_sentencepiece(self):
-        from sentencepiece import SentencePieceProcessor
-
-        tokenizer_path = self.dir_model / 'tokenizer.model'
+        tokenizer_model_path = self.dir_model / 'tokenizer.model'
+        tokenizer_json_path = self.dir_model / 'tokenizer.json'
 
         tokens: list[bytes] = []
         scores: list[float] = []
         toktypes: list[int] = []
 
-        if not tokenizer_path.is_file():
-            raise FileNotFoundError(f"File not found: {tokenizer_path}")
+        # Check which tokenizer file exists
+        if tokenizer_json_path.is_file():
+            # Load from tokenizer.json using transformers
+            from transformers import AutoTokenizer
+            
+            logger.info(f"Loading tokenizer from {tokenizer_json_path}")
+            tokenizer = AutoTokenizer.from_pretrained(self.dir_model)
+            vocab_size = self.hparams.get('vocab_size', len(tokenizer.vocab))
+            
+            # Read tokenizer.json for scores
+            with open(tokenizer_json_path, "r", encoding="utf-8") as f:
+                tokenizer_json = json.load(f)
+            
+            # Extract vocab and scores from tokenizer.json
+            vocab_scores = {}
+            if "model" in tokenizer_json and "vocab" in tokenizer_json["model"]:
+                # For SentencePiece models, vocab is a list of [token, score] pairs
+                vocab_list = tokenizer_json["model"]["vocab"]
+                if isinstance(vocab_list, list):
+                    for item in vocab_list:
+                        if isinstance(item, list) and len(item) >= 2:
+                            token, score = item[0], item[1]
+                            vocab_scores[token] = score
+                elif isinstance(vocab_list, dict):
+                    vocab_scores = vocab_list
+            
+            # Build the tokens list
+            reverse_vocab = {id_: token for token, id_ in tokenizer.vocab.items()}
+            added_vocab = tokenizer.get_added_vocab()
+            
+            for i in range(vocab_size):
+                if i not in reverse_vocab:
+                    tokens.append(f"[PAD{i}]".encode("utf-8"))
+                    scores.append(-1000.0)
+                    toktypes.append(SentencePieceTokenTypes.UNUSED)
+                else:
+                    token = reverse_vocab[i]
+                    # Ensure token is a string for vocab_scores lookup
+                    if isinstance(token, bytes):
+                        token_str = token.decode("utf-8")
+                        tokens.append(token)
+                    else:
+                        token_str = token
+                        tokens.append(token.encode("utf-8"))
+                    # Get score from tokenizer.json or use default
+                    scores.append(float(vocab_scores.get(token_str, 0.0)))
+                    
+                    # Determine token type
+                    if token_str in added_vocab:
+                        if tokenizer.added_tokens_decoder[i].special:
+                            toktypes.append(SentencePieceTokenTypes.CONTROL)
+                        else:
+                            toktypes.append(SentencePieceTokenTypes.USER_DEFINED)
+                    else:
+                        toktypes.append(SentencePieceTokenTypes.NORMAL)
+        
+        elif tokenizer_model_path.is_file():
+            # Fallback to original SentencePiece loading
+            from sentencepiece import SentencePieceProcessor
+            
+            logger.info(f"Loading tokenizer from {tokenizer_model_path}")
+            tokenizer = SentencePieceProcessor(str(tokenizer_model_path))
+            vocab_size = self.hparams.get('vocab_size', tokenizer.vocab_size())
 
-        tokenizer = SentencePieceProcessor(str(tokenizer_path))
-        vocab_size = self.hparams.get('vocab_size', tokenizer.vocab_size())
+            for token_id in range(tokenizer.vocab_size()):
+                piece = tokenizer.id_to_piece(token_id)
+                text = piece.encode("utf-8")
+                score = tokenizer.get_score(token_id)
 
-        for token_id in range(tokenizer.vocab_size()):
-            piece = tokenizer.id_to_piece(token_id)
-            text = piece.encode("utf-8")
-            score = tokenizer.get_score(token_id)
+                toktype = SentencePieceTokenTypes.NORMAL
+                if tokenizer.is_unknown(token_id):
+                    toktype = SentencePieceTokenTypes.UNKNOWN
+                elif tokenizer.is_control(token_id):
+                    toktype = SentencePieceTokenTypes.CONTROL
+                elif tokenizer.is_unused(token_id):
+                    toktype = SentencePieceTokenTypes.UNUSED
+                elif tokenizer.is_byte(token_id):
+                    toktype = SentencePieceTokenTypes.BYTE
 
-            toktype = SentencePieceTokenTypes.NORMAL
-            if tokenizer.is_unknown(token_id):
-                toktype = SentencePieceTokenTypes.UNKNOWN
-            elif tokenizer.is_control(token_id):
-                toktype = SentencePieceTokenTypes.CONTROL
-            elif tokenizer.is_unused(token_id):
-                toktype = SentencePieceTokenTypes.UNUSED
-            elif tokenizer.is_byte(token_id):
-                toktype = SentencePieceTokenTypes.BYTE
-
-            tokens.append(text)
-            scores.append(score)
-            toktypes.append(toktype)
+                tokens.append(text)
+                scores.append(score)
+                toktypes.append(toktype)
+        else:
+            raise FileNotFoundError(f"No tokenizer file found: {tokenizer_json_path} or {tokenizer_model_path}")
 
         added_tokens_file = self.dir_model / 'added_tokens.json'
         if added_tokens_file.is_file():
@@ -423,7 +482,7 @@ class Model(ABC):
             pad_count = vocab_size - len(tokens)
             logger.debug(f"Padding vocab with {pad_count} token(s) - [PAD1] through [PAD{pad_count}]")
             for i in range(1, pad_count + 1):
-                tokens.append(f"[PAD{i}]")
+                tokens.append(f"[PAD{i}]".encode("utf-8"))
                 scores.append(-1000.0)
                 toktypes.append(SentencePieceTokenTypes.UNUSED)
 
@@ -494,6 +553,7 @@ def preprocess_weights_tl1(
     BM = -1
     BY = -1
     bm = -1
+    by = -1
 
     for kernel in config.sections():
         if int(config.get(kernel, 'm')) == M and int(config.get(kernel, 'k')) == K:
@@ -501,10 +561,15 @@ def preprocess_weights_tl1(
             BY = int(config.get(kernel, 'bk'))
             bm = int(config.get(kernel, 'bmm'))
             by = 256 // bm
-            break
+            break   
 
+    # If no matching kernel config found, use sensible defaults (matching TL1 dims used in BitNet)
     if BM == -1:
-        raise NotImplementedError
+        BM = 256
+        BY = 256
+        bm = 32
+        by = BY // bm
+        logger.warning(f"No kernel config for M={M}, K={K}. Using defaults: BM={BM}, BY={BY}, bm={bm}, by={by}")
 
     weight = np.reshape(weight, (weight_num // 2, 2))
     hi_weight = np.multiply(np.split(weight, 2, axis=1)[0], 3)
@@ -757,6 +822,7 @@ class LlamaModel(Model):
             for new_name, data in ((n, d.squeeze().numpy()) for n, d in self.modify_tensors(data_torch, name, bid)):
                 data: np.ndarray = data  # type hint
                 data_shape = data.shape
+                shape_before_quant = data_shape
                 n_dims = len(data.shape)
                 data_dtype = data.dtype
                 data_qtype: gguf.GGMLQuantizationType | None = None
@@ -818,8 +884,10 @@ class LlamaModel(Model):
                         data = data.astype(np.float32)
                     data_qtype = gguf.GGMLQuantizationType.F32
 
-                shape = data_shape
-                # shape = gguf.quant_shape_from_byte_shape(data.shape, data_qtype) if data.dtype == np.uint8 else data.shape
+                if data_qtype in (gguf.GGMLQuantizationType.TL1, gguf.GGMLQuantizationType.TL2):
+                    shape = shape_before_quant
+                else:
+                    shape = data_shape
                 # reverse shape to make it similar to the internal ggml dimension order
                 shape_str = f"{{{', '.join(str(n) for n in reversed(shape))}}}"
 
@@ -952,7 +1020,7 @@ class LlamaModel(Model):
                 raise ValueError(f"Unprocessed experts: {experts}")
 
 
-@Model.register("BitnetForCausalLM")
+@Model.register("BitnetForCausalLM", "BitNetForCausalLM")
 class BitnetModel(Model):
     model_arch = gguf.MODEL_ARCH.BITNET
 
@@ -975,6 +1043,10 @@ class BitnetModel(Model):
         return result.type(dtype)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Skip weight_scale tensors - they're handled separately
+        if name.endswith("weight_scale"):
+            return []
+        
         # quant weight to i2 (in fp16)
         if name.endswith(("q_proj.weight", "k_proj.weight", "v_proj.weight", 
                           "down_proj.weight", "up_proj.weight", "gate_proj.weight",
@@ -1007,6 +1079,7 @@ class BitnetModel(Model):
             for new_name, data in ((n, d.squeeze().numpy()) for n, d in self.modify_tensors(data_torch, name, bid)):
                 data: np.ndarray = data  # type hint
                 data_shape = data.shape
+                shape_before_quant = data_shape
                 n_dims = len(data.shape)
                 data_dtype = data.dtype
                 data_qtype: gguf.GGMLQuantizationType | None = None
@@ -1068,8 +1141,10 @@ class BitnetModel(Model):
                         data = data.astype(np.float32)
                     data_qtype = gguf.GGMLQuantizationType.F32
 
-                shape = data_shape
-                # shape = gguf.quant_shape_from_byte_shape(data.shape, data_qtype) if data.dtype == np.uint8 else data.shape
+                if data_qtype in (gguf.GGMLQuantizationType.TL1, gguf.GGMLQuantizationType.TL2):
+                    shape = shape_before_quant
+                else:
+                    shape = data_shape
                 # reverse shape to make it similar to the internal ggml dimension order
                 shape_str = f"{{{', '.join(str(n) for n in reversed(shape))}}}"
 
