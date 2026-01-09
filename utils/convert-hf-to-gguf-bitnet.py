@@ -565,7 +565,7 @@ def preprocess_weights_tl1(
 
     # If no matching kernel config found, use sensible defaults (matching TL1 dims used in BitNet)
     if BM == -1:
-        BM = 256
+        BM = 64
         BY = 256
         bm = 32
         by = BY // bm
