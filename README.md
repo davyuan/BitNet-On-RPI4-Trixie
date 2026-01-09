@@ -39,7 +39,7 @@ pip install transformers
 ```
 
 ## Generate LUT Kernels Header & Config
-This is a pre-build step that generates some headers and config files that the main build process will use. Skipping this step will result in errors about missing source files
+Do this **ONLY IF** you are going to use the downloaded i2_s model downloaded from HF. This is a pre-build step that generates some headers and config files that the main build process will use. Skipping this step will result in errors about missing source files
 ```bash
 python utils/codegen_tl1.py \
   --model bitnet_b1_58-3B \
@@ -47,6 +47,8 @@ python utils/codegen_tl1.py \
   --BK 64,128,64 \
   --bm 32,64,32
 ```
+
+If you are going to download the BF16 model and quantize it into tl1, skip this step. I have already hand-coded the kernels for the Microsoft Bitnet_1.58-2B-4T model. You can find the kernels in [here](./include/bitnet-lut-kernels.h)
 
 ## Build bitnet.cpp
 Now to build bitnet.cpp. It's is done with these commands. Copy and run them one by one.

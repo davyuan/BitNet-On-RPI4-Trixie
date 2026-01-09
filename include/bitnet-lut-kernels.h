@@ -1,5 +1,6 @@
 #if defined(GGML_BITNET_ARM_TL1)
 #include "ggml-bitnet.h"
+#include <cstdio>
 #define GGML_BITNET_MAX_NODES 8192
 static bool initialized = false;
 static bitnet_tensor_extra * bitnet_tensor_extras = nullptr;
@@ -1141,6 +1142,11 @@ void ggml_bitnet_transform_tensor(struct ggml_tensor * tensor) {
     else if (m == 8640 && k == 3200) {
         bm = BM8640_3200;
         bk = BBK8640_3200;
+    }
+    else {
+        // Unmatched dimension - skip BitNet preprocessing
+        fprintf(stderr, "BitNet: Skipping unmatched tensor dimension (%d, %d)\n", m, k);
+        return;
     }
 
     const int n_tile_num = m / bm;
