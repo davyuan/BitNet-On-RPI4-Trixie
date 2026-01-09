@@ -1052,26 +1052,12 @@ class BitnetModel(Model):
         
         n_head = self.hparams["num_attention_heads"]
         n_kv_head = self.hparams.get("num_key_value_heads", n_head)
-        hidden_size = self.hparams["hidden_size"]
-        head_dim = hidden_size // n_head
         
-        # BitNet stores all projections in grouped-query format
-        # We need to expand them to match llama.cpp expectations:
-        # - q_proj: (n_kv_head*head_dim, hidden_size) → (hidden_size, hidden_size)
-        # - k_proj/v_proj: (head_dim, hidden_size) → (hidden_size, n_kv_head*head_dim)
-        # - o_proj: (n_kv_head*head_dim, hidden_size) → (hidden_size, hidden_size)
-        
-        if name.endswith("q_proj.weight") or name.endswith("o_proj.weight"):
-            # Transpose: (640, 2560) → (2560, 640)
-            data_torch = data_torch.t()
-            # Expand: (2560, 640) → (2560, 2560) by repeating KV heads
-            data_torch = data_torch.repeat_interleave(n_head // n_kv_head, dim=1)
-        
-        elif name.endswith(("k_proj.weight", "v_proj.weight")):
-            # Transpose: (160, 2560) → (2560, 160)
-            data_torch = data_torch.t()
-            # Expand: (2560, 160) → (2560, 640) by repeating individual heads
-            data_torch = data_torch.repeat_interleave(n_kv_head, dim=1)
+        # BitNet stores all attention projections in grouped-query format
+        # Expand them to match llama.cpp expectations (no transpose, just expand by grouping factor)
+        expansion_factor = n_head // n_kv_head
+        if name.endswith(("q_proj.weight", "k_proj.weight", "v_proj.weight", "o_proj.weight")):
+            data_torch = data_torch.repeat_interleave(expansion_factor, dim=0)
         
         # quant weight to i2 (in fp16)
         if name.endswith(("q_proj.weight", "k_proj.weight", "v_proj.weight", 
