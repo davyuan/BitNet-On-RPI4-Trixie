@@ -1046,19 +1046,6 @@ class BitnetModel(Model):
         if name.endswith("weight_scale"):
             return []
         
-        # Debug: log all projection shapes
-        if "proj.weight" in name or "_proj.weight" in name:
-            print(f"DEBUG modify_tensors: {name} shape={data_torch.shape}", flush=True)
-        
-        n_head = self.hparams["num_attention_heads"]
-        n_kv_head = self.hparams.get("num_key_value_heads", n_head)
-        
-        # BitNet stores all attention projections in grouped-query format
-        # Expand them to match llama.cpp expectations (no transpose, just expand by grouping factor)
-        expansion_factor = n_head // n_kv_head
-        if name.endswith(("q_proj.weight", "k_proj.weight", "v_proj.weight", "o_proj.weight")):
-            data_torch = data_torch.repeat_interleave(expansion_factor, dim=0)
-        
         # quant weight to i2 (in fp16)
         if name.endswith(("q_proj.weight", "k_proj.weight", "v_proj.weight", 
                           "down_proj.weight", "up_proj.weight", "gate_proj.weight",
