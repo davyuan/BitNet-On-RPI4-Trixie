@@ -1132,14 +1132,30 @@ class BitnetModel(Model):
                 i2_scale = None
                 if self.ftype != gguf.GGMLQuantizationType.F32 and extra_f16 and not extra_f32:
                     if self.ftype == gguf.GGMLQuantizationType.TL1 and suit_i2:
+                        # For ternary quantization: apply weight_quant before TL1 packing
+                        if name.endswith(("q_proj.weight", "k_proj.weight", "v_proj.weight", 
+                                          "down_proj.weight", "up_proj.weight", "gate_proj.weight",
+                                          "o_proj.weight")):
+                            # Apply ternary quantization (BitNet specific)
+                            data_f32 = data.astype(np.float32)
+                            s = 1.0 / (np.abs(data_f32).mean() + 1e-5)
+                            data = np.round(data_f32 * s).clip(-1, 1) / s
                         data, i2_scale = transform_to_tl1(data)
                         assert data.dtype == np.uint8
-                        assert i2_scale.dtype == np.float32
+                        assert i2_scale.dtype in (np.float32, np.float64, float)
                         data_qtype = gguf.GGMLQuantizationType.TL1
                     elif self.ftype == gguf.GGMLQuantizationType.TL2 and suit_i2:
+                        # For ternary quantization: apply weight_quant before TL2 packing
+                        if name.endswith(("q_proj.weight", "k_proj.weight", "v_proj.weight", 
+                                          "down_proj.weight", "up_proj.weight", "gate_proj.weight",
+                                          "o_proj.weight")):
+                            # Apply ternary quantization (BitNet specific)
+                            data_f32 = data.astype(np.float32)
+                            s = 1.0 / (np.abs(data_f32).mean() + 1e-5)
+                            data = np.round(data_f32 * s).clip(-1, 1) / s
                         data, i2_scale = transform_to_tl2(data)
                         assert data.dtype == np.uint8
-                        assert i2_scale.dtype == np.float32
+                        assert i2_scale.dtype in (np.float32, np.float64, float)
                         data_qtype = gguf.GGMLQuantizationType.TL2
                     else:  # default to float16 for quantized tensors
                         if data_dtype != np.float16:
@@ -1150,6 +1166,7 @@ class BitnetModel(Model):
                     if data_dtype != np.float32:
                         data = data.astype(np.float32)
                     data_qtype = gguf.GGMLQuantizationType.F32
+
 
                 shape = data.shape
                 # reverse shape to make it similar to the internal ggml dimension order
@@ -1162,6 +1179,7 @@ class BitnetModel(Model):
                 raw_shape = shape_before_quant if data_qtype in (gguf.GGMLQuantizationType.TL1, gguf.GGMLQuantizationType.TL2) else data.shape
                 self.gguf_writer.add_tensor(new_name, data, raw_shape=raw_shape, raw_dtype=data_qtype)
                 if i2_scale is not None:
+                    i2_scale = np.asarray(i2_scale, dtype=np.float32)
                     self.gguf_writer.add_tensor(new_name + "_scale", i2_scale, raw_dtype=gguf.GGMLQuantizationType.F32)
 
 
