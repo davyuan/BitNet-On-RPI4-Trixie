@@ -18,6 +18,7 @@
 *.o
 *.so
 *.tmp
+push.sh
 
 # IDE / OS
 
