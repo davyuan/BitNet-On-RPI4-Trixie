@@ -1031,6 +1031,33 @@ class BitnetModel(Model):
 
         self.gguf_writer.add_vocab_size(self.hparams["vocab_size"])
 
+        # Extract model size from directory name or calculate from parameters
+        # Look for size indicators in directory name (e.g., "2B", "3B", "large")
+        import re
+        dir_name = self.dir_model.name.lower()
+        model_size = None
+        
+        # Try to extract size from directory name
+        size_match = re.search(r'(\d+(?:\.\d+)?b)', dir_name)
+        if size_match:
+            model_size = size_match.group(1).upper()
+        
+        # Fallback: estimate from hidden_size if not in name
+        if not model_size:
+            hidden_size = self.hparams.get("hidden_size", 0)
+            # Rough heuristic: hidden_size 1024~1500 -> 1B, 2000~3000 -> 2-3B, 4000+ -> 7B+
+            if hidden_size >= 4000:
+                model_size = "7B"
+            elif hidden_size >= 2000:
+                model_size = "3B" if hidden_size >= 2500 else "2B"
+            elif hidden_size >= 1000:
+                model_size = "1B"
+        
+        if model_size:
+            logger.info(f"gguf: model size = {model_size}")
+            # Update the name to include model size for proper GGUF metadata
+            self.gguf_writer.add_name(f"{self.dir_model.name} {model_size}")
+
         self.gguf_writer.add_rope_scaling_type(gguf.RopeScalingType.LINEAR)
         self.gguf_writer.add_rope_scaling_factor(1.0)
 
