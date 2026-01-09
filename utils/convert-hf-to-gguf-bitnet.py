@@ -1046,26 +1046,9 @@ class BitnetModel(Model):
         if name.endswith("weight_scale"):
             return []
         
-        n_head = self.hparams["num_attention_heads"]
-        n_kv_head = self.hparams.get("num_key_value_heads", n_head)
-        hidden_size = self.hparams["hidden_size"]
-        head_dim = hidden_size // n_head
-        
-        # Expand attention projections to match llama.cpp expectations
-        if name.endswith("q_proj.weight"):
-            # HF: (n_kv_head * head_dim, hidden_size) → llama.cpp: (hidden_size, hidden_size)
-            if n_kv_head != n_head:
-                data_torch = data_torch.t()  # (hidden_size, n_kv_head*head_dim)
-                data_torch = data_torch.view(hidden_size, n_kv_head, head_dim)
-                repeat_factor = n_head // n_kv_head
-                data_torch = data_torch.repeat_interleave(repeat_factor, dim=1)
-                data_torch = data_torch.view(hidden_size, -1)
-                data_torch = data_torch.t()
-        
-        if name.endswith(("k_proj.weight", "v_proj.weight")):
-            # HF: (n_kv_head * head_dim, hidden_size) → llama.cpp: (hidden_size, n_kv_head*head_dim)
-            # Just transpose to get the right orientation
-            data_torch = data_torch.t()
+        # Debug: log attention projection shapes before modification
+        if "proj.weight" in name and "attn" in name:
+            logger.info(f"DEBUG modify_tensors input: {name} shape={data_torch.shape}")
         
         # quant weight to i2 (in fp16)
         if name.endswith(("q_proj.weight", "k_proj.weight", "v_proj.weight", 
