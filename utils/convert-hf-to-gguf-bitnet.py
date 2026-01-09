@@ -1055,8 +1055,6 @@ class BitnetModel(Model):
         
         if model_size:
             logger.info(f"gguf: model size = {model_size}")
-            # Update the name to include model size for proper GGUF metadata
-            self.gguf_writer.add_name(f"{self.dir_model.name} {model_size}")
 
         self.gguf_writer.add_rope_scaling_type(gguf.RopeScalingType.LINEAR)
         self.gguf_writer.add_rope_scaling_factor(1.0)
