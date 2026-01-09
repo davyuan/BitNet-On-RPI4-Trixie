@@ -1046,6 +1046,22 @@ class BitnetModel(Model):
         if name.endswith("weight_scale"):
             return []
         
+        # Expand q_proj from GQA format to full attention heads
+        # HF stores q_proj as (hidden_size, hidden_size // num_attention_heads * num_key_value_heads)
+        # but llama.cpp expects (hidden_size, hidden_size)
+        if name.endswith("q_proj.weight"):
+            n_head = self.hparams["num_attention_heads"]
+            n_kv_head = self.hparams.get("num_key_value_heads", n_head)
+            if n_kv_head != n_head:
+                # Expand from (hidden_size, n_kv_head * head_dim) to (hidden_size, n_head * head_dim)
+                # by repeating the K/V heads to fill Q positions
+                head_dim = data_torch.shape[1] // n_kv_head
+                data_torch = data_torch.view(data_torch.shape[0], n_kv_head, head_dim)
+                # Repeat each head n_head // n_kv_head times
+                repeat_factor = n_head // n_kv_head
+                data_torch = data_torch.repeat_interleave(repeat_factor, dim=1)
+                data_torch = data_torch.view(data_torch.shape[0], -1)
+        
         # quant weight to i2 (in fp16)
         if name.endswith(("q_proj.weight", "k_proj.weight", "v_proj.weight", 
                           "down_proj.weight", "up_proj.weight", "gate_proj.weight",
@@ -1146,6 +1162,10 @@ class BitnetModel(Model):
 
                 # n_dims is implicit in the shape
                 logger.info(f"{f'%-{max_name_len}s' % f'{new_name},'} {old_dtype} --> {data_qtype.name}, shape = {shape_str}")
+                
+                # Debug for attn_q
+                if "attn_q" in new_name:
+                    logger.info(f"DEBUG attn_q: shape_before_quant={shape_before_quant}, data.shape after quant={data.shape}, will pass raw_shape={shape_before_quant if data_qtype in (gguf.GGMLQuantizationType.TL1, gguf.GGMLQuantizationType.TL2) else data.shape}")
 
                 # For TL1/TL2, pass the original logical shape so llama.cpp gets the right tensor dimensions
                 raw_shape = shape_before_quant if data_qtype in (gguf.GGMLQuantizationType.TL1, gguf.GGMLQuantizationType.TL2) else data.shape
