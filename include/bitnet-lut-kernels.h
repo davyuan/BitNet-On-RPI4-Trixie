@@ -1144,26 +1144,37 @@ void ggml_preprocessor(int m, int k, void* B, void* LUT_Scales, void* QLUT) {
     }
 }
 void ggml_qgemm_lut(int m, int k, void* A, void* LUT, void* Scales, void* LUT_Scales, void* C) {
+    fprintf(stderr, "BitNet: ggml_qgemm_lut called with m=%d, k=%d\n", m, k);
     if (m == 640 && k == 2560) {
+        fprintf(stderr, "  -> Using 640x2560 kernel\n");
         qgemm_lut_640_2560(A, LUT, Scales, LUT_Scales, C);
     }
     else if (m == 2560 && k == 2560) {
+        fprintf(stderr, "  -> Using 2560x2560 kernel\n");
         qgemm_lut_2560_2560(A, LUT, Scales, LUT_Scales, C);
     }
     else if (m == 2560 && k == 6912) {
+        fprintf(stderr, "  -> Using 2560x6912 kernel\n");
         qgemm_lut_2560_6912(A, LUT, Scales, LUT_Scales, C);
     }
     else if (m == 6912 && k == 2560) {
+        fprintf(stderr, "  -> Using 6912x2560 kernel\n");
         qgemm_lut_6912_2560(A, LUT, Scales, LUT_Scales, C);
     }
     else if (m == 3200 && k == 8640) {
+        fprintf(stderr, "  -> Using 3200x8640 kernel\n");
         qgemm_lut_3200_8640(A, LUT, Scales, LUT_Scales, C);
     }
     else if (m == 3200 && k == 3200) {
+        fprintf(stderr, "  -> Using 3200x3200 kernel\n");
         qgemm_lut_3200_3200(A, LUT, Scales, LUT_Scales, C);
     }
     else if (m == 8640 && k == 3200) {
+        fprintf(stderr, "  -> Using 8640x3200 kernel\n");
         qgemm_lut_8640_3200(A, LUT, Scales, LUT_Scales, C);
+    }
+    else {
+        fprintf(stderr, "BitNet: ERROR - ggml_qgemm_lut called with unsupported dimensions (%d, %d). This indicates a bug in dimension matching.\n", m, k);
     }
 }
 
