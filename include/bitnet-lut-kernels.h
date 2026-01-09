@@ -271,7 +271,7 @@ inline void tbl_impl_2560_2560(int32_t* c, int8_t* lut, uint8_t* a) {
 #ifdef __ARM_NEON
     const int KK = BBK2560_2560 / 2;
     const uint8x16_t vec_mask = vdupq_n_u8(0x0f);
-    const int8x16_t vec_zero = vdupq_n_s16(0x0000);
+    const int16x8_t vec_zero = vdupq_n_s16(0x0000);
     int8x16_t vec_lut[2 * KK];
     int16x8_t vec_c[8];
 #pragma unroll
@@ -399,7 +399,7 @@ inline void tbl_impl_2560_6912(int32_t* c, int8_t* lut, uint8_t* a) {
 #ifdef __ARM_NEON
     const int KK = BBK2560_6912 / 2;
     const uint8x16_t vec_mask = vdupq_n_u8(0x0f);
-    const int8x16_t vec_zero = vdupq_n_s16(0x0000);
+    const int16x8_t vec_zero = vdupq_n_s16(0x0000);
     int8x16_t vec_lut[2 * KK];
     int16x8_t vec_c[8];
 #pragma unroll
@@ -527,7 +527,7 @@ inline void tbl_impl_6912_2560(int32_t* c, int8_t* lut, uint8_t* a) {
 #ifdef __ARM_NEON
     const int KK = BBK6912_2560 / 2;
     const uint8x16_t vec_mask = vdupq_n_u8(0x0f);
-    const int8x16_t vec_zero = vdupq_n_s16(0x0000);
+    const int16x8_t vec_zero = vdupq_n_s16(0x0000);
     int8x16_t vec_lut[2 * KK];
     int16x8_t vec_c[8];
 #pragma unroll
@@ -654,7 +654,7 @@ inline void tbl_impl_3200_8640(int32_t* c, int8_t* lut, uint8_t* a) {
 #ifdef __ARM_NEON
     const int KK = BBK3200_8640 / 2;
     const uint8x16_t vec_mask = vdupq_n_u8(0x0f);
-    const int8x16_t vec_zero = vdupq_n_s16(0x0000);
+    const int16x8_t vec_zero = vdupq_n_s16(0x0000);
     int8x16_t vec_lut[2 * KK];
     int16x8_t vec_c[4];
 #pragma unroll
@@ -772,7 +772,7 @@ inline void tbl_impl_3200_3200(int32_t* c, int8_t* lut, uint8_t* a) {
 #ifdef __ARM_NEON
     const int KK = BBK3200_3200 / 2;
     const uint8x16_t vec_mask = vdupq_n_u8(0x0f);
-    const int8x16_t vec_zero = vdupq_n_s16(0x0000);
+    const int16x8_t vec_zero = vdupq_n_s16(0x0000);
     int8x16_t vec_lut[2 * KK];
     int16x8_t vec_c[8];
 #pragma unroll
@@ -906,7 +906,7 @@ inline void tbl_impl_8640_3200(int32_t* c, int8_t* lut, uint8_t* a) {
 #ifdef __ARM_NEON
     const int KK = BBK8640_3200 / 2;
     const uint8x16_t vec_mask = vdupq_n_u8(0x0f);
-    const int8x16_t vec_zero = vdupq_n_s16(0x0000);
+    const int16x8_t vec_zero = vdupq_n_s16(0x0000);
     int8x16_t vec_lut[2 * KK];
     int16x8_t vec_c[4];
 #pragma unroll
