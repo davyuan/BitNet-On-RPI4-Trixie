@@ -1060,23 +1060,14 @@ class BitnetModel(Model):
         self.gguf_writer.add_rope_scaling_factor(1.0)
 
     def weight_quant(self, weight):
+        """Compute quantization scale but don't quantize yet - we need the scale for saving"""
         dtype = weight.dtype
         weight = weight.float()
-        s =  1 / weight.abs().mean().clamp(min=1e-5)
-        result = (weight * s).round().clamp(-1, 1) / s
-        return result.type(dtype)
+        s = 1 / weight.abs().mean().clamp(min=1e-5)
+        return s  # Return only the scale, not the quantized weights
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
-        # Skip weight_scale tensors - they're handled separately
-        if name.endswith("weight_scale"):
-            return []
-        
-        # quant weight to i2 (in fp16)
-        if name.endswith(("q_proj.weight", "k_proj.weight", "v_proj.weight", 
-                          "down_proj.weight", "up_proj.weight", "gate_proj.weight",
-                          "o_proj.weight")):
-            data_torch = self.weight_quant(data_torch)
-
+        # Don't quantize here - it will be done in write_tensors where we can save scales
         return [(self.map_tensor_name(name), data_torch)]
 
     def write_tensors(self):
@@ -1100,7 +1091,8 @@ class BitnetModel(Model):
                     bid = int(part)
                     break
 
-            for new_name, data in ((n, d.squeeze().numpy()) for n, d in self.modify_tensors(data_torch, name, bid)):
+            for new_name, data_torch in self.modify_tensors(data_torch, name, bid):
+                data = data_torch.squeeze().numpy()
                 data: np.ndarray = data  # type hint
                 data_shape = data.shape
                 shape_before_quant = data_shape
@@ -1108,14 +1100,10 @@ class BitnetModel(Model):
                 data_dtype = data.dtype
                 data_qtype: gguf.GGMLQuantizationType | None = None
 
-                # when both are True, f32 should win
-                # extra_f32 = self.extra_f32_tensors(name, new_name, bid, n_dims)
-                # extra_f16 = self.extra_f16_tensors(name, new_name, bid, n_dims)
                 extra_f32 = False
                 extra_f16 = False
 
                 # Most of the codebase that takes in 1D tensors or norms only handles F32 tensors
-                # Conditions should closely match those in llama_model_quantize_internal in llama.cpp
                 extra_f32 = any(cond for cond in (
                     extra_f32,
                     n_dims == 1,
@@ -1124,8 +1112,6 @@ class BitnetModel(Model):
 
                 # Some tensor types are always in float32
                 tensors_f32 = [
-                    gguf.MODEL_TENSOR.FFN_GATE_INP,
-                    gguf.MODEL_TENSOR.FFN_GATE_INP,
                     gguf.MODEL_TENSOR.POS_EMBD,
                     gguf.MODEL_TENSOR.TOKEN_TYPES,
                 ]
@@ -1171,16 +1157,14 @@ class BitnetModel(Model):
 
                 # n_dims is implicit in the shape
                 logger.info(f"{f'%-{max_name_len}s' % f'{new_name},'} {old_dtype} --> {data_qtype.name}, shape = {shape_str}")
-                
-                # Debug for attn_q
-                if "attn_q" in new_name:
-                    logger.info(f"DEBUG attn_q: shape_before_quant={shape_before_quant}, data.shape after quant={data.shape}, will pass raw_shape={shape_before_quant if data_qtype in (gguf.GGMLQuantizationType.TL1, gguf.GGMLQuantizationType.TL2) else data.shape}")
 
                 # For TL1/TL2, pass the original logical shape so llama.cpp gets the right tensor dimensions
                 raw_shape = shape_before_quant if data_qtype in (gguf.GGMLQuantizationType.TL1, gguf.GGMLQuantizationType.TL2) else data.shape
                 self.gguf_writer.add_tensor(new_name, data, raw_shape=raw_shape, raw_dtype=data_qtype)
                 if i2_scale is not None:
                     self.gguf_writer.add_tensor(new_name + "_scale", i2_scale, raw_dtype=gguf.GGMLQuantizationType.F32)
+
+
 
 
 ###### CONVERSION LOGIC ######
