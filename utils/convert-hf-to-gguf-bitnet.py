@@ -1047,20 +1047,30 @@ class BitnetModel(Model):
             return []
         
         # Expand q_proj from GQA format to full attention heads
-        # HF stores q_proj as (hidden_size, hidden_size // num_attention_heads * num_key_value_heads)
+        # HF stores q_proj as (n_kv_head * head_dim, hidden_size)
         # but llama.cpp expects (hidden_size, hidden_size)
         if name.endswith("q_proj.weight"):
             n_head = self.hparams["num_attention_heads"]
             n_kv_head = self.hparams.get("num_key_value_heads", n_head)
+            hidden_size = self.hparams["hidden_size"]
+            
             if n_kv_head != n_head:
-                # Expand from (hidden_size, n_kv_head * head_dim) to (hidden_size, n_head * head_dim)
-                # by repeating the K/V heads to fill Q positions
-                head_dim = data_torch.shape[1] // n_kv_head
-                data_torch = data_torch.view(data_torch.shape[0], n_kv_head, head_dim)
-                # Repeat each head n_head // n_kv_head times
+                # Input shape: (n_kv_head * head_dim, hidden_size) = (640, 2560)
+                # We need: (hidden_size, hidden_size) = (2560, 2560)
+                # Strategy: transpose to (2560, 640), expand to (2560, 2560), transpose back
+                head_dim = hidden_size // n_head
+                
+                # Transpose from (n_kv_head*head_dim, hidden_size) to (hidden_size, n_kv_head*head_dim)
+                data_torch = data_torch.t()  # Now: (2560, 640)
+                
+                # Reshape and repeat to expand heads
+                data_torch = data_torch.view(hidden_size, n_kv_head, head_dim)  # (2560, 5, 128)
                 repeat_factor = n_head // n_kv_head
-                data_torch = data_torch.repeat_interleave(repeat_factor, dim=1)
-                data_torch = data_torch.view(data_torch.shape[0], -1)
+                data_torch = data_torch.repeat_interleave(repeat_factor, dim=1)  # (2560, 20, 128)
+                data_torch = data_torch.view(hidden_size, -1)  # (2560, 2560)
+                
+                # Transpose back to original orientation
+                data_torch = data_torch.t()  # (2560, 2560) but in HF format
         
         # quant weight to i2 (in fp16)
         if name.endswith(("q_proj.weight", "k_proj.weight", "v_proj.weight", 
