@@ -61,9 +61,20 @@ If everything works out, it will finish building in about 10 mins.
 ![build](./assets/build.png)
 
 ## Download the Model
-The following commands will move up and out of the build folder and download the quantized model files.
+You can download the prequantized model from HF, in i2_s format. The following commands will move up and out of the build folder and download the quantized model files.
 ```bash
 cd .. && hf download microsoft/BitNet-b1.58-2B-4T-gguf --local-dir models/BitNet-b1.58-2B-4T
+```
+
+Or if you want to use tl1 format, you will need to download the BF16 format and convert it to tl1 yourself. 
+```bash
+cd .. && hf download microsoft/bitnet-b1.58-2B-4T-bf16 --local-dir models/bitnet-b1.58-2B-4T-bf16
+```
+
+## Convert the BF16 model into tl1
+This step is only necessary if you downloaded the BF16 model and want to quantize it into tl1.
+```bash
+python utils/convert-hf-to-gguf-bitnet.py models/bitnet-b1.58-2B-4T-bf16 --outtype tl1 --quant-embd
 ```
 
 ## Run the BitNet-b1.58-2B-4T Model
