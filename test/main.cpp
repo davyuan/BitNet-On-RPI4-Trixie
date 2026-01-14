@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
+#include <stdlib.h>
 
 int main() {
     const int M = 1;           // Activation rows (B rows)
