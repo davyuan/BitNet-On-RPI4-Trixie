@@ -95,12 +95,14 @@ int main() {
     printf("\n");
     
     // Cleanup
-    aligned_free(B);
-    aligned_free(A);
-    aligned_free(C);
-    aligned_free(QLUT);
     aligned_free(LUT_Scales);
     aligned_free(Scales);
+    aligned_free(B);
+    aligned_free(A);
+    aligned_free(A_);
+    printf("freeing C and QLUT...\n");  
+    aligned_free(C);
+    aligned_free(QLUT);
     
     printf("\nTest complete.\n");
     return 0;
