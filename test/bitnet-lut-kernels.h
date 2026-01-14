@@ -24,7 +24,7 @@ static void aligned_free(void * ptr) {{
 
 #include <arm_neon.h>
 
-#define BM640_2560 160
+#define BM640_2560 1
 #define BBK640_2560 256
 #define BM2560_2560 256
 #define BBK2560_2560 256
