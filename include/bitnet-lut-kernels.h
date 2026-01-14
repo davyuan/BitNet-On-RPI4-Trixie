@@ -1,6 +1,7 @@
 #if defined(GGML_BITNET_ARM_TL1)
 #include "ggml-bitnet.h"
 #include <cstdio>
+#include <cstring>
 #define GGML_BITNET_MAX_NODES 8192
 static bool initialized = false;
 static bitnet_tensor_extra * bitnet_tensor_extras = nullptr;

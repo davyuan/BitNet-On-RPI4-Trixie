@@ -1,5 +1,5 @@
 #define GGML_BITNET_ARM_TL1 ON
-#define __ARM_NEON ON
+
 #include "bitnet-lut-kernels.h"
 #include <arm_neon.h>
 #include <cstdlib>
@@ -99,7 +99,6 @@ int main() {
     aligned_free(QLUT);
     aligned_free(LUT_Scales);
     aligned_free(Scales);
-    aligned_free(B_float);
     
     printf("\nTest complete.\n");
     return 0;
