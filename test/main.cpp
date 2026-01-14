@@ -1,6 +1,7 @@
 #define GGML_BITNET_ARM_TL1 ON
 #include <cstdlib>
 #include <cstring>
+#include <cmath>
 #include "./bitnet-lut-kernels.h"
 
 #define CANARY_VALUE 0xDEADBEEF
@@ -106,6 +107,10 @@ int main() {
     float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
     float32_t* Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
     
+    // Allocate reference output matrix C_
+    float32_t* C_ = (float32_t*)aligned_malloc(M * N * sizeof(float32_t));
+    memset(C_, 0, M * N * sizeof(float32_t));
+    
     // Initialize with random values
     printf("Initializing test matrices...\n");
     for (int i = 0; i < M * K; i++) {
@@ -170,15 +175,44 @@ int main() {
     printf("Matmul complete.\n");
     check_all_guards();
     
-    printf("Sample output values (first 10): ");
-    for (int i = 0; i < 10; i++) {
-        printf("%d ", C[i]);
+    // Step 3: Compute reference result using normal matmul (A_ @ B.T -> C_)
+    printf("\nStep 3: Computing reference matmul with A_ and B...\n");
+    // C_[m,n] = sum_k A_[n,k] * B[m,k]
+    for (int m = 0; m < M; m++) {
+        for (int n = 0; n < N; n++) {
+            float32_t sum = 0.0f;
+            for (int k = 0; k < K; k++) {
+                sum += (float32_t)A_[n * K + k] * B[m * K + k];
+            }
+            C_[m * N + n] = sum;
+        }
     }
-    printf("\n");
+    printf("Reference matmul complete.\n");
+    
+    // Step 4: Compare results
+    printf("\nStep 4: Comparing kernel output (C) with reference (C_)...\n");
+    float32_t max_error = 0.0f;
+    int error_count = 0;
+    for (int i = 0; i < M * N; i++) {
+        float32_t error = fabs((float32_t)C[i] - C_[i]);
+        if (error > max_error) {
+            max_error = error;
+        }
+        if (error > 1e-3) {  // Threshold for significant error
+            error_count++;
+            if (error_count <= 10) {  // Print first 10 errors
+                printf("  Mismatch at [%d]: kernel=%d, ref=%.1f, error=%.1f\n", 
+                       i, C[i], C_[i], error);
+            }
+        }
+    }
+    printf("Comparison complete: max_error=%.1f, mismatches=%d/%d\n", 
+           max_error, error_count, M * N);
     
     // Cleanup
     aligned_free(LUT_Scales);
     aligned_free(Scales);
+    aligned_free(C_);
     printf("freeing B...\n");  
     aligned_free((void*)g_B->canary_before);
     printf("freeing A, A_, C, and QLUT...\n");  
