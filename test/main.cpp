@@ -98,9 +98,9 @@ int main() {
     aligned_free(LUT_Scales);
     aligned_free(Scales);
     aligned_free(B);
+    printf("freeing A, A_, C, and QLUT...\n");  
     aligned_free(A);
     aligned_free(A_);
-    printf("freeing C and QLUT...\n");  
     aligned_free(C);
     aligned_free(QLUT);
     
