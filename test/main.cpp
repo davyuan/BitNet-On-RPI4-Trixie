@@ -83,7 +83,7 @@ void check_all_guards() {
 }
 
 int main() {
-    const int M = 1;           // Activation rows (B rows)
+    const int M = 160;           // Activation rows (B rows)
     const int K = 2560;        // Shared dimension
     const int N = 640;         // Weight rows (A rows) = output size
     
