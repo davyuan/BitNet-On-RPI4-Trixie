@@ -161,10 +161,11 @@ int main() {
     printf("LUT construction complete. LUT_Scales = %f\n", *LUT_Scales);
     check_all_guards();
     
-    // Debug: Print first 8 values from B and corresponding LUT values
-    printf("\n=== DEBUG: First 8 B values and corresponding LUT ===\n");
+    // Debug: Print first 8 B value pairs and corresponding LUT values
+    printf("\n=== DEBUG: First 8 B pairs and corresponding LUT ===\n");
     for (int idx = 0; idx < 8; idx++) {
-        printf("\nB[%d]: %.1f\n", idx, B[idx]);
+        printf("\nB pair %d: B[%d]=%.1f, B[%d]=%.1f\n", 
+               idx, idx*2, B[idx*2], idx*2+1, B[idx*2+1]);
         
         // Print corresponding LUT values (256 bytes per index in the 9-LUT table)
         printf("  LUT[%d] (256 bytes total, showing first 32):\n", idx);
