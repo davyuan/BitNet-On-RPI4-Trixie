@@ -95,7 +95,7 @@ int main() {
     AllocGuard* g_A = create_guard("A", N * K / 4);
     AllocGuard* g_A_ = create_guard("A_", N * K);
     AllocGuard* g_C = create_guard("C", M * N * sizeof(int32_t));
-    AllocGuard* g_QLUT = create_guard("QLUT", K * 16);
+    AllocGuard* g_QLUT = create_guard("QLUT", K * 16 /2);
     
     // Cast to actual types
     float32_t* B = (float32_t*)g_B->ptr;
