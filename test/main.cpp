@@ -161,28 +161,14 @@ int main() {
     printf("LUT construction complete. LUT_Scales = %f\n", *LUT_Scales);
     check_all_guards();
     
-    // Debug: Print first 8 weight pairs and corresponding LUT values
-    printf("\n=== DEBUG: First 8 weight pairs and LUT values ===\n");
-    for (int pair_idx = 0; pair_idx < 8; pair_idx++) {
-        printf("\nWeight pair %d:\n", pair_idx);
+    // Debug: Print first 8 values from B and corresponding LUT values
+    printf("\n=== DEBUG: First 8 B values and corresponding LUT ===\n");
+    for (int idx = 0; idx < 8; idx++) {
+        printf("\nB[%d]: %.1f\n", idx, B[idx]);
         
-        // Print the weight values from A_
-        printf("  A_[%d*4+0..3] (first weight): ", pair_idx);
-        for (int j = 0; j < 4; j++) {
-            printf("%d ", A_[pair_idx * 4 + j]);
-        }
-        printf("\n");
-        
-        // Print the encoded value in A
-        printf("  A[%d] (encoded): high=%d, low=%d (0x%02x)\n", 
-               pair_idx, 
-               (A[pair_idx] >> 4) & 0xF, 
-               A[pair_idx] & 0xF,
-               A[pair_idx]);
-        
-        // Print corresponding LUT values (32 bytes per weight pair: 4 stores of 8 bytes each)
-        printf("  LUT[%d] (256 bytes total, showing first 32):\n", pair_idx);
-        int8_t* lut_ptr = QLUT + pair_idx * 256;
+        // Print corresponding LUT values (256 bytes per index in the 9-LUT table)
+        printf("  LUT[%d] (256 bytes total, showing first 32):\n", idx);
+        int8_t* lut_ptr = QLUT + idx * 256;
         for (int i = 0; i < 32; i++) {
             if (i % 16 == 0) printf("    [%2d]: ", i);
             printf("%3d ", lut_ptr[i]);
