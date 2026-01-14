@@ -14,7 +14,7 @@ int main() {
     
     // Allocate matrices
     // B: activation matrix (M x K) = (1 x 2560)
-    float* B = (float*)aligned_malloc(M *K * sizeof(float));
+    float32_t* B = (float32_t*)aligned_malloc(M *K * sizeof(float32_t));
     
     // A: weight matrix (N x K) = (640 x 2560)
     uint8_t* A = (uint8_t*)aligned_malloc(N * K / 4);  // 2-bit quantized
@@ -28,14 +28,15 @@ int main() {
     int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));  // LUT for K weights
     
     // Scales
-    float* LUT_Scales = (float*)aligned_malloc(sizeof(float));
-    float* Scales = (float*)aligned_malloc(sizeof(float));
+    float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
+    float32_t* Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
     
     // Initialize with random values
     printf("Initializing test matrices...\n");
     for (int i = 0; i < M * K; i++) {
-        B[i] = (float)(rand() % 256);
+        B[i] = (float32_t)(rand() % 256);
     }
+
     for (int i = 0; i < N * K / 4; i++) {
         uint8_t high = rand() % 9;
         uint8_t low = rand() % 9;
@@ -78,12 +79,12 @@ int main() {
         printf("\nStep 1: Building LUT table...\n");
         
         //per_tensor_quant(K, LUT_Scales, B_float);
-        lut_ctor<K>(QLUT, B+ i*K, LUT_Scales);
+        lut_ctor<K>(QLUT, B, LUT_Scales);
         printf("LUT construction complete. LUT_Scales = %f\n", *LUT_Scales);
         
         // Step 2: Run qGEMM with LUT
         printf("\nStep 2: Running qGEMM_LUT (640x2560 kernel)...\n");
-        qgemm_lut_640_2560(A, QLUT, Scales, LUT_Scales, C+i*M);
+        qgemm_lut_640_2560(A + i * K / 4, QLUT, Scales, LUT_Scales, C+i*M);
     }
     
     printf("Matmul complete.\n");
