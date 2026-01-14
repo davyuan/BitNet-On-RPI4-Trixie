@@ -167,14 +167,27 @@ int main() {
         printf("\nB pair %d: B[%d]=%.1f, B[%d]=%.1f\n", 
                idx, idx*2, B[idx*2], idx*2+1, B[idx*2+1]);
         
-        // Print corresponding LUT values (256 bytes per index in the 9-LUT table)
-        printf("  LUT[%d]):\n", idx);
+        // Print corresponding LUT values (32 bytes per index)
+        // First 16 bytes are high bytes, second 16 are low bytes
+        printf("  LUT[%d] - high bytes:\n", idx);
         int8_t* lut_ptr = QLUT + idx * 32;
-        for (int i = 0; i < 32; i++) {
-            if (i % 16 == 0) printf("    [%2d]: ", i);
-            printf("%4x ", lut_ptr[i]);
-            if ((i + 1) % 16 == 0) printf("\n");
+        for (int i = 0; i < 16; i++) {
+            printf("%3d ", lut_ptr[i]);
         }
+        printf("\n");
+        
+        printf("  LUT[%d] - low bytes:\n", idx);
+        for (int i = 0; i < 16; i++) {
+            printf("%3d ", lut_ptr[16 + i]);
+        }
+        printf("\n");
+        
+        printf("  LUT[%d] - reconstructed int16 values:\n", idx);
+        for (int i = 0; i < 16; i++) {
+            int16_t val = ((int16_t)lut_ptr[i] << 8) | (lut_ptr[16 + i] & 0xFF);
+            printf("%6d ", val);
+        }
+        printf("\n");
     }
     printf("=== END DEBUG ===\n\n");
 
