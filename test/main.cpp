@@ -168,11 +168,11 @@ int main() {
                idx, idx*2, B[idx*2], idx*2+1, B[idx*2+1]);
         
         // Print corresponding LUT values (256 bytes per index in the 9-LUT table)
-        printf("  LUT[%d] (256 bytes total, showing first 32):\n", idx);
-        int8_t* lut_ptr = QLUT + idx * 256;
+        printf("  LUT[%d]):\n", idx);
+        int8_t* lut_ptr = QLUT + idx * 32;
         for (int i = 0; i < 32; i++) {
             if (i % 16 == 0) printf("    [%2d]: ", i);
-            printf("%3d ", lut_ptr[i]);
+            printf("%4x ", lut_ptr[i]);
             if ((i + 1) % 16 == 0) printf("\n");
         }
     }
