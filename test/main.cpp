@@ -74,14 +74,13 @@ int main() {
     printf("Running LUT construction and inference...\n");
     printf("Matrix dimensions: B(1x2560), A(640x2560), C(1x640)\n");
     
-    for(int i=0; i< N; i++){
-        // Step 1: Build LUT from weight matrix A (first row for testing)
-        printf("\nStep 1: Building LUT table...\n");
-        
-        //per_tensor_quant(K, LUT_Scales, B_float);
-        lut_ctor<K>(QLUT, B, LUT_Scales);
-        printf("LUT construction complete. LUT_Scales = %f\n", *LUT_Scales);
-        
+    // Step 1: Build LUT from weight matrix A (first row for testing)
+    printf("\nStep 1: Building LUT table...\n");
+    
+    lut_ctor<K>(QLUT, B, LUT_Scales);
+    printf("LUT construction complete. LUT_Scales = %f\n", *LUT_Scales);
+
+    for(int i=0; i< N; i++){       
         // Step 2: Run qGEMM with LUT
         printf("\nStep 2: Running qGEMM_LUT (640x2560 kernel)...\n");
         qgemm_lut_640_2560(A + i * K / 4, QLUT, Scales, LUT_Scales, C+i*M);
@@ -97,8 +96,9 @@ int main() {
     // Cleanup
     aligned_free(LUT_Scales);
     aligned_free(Scales);
-    printf("freeing A, A_, C, and QLUT...\n");  
+    printf("freeing B...\n");  
     aligned_free(B);
+    printf("freeing A, A_, C, and QLUT...\n");  
     aligned_free(A);
     aligned_free(A_);
     aligned_free(C);
