@@ -177,9 +177,9 @@ int main() {
     }
     printf("=== END DEBUG ===\n\n");
 
+    // Step 2: Run qGEMM with LUT
+    printf("\nStep 2: Running qGEMM_LUT (640x2560 kernel)\n");
     for(int i=0; i< N; i++){       
-        // Step 2: Run qGEMM with LUT
-        printf("\nStep 2: Running qGEMM_LUT (640x2560 kernel) iteration %d...\n", i);
         qgemm_lut_640_2560(A + i * K / 4, QLUT, Scales, LUT_Scales, C+i*M);
         
         // Check guards after each iteration
