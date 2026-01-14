@@ -1,11 +1,11 @@
 #define GGML_BITNET_ARM_TL1 ON
-
-#include "bitnet-lut-kernels.h"
-#include <arm_neon.h>
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
 #include <stdlib.h>
+#include "bitnet-lut-kernels.h"
+#include <arm_neon.h>
+
 
 int main() {
     const int M = 1;           // Activation rows (B rows)
