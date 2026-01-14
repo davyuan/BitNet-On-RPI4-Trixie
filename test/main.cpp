@@ -20,8 +20,8 @@ int main() {
     int32_t* C = (int32_t*)aligned_malloc(M * N * sizeof(int32_t));
     memset(C, 0, M * N * sizeof(int32_t));
     
-    // LUT tables
-    int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));  // LUT for K weights
+    // LUT tables: every weight pair (2 weights) has 16 bytes of LUT values
+    int8_t* QLUT = (int8_t*)aligned_malloc(K / 2 * 16);  // LUT for K weights
     
     // Scales
     float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
