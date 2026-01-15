@@ -197,10 +197,16 @@ inline void tbl_impl_640_2560(int32_t* c, int8_t* lut, uint8_t* a) {
 #ifdef __ARM_NEON
     const int KK = BBK640_2560 / 2;
     const uint8x16_t vec_mask = vdupq_n_u8(0x0f);
-    int8x16_t vec_lut[2 * KK];
+    
+    // Load LUT high and low byte tables separately
+    int8x16_t vec_lut_high[2 * KK];
+    int8x16_t vec_lut_low[2 * KK];
+    
+    // LUT layout per index: [16 high_bytes] [16 low_bytes] = 32 bytes
 #pragma unroll
     for (int k = 0; k < 2 * KK; k++) {
-        vec_lut[k] = vld1q_s8(lut + k * 16);
+        vec_lut_high[k] = vld1q_s8(lut + k * 32);      // Load high bytes
+        vec_lut_low[k] = vld1q_s8(lut + k * 32 + 16);   // Load low bytes (offset by all high bytes)
     }
 
 #pragma unroll
@@ -210,51 +216,65 @@ inline void tbl_impl_640_2560(int32_t* c, int8_t* lut, uint8_t* a) {
 
 #pragma unroll
         for (int k = 0; k < KK / 2; k++) {
-            uint8x16_t vec_a_0 = vld1q_u8(a + i * KK / 2 + k * 32 * 2 + 0 * 16);
+            uint8x16_t vec_a_0 = vld1q_u8(a + i * KK / 2 + k * 32 + 0 * 16);
             uint8x16_t vec_a0_top = vshrq_n_u8(vec_a_0, 4);
             uint8x16_t vec_a0_bot = vandq_u8(vec_a_0, vec_mask);
-            int8x16_t  vec_v_0_left_tmp0 = vqtbl1q_s8(vec_lut[4 * k + 0], vec_a0_top);
-            int8x16_t  vec_v_0_left_tmp1 = vqtbl1q_s8(vec_lut[4 * k + 1], vec_a0_top);
-            int8x16_t  vec_v_0_right_tmp0 = vqtbl1q_s8(vec_lut[4 * k + 2], vec_a0_bot);
-            int8x16_t  vec_v_0_right_tmp1 = vqtbl1q_s8(vec_lut[4 * k + 3], vec_a0_bot);
-            int8x16x2_t  vec_v_left_0 = vzipq_s8(vec_v_0_left_tmp1, vec_v_0_left_tmp0);
-            int8x16x2_t  vec_v_right_0 = vzipq_s8(vec_v_0_right_tmp1, vec_v_0_right_tmp0);
-            vec_c_low += vmovl_s8(vget_low_s8(vec_v_left_0.val[0]));
-            vec_c_low += vmovl_s8(vget_low_s8(vec_v_right_0.val[0]));
-            vec_c_high += vmovl_s8(vget_high_s8(vec_v_left_0.val[0]));
-            vec_c_high += vmovl_s8(vget_high_s8(vec_v_right_0.val[0]));
-            vec_c_low += vmovl_s8(vget_low_s8(vec_v_left_0.val[1]));
-            vec_c_low += vmovl_s8(vget_low_s8(vec_v_right_0.val[1]));
-            vec_c_high += vmovl_s8(vget_high_s8(vec_v_left_0.val[1]));
-            vec_c_high += vmovl_s8(vget_high_s8(vec_v_right_0.val[1]));
-        
-            uint8x16_t vec_a_1 = vld1q_u8(a + i * KK / 2 + k * 32 * 2 + 1 * 16);
+            
+            // Lookup on high and low tables separately
+            int8x16_t vec_v_0_h = vqtbl1q_s8(vec_lut_high[32 * k + 0], vec_a0_top);
+            int8x16_t vec_v_0_l = vqtbl1q_s8(vec_lut_low[32 * k + 0], vec_a0_bot);
+            
+            // Reconstruct int16 from high/low bytes: (high << 8) | low
+            int8x8_t v0h_lo = vget_low_s8(vec_v_0_h);
+            int8x8_t v0h_hi = vget_high_s8(vec_v_0_h);
+            int8x8_t v0l_lo = vget_low_s8(vec_v_0_l);
+            int8x8_t v0l_hi = vget_high_s8(vec_v_0_l);
+            int16x8_t v0h_lo_16 = vmovl_s8(v0h_lo);
+            int16x8_t v0h_hi_16 = vmovl_s8(v0h_hi);
+            int16x8_t v0l_lo_16 = vmovl_s8(v0l_lo);
+            int16x8_t v0l_hi_16 = vmovl_s8(v0l_hi);
+            v0h_lo_16 = vshlq_n_s16(v0h_lo_16, 8);
+            v0h_hi_16 = vshlq_n_s16(v0h_hi_16, 8);
+            int16x8_t out0 = vaddq_s16(v0h_lo_16, v0l_lo_16);
+            int16x8_t out1 = vaddq_s16(v0h_hi_16, v0l_hi_16);
+            
+            vec_c_low += out0;
+            vec_c_high += out1;
+
+            uint8x16_t vec_a_1 = vld1q_u8(a + i * KK / 2 + k * 32 + 1 * 16);
             uint8x16_t vec_a1_top = vshrq_n_u8(vec_a_1, 4);
             uint8x16_t vec_a1_bot = vandq_u8(vec_a_1, vec_mask);
-            int8x16_t  vec_v_1_left_tmp0 = vqtbl1q_s8(vec_lut[4 * k + 0], vec_a1_top);
-            int8x16_t  vec_v_1_left_tmp1 = vqtbl1q_s8(vec_lut[4 * k + 1], vec_a1_top);
-            int8x16_t  vec_v_1_right_tmp0 = vqtbl1q_s8(vec_lut[4 * k + 2], vec_a1_bot);
-            int8x16_t  vec_v_1_right_tmp1 = vqtbl1q_s8(vec_lut[4 * k + 3], vec_a1_bot);
-            int8x16x2_t  vec_v_left_1 = vzipq_s8(vec_v_1_left_tmp1, vec_v_1_left_tmp0);
-            int8x16x2_t  vec_v_right_1 = vzipq_s8(vec_v_1_right_tmp1, vec_v_1_right_tmp0);
-            vec_c_low += vmovl_s8(vget_low_s8(vec_v_left_1.val[0]));
-            vec_c_low += vmovl_s8(vget_low_s8(vec_v_right_1.val[0]));
-            vec_c_high += vmovl_s8(vget_high_s8(vec_v_left_1.val[0]));
-            vec_c_high += vmovl_s8(vget_high_s8(vec_v_right_1.val[0]));
-            vec_c_low += vmovl_s8(vget_low_s8(vec_v_left_1.val[1]));
-            vec_c_low += vmovl_s8(vget_low_s8(vec_v_right_1.val[1]));
-            vec_c_high += vmovl_s8(vget_high_s8(vec_v_left_1.val[1]));
-            vec_c_high += vmovl_s8(vget_high_s8(vec_v_right_1.val[1]));
+            
+            // Lookup on high and low tables separately
+            int8x16_t vec_v_1_h = vqtbl1q_s8(vec_lut_high[32 * k + 16], vec_a1_top);
+            int8x16_t vec_v_1_l = vqtbl1q_s8(vec_lut_low[32 * k + 16], vec_a1_bot);
+            
+            // Reconstruct int16 from high/low bytes: (high << 8) | low
+            int8x8_t v1h_lo = vget_low_s8(vec_v_1_h);
+            int8x8_t v1h_hi = vget_high_s8(vec_v_1_h);
+            int8x8_t v1l_lo = vget_low_s8(vec_v_1_l);
+            int8x8_t v1l_hi = vget_high_s8(vec_v_1_l);
+            int16x8_t v1h_lo_16 = vmovl_s8(v1h_lo);
+            int16x8_t v1h_hi_16 = vmovl_s8(v1h_hi);
+            int16x8_t v1l_lo_16 = vmovl_s8(v1l_lo);
+            int16x8_t v1l_hi_16 = vmovl_s8(v1l_hi);
+            v1h_lo_16 = vshlq_n_s16(v1h_lo_16, 8);
+            v1h_hi_16 = vshlq_n_s16(v1h_hi_16, 8);
+            out0 = vaddq_s16(v1h_lo_16, v1l_lo_16);
+            out1 = vaddq_s16(v1h_hi_16, v1l_hi_16);
+            
+            vec_c_low += out0;
+            vec_c_high += out1;            
         }
 
-        int32x4_t vec_v_bot_low_low_0 = vmovl_s16(vget_low_s16(vec_c_low));
-        int32x4_t vec_v_bot_low_high_0 = vmovl_high_s16(vec_c_low);
-        vst1q_s32(c + i + 0, vld1q_s32(c + i + 0) + vec_v_bot_low_low_0);
-        vst1q_s32(c + i + 4, vld1q_s32(c + i + 4) + vec_v_bot_low_high_0);
-        int32x4_t vec_v_bot_low_low_1 = vmovl_s16(vget_low_s16(vec_c_high));
-        int32x4_t vec_v_bot_low_high_1 = vmovl_high_s16(vec_c_high);
-        vst1q_s32(c + i + 8, vld1q_s32(c + i + 8) + vec_v_bot_low_low_1);
-        vst1q_s32(c + i + 12, vld1q_s32(c + i + 12) + vec_v_bot_low_high_1);
+        int32x4_t vec_c_low_low = vmovl_s16(vget_low_s16(vec_c_low));
+        int32x4_t vec_c_low_high = vmovl_high_s16(vec_c_low);
+        vst1q_s32(c + i + 0, vld1q_s32(c + i + 0) + vec_c_low_low);
+        vst1q_s32(c + i + 4, vld1q_s32(c + i + 4) + vec_c_low_high);
+        int32x4_t vec_c_high_low = vmovl_s16(vget_low_s16(vec_c_high));
+        int32x4_t vec_c_high_high = vmovl_high_s16(vec_c_high);
+        vst1q_s32(c + i + 8, vld1q_s32(c + i + 8) + vec_c_high_low);
+        vst1q_s32(c + i + 12, vld1q_s32(c + i + 12) + vec_c_high_high);
     }
 #endif
 }
