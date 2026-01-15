@@ -244,6 +244,25 @@ inline void tbl_impl_640_2560(int32_t* c, int8_t* lut, uint8_t* a) {
             int16x8_t out0 = vaddq_s16(v0h_lo_16, v0l_lo_16);
             int16x8_t out1 = vaddq_s16(v0h_hi_16, v0l_hi_16);
             
+            vec_c[0] += out0;
+            vec_c[1] += out1;
+
+            int8x8_t v0h_lo_1 = vget_low_s8(vec_c0_h_1);
+            int8x8_t v0h_hi_1 = vget_high_s8(vec_c0_h_1);
+            int8x8_t v0l_lo_1 = vget_low_s8(vec_c0_l_1);
+            int8x8_t v0l_hi_1 = vget_high_s8(vec_c0_l_1);
+            v0h_lo_16 = vmovl_s8(v0h_lo_1);
+            v0h_hi_16 = vmovl_s8(v0h_hi_1);
+            v0l_lo_16 = vmovl_s8(v0l_lo_1);
+            v0l_hi_16 = vmovl_s8(v0l_hi_1);
+            v0h_lo_16 = vshlq_n_s16(v0h_lo_16, 8);
+            v0h_hi_16 = vshlq_n_s16(v0h_hi_16, 8);
+            int16x8_t out2 = vaddq_s16(v0h_lo_16, v0l_lo_16);
+            int16x8_t out3 = vaddq_s16(v0h_hi_16, v0l_hi_16);
+            
+            vec_c[2] += out2;
+            vec_c[3] += out3;
+
             // Debug output
             if (i == 0 && k == 0) {
                 printf("\n=== DEBUG: First iteration - lookups and reconstruction ===\n");
@@ -269,34 +288,19 @@ inline void tbl_impl_640_2560(int32_t* c, int8_t* lut, uint8_t* a) {
                 for (int j = 0; j < 16; j++) printf("%3d ", c0l1_ptr[j]);
                 printf("\n\n");
                 
-                printf("out0/1 (lookup values, low 16 ): ");
+                printf("out0/1/2/3 (lookup values, low 16 ): ");
                 int16_t* out0_ptr = (int16_t*)&out0;
                 for (int j = 0; j < 8; j++) printf("%6d ", out0_ptr[j]);
                 int16_t* out1_ptr = (int16_t*)&out1;
                 for (int j = 0; j < 8; j++) printf("%6d ", out1_ptr[j]);
+                int16_t* out2_ptr = (int16_t*)&out2;
+                for (int j = 0; j < 8; j++) printf("%6d ", out2_ptr[j]);
+                int16_t* out3_ptr = (int16_t*)&out3;
+                for (int j = 0; j < 8; j++) printf("%6d ", out3_ptr[j]);
                 printf("\n");
                 printf("=== END DEBUG ===\n\n");
                 fflush(stdout);
             }
-            
-            vec_c[0] += out0;
-            vec_c[1] += out1;
-
-            int8x8_t v0h_lo_1 = vget_low_s8(vec_c0_h_1);
-            int8x8_t v0h_hi_1 = vget_high_s8(vec_c0_h_1);
-            int8x8_t v0l_lo_1 = vget_low_s8(vec_c0_l_1);
-            int8x8_t v0l_hi_1 = vget_high_s8(vec_c0_l_1);
-            v0h_lo_16 = vmovl_s8(v0h_lo_1);
-            v0h_hi_16 = vmovl_s8(v0h_hi_1);
-            v0l_lo_16 = vmovl_s8(v0l_lo_1);
-            v0l_hi_16 = vmovl_s8(v0l_hi_1);
-            v0h_lo_16 = vshlq_n_s16(v0h_lo_16, 8);
-            v0h_hi_16 = vshlq_n_s16(v0h_hi_16, 8);
-            out0 = vaddq_s16(v0h_lo_16, v0l_lo_16);
-            out1 = vaddq_s16(v0h_hi_16, v0l_hi_16);
-            
-            vec_c[2] += out0;
-            vec_c[3] += out1;
         }
 
         int32x4_t vec_c0_low = vmovl_s16(vget_low_s16(vec_c[0]));
