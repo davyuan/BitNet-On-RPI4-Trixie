@@ -227,6 +227,25 @@ inline void tbl_impl_640_2560(int32_t* c, int8_t* lut, uint8_t* a) {
             int8x16_t vec_v_0_h = vqtbl1q_s8(vec_lut_high[2 * k + 0], vec_a0_top);
             int8x16_t vec_v_0_l = vqtbl1q_s8(vec_lut_low[2 * k + 0], vec_a0_bot);
             
+            // Debug output
+            if (i == 0 && k == 0) {
+                printf("\n=== DEBUG: First iteration of tbl_impl_640_2560 ===\n");
+                printf("vec_a_0: ");
+                uint8_t* a0_ptr = (uint8_t*)&vec_a_0;
+                for (int j = 0; j < 16; j++) printf("%02x ", a0_ptr[j]);
+                printf("\n");
+                
+                printf("vec_v_0_h: ");
+                int8_t* vh_ptr = (int8_t*)&vec_v_0_h;
+                for (int j = 0; j < 16; j++) printf("%3d ", vh_ptr[j]);
+                printf("\n");
+                
+                printf("vec_v_0_l: ");
+                int8_t* vl_ptr = (int8_t*)&vec_v_0_l;
+                for (int j = 0; j < 16; j++) printf("%3d ", vl_ptr[j]);
+                printf("\n");
+            }
+            
             // Reconstruct int16 from high/low bytes: (high << 8) | low
             int8x8_t v0h_lo = vget_low_s8(vec_v_0_h);
             int8x8_t v0h_hi = vget_high_s8(vec_v_0_h);
@@ -240,6 +259,21 @@ inline void tbl_impl_640_2560(int32_t* c, int8_t* lut, uint8_t* a) {
             v0h_hi_16 = vshlq_n_s16(v0h_hi_16, 8);
             int16x8_t out0 = vaddq_s16(v0h_lo_16, v0l_lo_16);
             int16x8_t out1 = vaddq_s16(v0h_hi_16, v0l_hi_16);
+            
+            // Debug output for reconstructed values
+            if (i == 0 && k == 0) {
+                printf("out0 (reconstructed): ");
+                int16_t* out0_ptr = (int16_t*)&out0;
+                for (int j = 0; j < 8; j++) printf("%6d ", out0_ptr[j]);
+                printf("\n");
+                
+                printf("out1 (reconstructed): ");
+                int16_t* out1_ptr = (int16_t*)&out1;
+                for (int j = 0; j < 8; j++) printf("%6d ", out1_ptr[j]);
+                printf("\n");
+                printf("=== END DEBUG ===\n\n");
+                fflush(stdout);
+            }
             
             vec_c_low += out0;
             vec_c_high += out1;
@@ -287,7 +321,8 @@ int32_t qgemm_lut_640_2560(void* A, void* LUT, void* Scales, void* LUT_Scales, v
     memset(&(CBits[0]), 0, BM640_2560 * sizeof(int32_t));
 #pragma unroll
     for (int32_t k_outer = 0; k_outer < 2560 / BBK640_2560; ++k_outer) {
-        tbl_impl_640_2560((&(((int32_t*)CBits)[0])), (&(((int8_t*)LUT)[(k_outer * BBK640_2560 / 2 * 32)])), (&(((uint8_t*)A)[(k_outer * BBK640_2560 / 2 / 2 * BM640_2560)])));
+        tbl_impl_640_2560((&(((int32_t*)CBits)[0])), (&(((int8_t*)LUT)[(k_outer * BBK640_2560 / 2 * 32)])), 
+            (&(((uint8_t*)A)[(k_outer * BBK640_2560 / 2 / 2 * BM640_2560)])));
     }
 #pragma unroll
     for (int i = 0; i < BM640_2560; i++) {
