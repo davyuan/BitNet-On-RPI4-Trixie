@@ -248,40 +248,30 @@ inline void tbl_impl_640_2560(int32_t* c, int8_t* lut, uint8_t* a) {
             if (i == 0 && k == 0) {
                 printf("\n=== DEBUG: First iteration - lookups and reconstruction ===\n");
                 
-                printf("vec_a0_zipped.val[0]: ");
+                printf("vec_a0_zipped.val[0/1]: ");
                 uint8_t* a0z0_ptr = (uint8_t*)&vec_a0_zipped.val[0];
                 for (int j = 0; j < 16; j++) printf("%02x ", a0z0_ptr[j]);
-                printf("\nvec_a0_zipped.val[1]: ");
                 uint8_t* a0z1_ptr = (uint8_t*)&vec_a0_zipped.val[1];
                 for (int j = 0; j < 16; j++) printf("%02x ", a0z1_ptr[j]);
                 printf("\n\n");
                 
-                printf("vec_c0_h_0 (high table lookup): ");
+                printf("vec_c0_h_0/1 (high table lookup): ");
                 int8_t* c0h0_ptr = (int8_t*)&vec_c0_h_0;
                 for (int j = 0; j < 16; j++) printf("%3d ", c0h0_ptr[j]);
-                printf("\n");
-                
-                printf("vec_c0_h_1 (high table lookup): ");
                 int8_t* c0h1_ptr = (int8_t*)&vec_c0_h_1;
                 for (int j = 0; j < 16; j++) printf("%3d ", c0h1_ptr[j]);
                 printf("\n");
                 
-                printf("vec_c0_l_0 (low table lookup):  ");
+                printf("vec_c0_l_0/1 (low table lookup):  ");
                 int8_t* c0l0_ptr = (int8_t*)&vec_c0_l_0;
                 for (int j = 0; j < 16; j++) printf("%3d ", c0l0_ptr[j]);
-                printf("\n");
-                
-                printf("vec_c0_l_1 (low table lookup):  ");
                 int8_t* c0l1_ptr = (int8_t*)&vec_c0_l_1;
                 for (int j = 0; j < 16; j++) printf("%3d ", c0l1_ptr[j]);
                 printf("\n\n");
                 
-                printf("out0 (reconstructed, low half): ");
+                printf("out0/1 (lookup values, low 16 ): ");
                 int16_t* out0_ptr = (int16_t*)&out0;
                 for (int j = 0; j < 8; j++) printf("%6d ", out0_ptr[j]);
-                printf("\n");
-                
-                printf("out1 (reconstructed, high half): ");
                 int16_t* out1_ptr = (int16_t*)&out1;
                 for (int j = 0; j < 8; j++) printf("%6d ", out1_ptr[j]);
                 printf("\n");
