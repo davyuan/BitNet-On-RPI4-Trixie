@@ -152,6 +152,21 @@ int main() {
     *LUT_Scales = 1.0f;
     *Scales = 1.0f;
     
+    // Debug: Print sample elements from A matrix for sanity check
+    printf("\n=== DEBUG: Sample A matrix elements ===\n");
+    printf("A matrix (first 16 bytes, hex representation):\n");
+    for (int i = 0; i < 16; i++) {
+        uint8_t high = (A[i] >> 4) & 0xF;
+        uint8_t low = A[i] & 0xF;
+        printf("A[%2d] = 0x%02x (high=%d, low=%d)", i, A[i], high, low);
+        
+        // Show corresponding A_ values
+        printf(" -> A_[%3d..%3d] = [%2d %2d %2d %2d]\n", 
+               i*4, i*4+3, 
+               A_[i*4+0], A_[i*4+1], A_[i*4+2], A_[i*4+3]);
+    }
+    printf("=== END DEBUG ===\n\n");
+    
     printf("Running LUT construction and inference...\n");
     printf("Matrix dimensions: B(1x2560), A(640x2560), C(1x640)\n");
     
