@@ -224,8 +224,8 @@ inline void tbl_impl_640_2560(int32_t* c, int8_t* lut, uint8_t* a) {
             uint8x16_t vec_a0_bot = vandq_u8(vec_a_0, vec_mask);
             
             // Lookup on high and low tables separately
-            int8x16_t vec_v_0_h = vqtbl1q_s8(vec_lut_high[32 * k + 0], vec_a0_top);
-            int8x16_t vec_v_0_l = vqtbl1q_s8(vec_lut_low[32 * k + 0], vec_a0_bot);
+            int8x16_t vec_v_0_h = vqtbl1q_s8(vec_lut_high[2 * k + 0], vec_a0_top);
+            int8x16_t vec_v_0_l = vqtbl1q_s8(vec_lut_low[2 * k + 0], vec_a0_bot);
             
             // Reconstruct int16 from high/low bytes: (high << 8) | low
             int8x8_t v0h_lo = vget_low_s8(vec_v_0_h);
@@ -249,8 +249,8 @@ inline void tbl_impl_640_2560(int32_t* c, int8_t* lut, uint8_t* a) {
             uint8x16_t vec_a1_bot = vandq_u8(vec_a_1, vec_mask);
             
             // Lookup on high and low tables separately
-            int8x16_t vec_v_1_h = vqtbl1q_s8(vec_lut_high[32 * k + 16], vec_a1_top);
-            int8x16_t vec_v_1_l = vqtbl1q_s8(vec_lut_low[32 * k + 16], vec_a1_bot);
+            int8x16_t vec_v_1_h = vqtbl1q_s8(vec_lut_high[2 * k + 1], vec_a1_top);
+            int8x16_t vec_v_1_l = vqtbl1q_s8(vec_lut_low[2 * k + 1], vec_a1_bot);
             
             // Reconstruct int16 from high/low bytes: (high << 8) | low
             int8x8_t v1h_lo = vget_low_s8(vec_v_1_h);
