@@ -199,8 +199,8 @@ inline void tbl_impl_640_2560(int32_t* c, int8_t* lut, uint8_t* a) {
     const uint8x16_t vec_mask = vdupq_n_u8(0x0f);
     
     // Load LUT high and low byte tables separately
-    int8x16_t vec_lut_high[2 * KK];
-    int8x16_t vec_lut_low[2 * KK];
+    int8x16_t vec_lut_high[KK];
+    int8x16_t vec_lut_low[KK];
     
     // LUT layout per index: [16 high_bytes] [16 low_bytes] = 32 bytes
 #pragma unroll
@@ -215,6 +215,8 @@ inline void tbl_impl_640_2560(int32_t* c, int8_t* lut, uint8_t* a) {
         int16x8_t vec_c_high = vdupq_n_s16(0);
 
 #pragma unroll
+        // KK is the number of weight pairs. KK/2 is the number of bytes to have K weights.
+        // one weight pair has 32 LUT entries (16 high, 16 low), and one byte in 'a' has 2 weight pairs.
         for (int k = 0; k < KK / 2; k++) {
             uint8x16_t vec_a_0 = vld1q_u8(a + i * KK / 2 + k * 32 + 0 * 16);
             uint8x16_t vec_a0_top = vshrq_n_u8(vec_a_0, 4);
