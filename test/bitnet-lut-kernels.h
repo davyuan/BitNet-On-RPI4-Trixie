@@ -231,34 +231,79 @@ inline void tbl_impl_640_2560(int32_t* c, int8_t* lut, uint8_t* a) {
             int8x16_t vec_c0_l_1 = vqtbl1q_s8(vec_lut_low[2 * k + 1], vec_a0_zipped.val[1]);
             
             // Reconstruct int16 from high/low bytes: (high << 8) | low
-            int8x8_t v0h_lo = vget_low_s8(vec_c0_h_0);
-            int8x8_t v0h_hi = vget_high_s8(vec_c0_h_0);
-            int8x8_t v0l_lo = vget_low_s8(vec_c0_l_0);
-            int8x8_t v0l_hi = vget_high_s8(vec_c0_l_0);
-            int16x8_t v0h_lo_16 = vmovl_s8(v0h_lo);
-            int16x8_t v0h_hi_16 = vmovl_s8(v0h_hi);
-            int16x8_t v0l_lo_16 = vmovl_s8(v0l_lo);
-            int16x8_t v0l_hi_16 = vmovl_s8(v0l_hi);
+            int8x8_t v0h_lo_0 = vget_low_s8(vec_c0_h_0);
+            int8x8_t v0h_hi_0 = vget_high_s8(vec_c0_h_0);
+            int8x8_t v0l_lo_0 = vget_low_s8(vec_c0_l_0);
+            int8x8_t v0l_hi_0 = vget_high_s8(vec_c0_l_0);
+            int16x8_t v0h_lo_16 = vmovl_s8(v0h_lo_0);
+            int16x8_t v0h_hi_16 = vmovl_s8(v0h_hi_0);
+            int16x8_t v0l_lo_16 = vmovl_s8(v0l_lo_0);
+            int16x8_t v0l_hi_16 = vmovl_s8(v0l_hi_0);
             v0h_lo_16 = vshlq_n_s16(v0h_lo_16, 8);
             v0h_hi_16 = vshlq_n_s16(v0h_hi_16, 8);
             int16x8_t out0 = vaddq_s16(v0h_lo_16, v0l_lo_16);
             int16x8_t out1 = vaddq_s16(v0h_hi_16, v0l_hi_16);
             
+            // Debug output
+            if (i == 0 && k == 0) {
+                printf("\n=== DEBUG: First iteration - lookups and reconstruction ===\n");
+                
+                printf("vec_a0_zipped.val[0]: ");
+                uint8_t* a0z0_ptr = (uint8_t*)&vec_a0_zipped.val[0];
+                for (int j = 0; j < 16; j++) printf("%02x ", a0z0_ptr[j]);
+                printf("\nvec_a0_zipped.val[1]: ");
+                uint8_t* a0z1_ptr = (uint8_t*)&vec_a0_zipped.val[1];
+                for (int j = 0; j < 16; j++) printf("%02x ", a0z1_ptr[j]);
+                printf("\n\n");
+                
+                printf("vec_c0_h_0 (high table lookup): ");
+                int8_t* c0h0_ptr = (int8_t*)&vec_c0_h_0;
+                for (int j = 0; j < 16; j++) printf("%3d ", c0h0_ptr[j]);
+                printf("\n");
+                
+                printf("vec_c0_h_1 (high table lookup): ");
+                int8_t* c0h1_ptr = (int8_t*)&vec_c0_h_1;
+                for (int j = 0; j < 16; j++) printf("%3d ", c0h1_ptr[j]);
+                printf("\n");
+                
+                printf("vec_c0_l_0 (low table lookup):  ");
+                int8_t* c0l0_ptr = (int8_t*)&vec_c0_l_0;
+                for (int j = 0; j < 16; j++) printf("%3d ", c0l0_ptr[j]);
+                printf("\n");
+                
+                printf("vec_c0_l_1 (low table lookup):  ");
+                int8_t* c0l1_ptr = (int8_t*)&vec_c0_l_1;
+                for (int j = 0; j < 16; j++) printf("%3d ", c0l1_ptr[j]);
+                printf("\n\n");
+                
+                printf("out0 (reconstructed, low half): ");
+                int16_t* out0_ptr = (int16_t*)&out0;
+                for (int j = 0; j < 8; j++) printf("%6d ", out0_ptr[j]);
+                printf("\n");
+                
+                printf("out1 (reconstructed, high half): ");
+                int16_t* out1_ptr = (int16_t*)&out1;
+                for (int j = 0; j < 8; j++) printf("%6d ", out1_ptr[j]);
+                printf("\n");
+                printf("=== END DEBUG ===\n\n");
+                fflush(stdout);
+            }
+            
             vec_c[0] += out0;
             vec_c[1] += out1;
 
-            int8x8_t v1h_lo = vget_low_s8(vec_c0_h_1);
-            int8x8_t v1h_hi = vget_high_s8(vec_c0_h_1);
-            int8x8_t v1l_lo = vget_low_s8(vec_c0_l_1);
-            int8x8_t v1l_hi = vget_high_s8(vec_c0_l_1);
-            int16x8_t v1h_lo_16 = vmovl_s8(v1h_lo);
-            int16x8_t v1h_hi_16 = vmovl_s8(v1h_hi);
-            int16x8_t v1l_lo_16 = vmovl_s8(v1l_lo);
-            int16x8_t v1l_hi_16 = vmovl_s8(v1l_hi);
-            v1h_lo_16 = vshlq_n_s16(v1h_lo_16, 8);
-            v1h_hi_16 = vshlq_n_s16(v1h_hi_16, 8);
-            out0 = vaddq_s16(v1h_lo_16, v1l_lo_16);
-            out1 = vaddq_s16(v1h_hi_16, v1l_hi_16);
+            int8x8_t v0h_lo_1 = vget_low_s8(vec_c0_h_1);
+            int8x8_t v0h_hi_1 = vget_high_s8(vec_c0_h_1);
+            int8x8_t v0l_lo_1 = vget_low_s8(vec_c0_l_1);
+            int8x8_t v0l_hi_1 = vget_high_s8(vec_c0_l_1);
+            v0h_lo_16 = vmovl_s8(v0h_lo_1);
+            v0h_hi_16 = vmovl_s8(v0h_hi_1);
+            v0l_lo_16 = vmovl_s8(v0l_lo_1);
+            v0l_hi_16 = vmovl_s8(v0l_hi_1);
+            v0h_lo_16 = vshlq_n_s16(v0h_lo_16, 8);
+            v0h_hi_16 = vshlq_n_s16(v0h_hi_16, 8);
+            out0 = vaddq_s16(v0h_lo_16, v0l_lo_16);
+            out1 = vaddq_s16(v0h_hi_16, v0l_hi_16);
             
             vec_c[2] += out0;
             vec_c[3] += out1;

@@ -155,7 +155,7 @@ int main() {
     // Debug: Print sample elements from A matrix for sanity check
     printf("\n=== DEBUG: Sample A matrix elements ===\n");
     printf("A matrix (first 16 bytes, hex representation):\n");
-    for (int i = 0; i < 256; i++) {
+    for (int i = 0; i < 128; i++) {
         uint8_t high = (A[i] >> 4) & 0xF;
         uint8_t low = A[i] & 0xF;
         printf("A[%2d] = 0x%02x (high=%d, low=%d)", i, A[i], high, low);
@@ -259,9 +259,7 @@ int main() {
     aligned_free(LUT_Scales);
     aligned_free(Scales);
     aligned_free(C_);
-    printf("freeing B...\n");  
     aligned_free((void*)g_B->canary_before);
-    printf("freeing A, A_, C, and QLUT...\n");  
     aligned_free((void*)g_A->canary_before);
     aligned_free((void*)g_A_->canary_before);
     aligned_free((void*)g_C->canary_before);
