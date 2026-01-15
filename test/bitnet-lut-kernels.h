@@ -231,34 +231,32 @@ inline void tbl_impl_640_2560(int32_t* c, int8_t* lut, uint8_t* a) {
             int8x16_t vec_c0_l_1 = vqtbl1q_s8(vec_lut_low[2 * k + 1], vec_a0_zipped.val[1]);
             
             // Reconstruct int16 from high/low bytes: (high << 8) | low
-            int8x8_t v0h_lo_0 = vget_low_s8(vec_c0_h_0);
-            int8x8_t v0h_hi_0 = vget_high_s8(vec_c0_h_0);
-            int8x8_t v0l_lo_0 = vget_low_s8(vec_c0_l_0);
-            int8x8_t v0l_hi_0 = vget_high_s8(vec_c0_l_0);
-            int16x8_t v0h_lo_16 = vmovl_s8(v0h_lo_0);
-            int16x8_t v0h_hi_16 = vmovl_s8(v0h_hi_0);
-            int16x8_t v0l_lo_16 = vmovl_s8(v0l_lo_0);
-            int16x8_t v0l_hi_16 = vmovl_s8(v0l_hi_0);
-            v0h_lo_16 = vshlq_n_s16(v0h_lo_16, 8);
-            v0h_hi_16 = vshlq_n_s16(v0h_hi_16, 8);
-            int16x8_t out0 = vaddq_s16(v0h_lo_16, v0l_lo_16);
-            int16x8_t out1 = vaddq_s16(v0h_hi_16, v0l_hi_16);
+            int16x8_t v0h_lo_16 = vshlq_n_s16(vmovl_s8(vget_low_s8(vec_c0_h_0)), 8);
+            int16x8_t v0h_hi_16 = vshlq_n_s16(vmovl_s8(vget_high_s8(vec_c0_h_0)), 8);  
+            int16x8_t v0l_lo_16 = vreinterpretq_s16_u16(
+                vmovl_u8(vreinterpret_u8_s8(vget_low_s8(vec_c0_l_0)))
+            );
+            int16x8_t v0l_hi_16 = vreinterpretq_s16_u16(
+                vmovl_u8(vreinterpret_u8_s8(vget_high_s8(vec_c0_l_0)))
+            );
+
+            // combine
+            int16x8_t out0 = vorrq_s16(v0h_lo_16, v0l_lo_16);
+            int16x8_t out1 = vorrq_s16(v0h_hi_16, v0l_hi_16);
             
             vec_c[0] += out0;
             vec_c[1] += out1;
 
-            int8x8_t v0h_lo_1 = vget_low_s8(vec_c0_h_1);
-            int8x8_t v0h_hi_1 = vget_high_s8(vec_c0_h_1);
-            int8x8_t v0l_lo_1 = vget_low_s8(vec_c0_l_1);
-            int8x8_t v0l_hi_1 = vget_high_s8(vec_c0_l_1);
-            v0h_lo_16 = vmovl_s8(v0h_lo_1);
-            v0h_hi_16 = vmovl_s8(v0h_hi_1);
-            v0l_lo_16 = vmovl_s8(v0l_lo_1);
-            v0l_hi_16 = vmovl_s8(v0l_hi_1);
-            v0h_lo_16 = vshlq_n_s16(v0h_lo_16, 8);
-            v0h_hi_16 = vshlq_n_s16(v0h_hi_16, 8);
-            int16x8_t out2 = vaddq_s16(v0h_lo_16, v0l_lo_16);
-            int16x8_t out3 = vaddq_s16(v0h_hi_16, v0l_hi_16);
+            v0h_lo_16 = vshlq_n_s16(vmovl_s8(vget_low_s8(vec_c0_h_1)), 8);
+            v0h_hi_16 = vshlq_n_s16(vmovl_s8(vget_high_s8(vec_c0_h_1)), 8);  
+            v0l_lo_16 = vreinterpretq_s16_u16(
+                vmovl_u8(vreinterpret_u8_s8(vget_low_s8(vec_c0_l_1)))
+            );
+            v0l_hi_16 = vreinterpretq_s16_u16(
+                vmovl_u8(vreinterpret_u8_s8(vget_high_s8(vec_c0_l_1)))
+            );
+            int16x8_t out2 = vorrq_s16(v0h_lo_16, v0l_lo_16);
+            int16x8_t out3 = vorrq_s16(v0h_hi_16, v0l_hi_16);
             
             vec_c[2] += out2;
             vec_c[3] += out3;
