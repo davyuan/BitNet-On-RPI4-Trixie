@@ -122,7 +122,8 @@ int main() {
         uint8_t low = rand() % 9;
         A[i] = (high << 4) | low;
 
-        switch(high) {
+        //armv8 is little-endian by default
+        switch(low) {
             case 0: A_[i * 4 + 0] = -1; A_[i * 4 + 1] = -1; break;
             case 1: A_[i * 4 + 0] = -1; A_[i * 4 + 1] = 0;  break;
             case 2: A_[i * 4 + 0] = -1; A_[i * 4 + 1] = 1; break;
@@ -134,7 +135,7 @@ int main() {
             case 8: A_[i * 4 + 0] = 1; A_[i * 4 + 1] = 1; break;
         }
 
-        switch(low) {
+        switch(high) {
             case 0: A_[i * 4 + 2] = -1; A_[i * 4 + 3] = -1; break;
             case 1: A_[i * 4 + 2] = -1; A_[i * 4 + 3] = 0;  break;
             case 2: A_[i * 4 + 2] = -1; A_[i * 4 + 3] = 1; break;
@@ -162,7 +163,7 @@ int main() {
     check_all_guards();
     
     // Debug: Print first 8 B value pairs and corresponding LUT values
-    printf("\n=== DEBUG: First 8 B pairs and corresponding LUT ===\n");
+    /*printf("\n=== DEBUG: First 8 B pairs and corresponding LUT ===\n");
     for (int idx = 0; idx < 8; idx++) {
         printf("\nB pair %d: B[%d]=%.1f, B[%d]=%.1f\n", 
                idx, idx*2, B[idx*2], idx*2+1, B[idx*2+1]);
@@ -189,7 +190,7 @@ int main() {
         }
         printf("\n");
     }
-    printf("=== END DEBUG ===\n\n");
+    printf("=== END DEBUG ===\n\n");*/
 
     // Step 2: Run qGEMM with LUT
     printf("\nStep 2: Running qGEMM_LUT (640x2560 kernel)\n");
