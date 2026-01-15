@@ -195,6 +195,7 @@ static bool is_type_supported(enum ggml_type type) {{
 // Kernel implementations for BitNet_1.58_2B_4T dimensions
 inline void tbl_impl_640_2560(int32_t* c, int8_t* lut, uint8_t* a) {
 #ifdef __ARM_NEON
+    // KK is the number of weight pairs.
     const int KK = BBK640_2560 / 2;
     const uint8x16_t vec_mask = vdupq_n_u8(0x0f);
     
@@ -204,7 +205,7 @@ inline void tbl_impl_640_2560(int32_t* c, int8_t* lut, uint8_t* a) {
     
     // LUT layout per index: [16 high_bytes] [16 low_bytes] = 32 bytes
 #pragma unroll
-    for (int k = 0; k < 2 * KK; k++) {
+    for (int k = 0; k < KK; k++) {
         vec_lut_high[k] = vld1q_s8(lut + k * 32);      // Load high bytes
         vec_lut_low[k] = vld1q_s8(lut + k * 32 + 16);   // Load low bytes (offset by all high bytes)
     }
@@ -215,7 +216,7 @@ inline void tbl_impl_640_2560(int32_t* c, int8_t* lut, uint8_t* a) {
         int16x8_t vec_c_high = vdupq_n_s16(0);
 
 #pragma unroll
-        // KK is the number of weight pairs. KK/2 is the number of bytes to have K weights.
+        // KK is the number of weight pairs. KK/2 is the number of bytes to have BBK640_2560 weights.
         // one weight pair has 32 LUT entries (16 high, 16 low), and one byte in 'a' has 2 weight pairs.
         for (int k = 0; k < KK / 2; k++) {
             uint8x16_t vec_a_0 = vld1q_u8(a + i * KK / 2 + k * 32 + 0 * 16);
