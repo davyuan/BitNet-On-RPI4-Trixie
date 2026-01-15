@@ -155,7 +155,7 @@ int main() {
     // Debug: Print sample elements from A matrix for sanity check
     printf("\n=== DEBUG: Sample A matrix elements ===\n");
     printf("A matrix (first 16 bytes, hex representation):\n");
-    for (int i = 0; i < 16; i++) {
+    for (int i = 0; i < 256; i++) {
         uint8_t high = (A[i] >> 4) & 0xF;
         uint8_t low = A[i] & 0xF;
         printf("A[%2d] = 0x%02x (high=%d, low=%d)", i, A[i], high, low);
