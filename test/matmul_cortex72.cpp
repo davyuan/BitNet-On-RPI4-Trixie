@@ -77,13 +77,12 @@ void matmul_int8(int8_t* A, int8_t* B, int32_t* C, int M, int N, int K) {
 }
 
 int main(){
-    uint8_t* A = aligned_malloc(M * K /4 * sizeof(uint8_t));
-    uint8_t* A_ = aligned_malloc(M * K * sizeof(int8_t));
-    int8_t* B = aligned_malloc(N * K * sizeof(int8_t));
-    int32_t* C = aligned_malloc(M * N * sizeof(int32_t));
-    int32_t* C_ = aligned_malloc(M * N * sizeof(int32_t)); // Reference result
+    int8_t* A = (int8_t*)aligned_malloc(N * K * sizeof(int8_t));
+    int8_t* B = (int8_t*)aligned_malloc(M * K * sizeof(int8_t));
+    int32_t* C = (int32_t*)aligned_malloc(M * N * sizeof(int32_t));
+    int32_t* C_ = (int32_t*)aligned_malloc(M * N * sizeof(int32_t)); // Reference result
 
-    memset(C_, 0, M * N * sizeof(int32_t));
+    memset(C, 0, M * N * sizeof(int32_t));
     memset(C_, 0, M * N * sizeof(int32_t));
 
     // Initialize with random values
