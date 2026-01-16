@@ -10,7 +10,7 @@
 
 #define TILE_K 32
 #define TILE_N 16
-#define TILE_M 4; // Register block height
+#define TILE_M 4 // Register block height
 #define TILE_SIZE 16  // Tile size for blocking
 const int M  = 640;           // Activation rows (B rows)
 const int K  = 2560;        // Shared dimension
