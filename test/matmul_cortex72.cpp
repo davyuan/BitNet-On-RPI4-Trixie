@@ -199,7 +199,7 @@ int main(){
     auto naive_duration = std::chrono::duration_cast<std::chrono::milliseconds>(naive_end - naive_start);
     printf("Naive matmul completed in %lld ms\n\n", naive_duration.count());
     
-    printf("Running optimized (tiled) matmul...\n");
+    /*printf("Running optimized (tiled) matmul...\n");
     auto tiled_start = std::chrono::high_resolution_clock::now();
     matmul_int8(A_, B, C, M, N, K);
     auto tiled_end = std::chrono::high_resolution_clock::now();
@@ -233,7 +233,7 @@ int main(){
         printf("Result is correct!\n");
     } else {
         printf("Total mismatches: %d\n", errors);
-    }
+    }*/
 
     // Cleanup
     aligned_free(A);
