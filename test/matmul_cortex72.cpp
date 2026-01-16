@@ -1,10 +1,29 @@
 #include <cstdlib>
 #include <cstdint>
+#include <cstdio>
 #include <algorithm>
 #include <cstring>
 #include <cmath>
 #include <chrono>
 #include <omp.h>
+
+static void * aligned_malloc(size_t size) {
+#if defined(_WIN32)
+    return _aligned_malloc(size, 64);
+#else
+    void * ptr = nullptr;
+    posix_memalign(&ptr, 64, size);
+    return ptr;
+#endif
+}
+
+static void aligned_free(void * ptr) {
+#if defined(_WIN32)
+    _aligned_free(ptr);
+#else
+    free(ptr);
+#endif
+}
 
 const int M = 640;           // Activation rows (B rows)
 const int K = 2560;        // Shared dimension
