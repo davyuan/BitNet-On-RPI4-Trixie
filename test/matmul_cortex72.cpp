@@ -290,7 +290,7 @@ int main(){
     aligned_free(A);
     aligned_free(A_);
     aligned_free(B);
-    aligned_free(C);
-    aligned_free(C_);
-    aligned_free(C_simd);
+    //aligned_free(C);
+    //aligned_free(C_);
+    ///aligned_free(C_simd);
 }
