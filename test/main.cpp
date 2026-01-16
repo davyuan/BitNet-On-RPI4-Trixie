@@ -92,10 +92,10 @@ int main() {
     
     // Allocate matrices with guards
     AllocGuard* g_B = create_guard("B", M * K * sizeof(float32_t));
-    AllocGuard* g_A = create_guard("A", N * K / 4);
-    AllocGuard* g_A_ = create_guard("A_", N * K);
+    AllocGuard* g_A = create_guard("A", N * K / 4 * sizeof(uint8_t));
+    AllocGuard* g_A_ = create_guard("A_", N * K * sizeof(int8_t));
     AllocGuard* g_C = create_guard("C", M * N * sizeof(int32_t));
-    AllocGuard* g_QLUT = create_guard("QLUT", K * 16);
+    AllocGuard* g_QLUT = create_guard("QLUT", M * K * 16 * sizeof(int8_t));
     
     // Cast to actual types
     float32_t* B = (float32_t*)g_B->ptr;
@@ -168,14 +168,7 @@ int main() {
     printf("=== END DEBUG ===\n\n");
     
     printf("Running LUT construction and inference...\n");
-    printf("Matrix dimensions: B(1x2560), A(640x2560), C(1x640)\n");
-    
-    // Step 1: Build LUT from weight matrix A (first row for testing)
-    printf("\nStep 1: Building LUT table...\n");
-    
-    lut_ctor<K>(QLUT, B, LUT_Scales);
-    printf("LUT construction complete. LUT_Scales = %f\n", *LUT_Scales);
-    check_all_guards();
+    printf("Matrix dimensions: B(160x2560), A(640x2560), C(640x160)\n");
     
     // Debug: Print first 8 B value pairs and corresponding LUT values
     /*printf("\n=== DEBUG: First 8 B pairs and corresponding LUT ===\n");
@@ -209,12 +202,21 @@ int main() {
 
     // Step 2: Run qGEMM with LUT
     printf("\nStep 2: Running qGEMM_LUT (640x2560 kernel)\n");
-    for(int i=0; i< N; i++){       
-        qgemm_lut_640_2560(A + i * K / 4, QLUT, Scales, LUT_Scales, C+i*M);
+    for(int j=0; j< M; j++){
+        // Step 1: Build LUT from weight matrix A (first row for testing)
+        printf("\nStep 1: Building LUT table...\n");
         
-        // Check guards after each iteration
-        if ((i + 1) % 100 == 0 || i == N - 1) {
-            check_all_guards();
+        lut_ctor<K>(QLUT + j * K * 16, B, LUT_Scales);
+        printf("LUT construction complete. LUT_Scales = %f\n", *LUT_Scales);
+        check_all_guards();
+        
+        for(int i=0; i< N; i++){       
+            qgemm_lut_640_2560(A + i * K / 4, QLUT + j * K * 16, Scales, LUT_Scales, C+i*M);
+            
+            // Check guards after each iteration
+            if ((i + 1) % 100 == 0 || i == N - 1) {
+                check_all_guards();
+            }
         }
     }
     
