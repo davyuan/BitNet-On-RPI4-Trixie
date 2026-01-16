@@ -11,9 +11,9 @@
 #define TILE_K 32
 #define TILE_N 32
 #define TILE_SIZE 16  // Tile size for blocking
-#define M  640           // Activation rows (B rows)
-#define K  2560        // Shared dimension
-#define N 160         // Weight rows (A rows) = output size
+const int M  = 640;           // Activation rows (B rows)
+const int K  = 2560;        // Shared dimension
+const int N  = 160;         // Weight rows (A rows) = output size
 
 static void * aligned_malloc(size_t size) {
 #if defined(_WIN32)
