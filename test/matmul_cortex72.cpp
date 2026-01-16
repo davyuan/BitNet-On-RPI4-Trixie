@@ -164,7 +164,7 @@ int main(){
     for (int i = 0; i < M * K / 4; i++) {
         uint8_t high = rand() % 9;
         uint8_t low = rand() % 9;
-        A[i] = (high << 4) | low;
+        A[i] = (uint8_t)((high << 4) | low);
 
         //armv8 is little-endian by default
         switch(low) {
