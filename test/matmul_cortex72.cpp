@@ -1,6 +1,6 @@
-#include <stdint.h>
-#include <algorithm>
 #include <cstdlib>
+#include <cstdint>
+#include <algorithm>
 #include <cstring>
 #include <cmath>
 #include <chrono>
@@ -57,7 +57,7 @@ void matmul_int8(int8_t* A, int8_t* B, int32_t* C, int M, int N, int K) {
     }
 }
 
-void main(){
+int main(){
     uint8_t* A = aligned_malloc(M * K /4 * sizeof(uint8_t));
     uint8_t* A_ = aligned_malloc(M * K * sizeof(int8_t));
     int8_t* B = aligned_malloc(N * K * sizeof(int8_t));
