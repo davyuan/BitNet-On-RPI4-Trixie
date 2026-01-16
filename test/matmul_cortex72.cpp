@@ -98,57 +98,6 @@ void matmul_tiled_simd(int8_t* A, int8_t* B, int32_t* C, int M, int N, int K) {
         }
     }
 }
-/*
-void matmul_tiled_simd(int8_t* A, int8_t* B, int32_t* C, int M, int N, int K) {
-    // 1. Parallelize over rows (Each core gets a private slice of M)
-#pragma omp parallel for num_threads(4)
-    for (int i = 0; i < M; i++) {
-        for (int jj = 0; jj < N; jj += TILE_N) {
-            for (int kk = 0; kk < K; kk += TILE_K) {                
-                // Micro-kernel: Process 16 columns of B at once
-                for (int j = jj; j < jj + TILE_N; j += 16) {                    
-                    // We need four 32-bit accumulators to hold 16 results
-                    int32x4_t v_sum0 = vdupq_n_s32(0);
-                    int32x4_t v_sum1 = vdupq_n_s32(0);
-                    int32x4_t v_sum2 = vdupq_n_s32(0);
-                    int32x4_t v_sum3 = vdupq_n_s32(0);
-
-                    // If not the first K-tile, load existing partial sums from C
-                    if (kk != 0) {
-                        v_sum0 = vld1q_s32(&C[i * N + j + 0]);
-                        v_sum1 = vld1q_s32(&C[i * N + j + 4]);
-                        v_sum2 = vld1q_s32(&C[i * N + j + 8]);
-                        v_sum3 = vld1q_s32(&C[i * N + j + 12]);
-                    }
-
-                    for (int k = kk; k < kk + TILE_K; k++) {
-                        // Broadcast one A element (int8) to a register
-                        int8x16_t v_a = vdupq_n_s8(A[i * K + k]);
-                        
-                        // Load 16 elements of B
-                        int8x16_t v_b = vld1q_s8(&B[k * N + j]);
-
-                        // Multiply: int8 * int8 -> int16 (Low and High halves)
-                        int16x8_t v_prod_lo = vmull_s8(vget_low_s8(v_a), vget_low_s8(v_b));
-                        int16x8_t v_prod_hi = vmull_s8(vget_high_s8(v_a), vget_high_s8(v_b));
-
-                        // Accumulate: int16 -> int32
-                        v_sum0 = vaddw_s16(v_sum0, vget_low_s16(v_prod_lo));
-                        v_sum1 = vaddw_s16(v_sum1, vget_high_s16(v_prod_lo));
-                        v_sum2 = vaddw_s16(v_sum2, vget_low_s16(v_prod_hi));
-                        v_sum3 = vaddw_s16(v_sum3, vget_high_s16(v_prod_hi));
-                    }
-
-                    // Store final 16 int32 results back to C
-                    vst1q_s32(&C[i * N + j + 0], v_sum0);
-                    vst1q_s32(&C[i * N + j + 4], v_sum1);
-                    vst1q_s32(&C[i * N + j + 8], v_sum2);
-                    vst1q_s32(&C[i * N + j + 12], v_sum3);
-                }
-            }
-        }
-    }
-}*/
 
 void matmul_naive(int8_t* A, int8_t* B, int32_t* C, int M, int N, int K) {
     for (int i = 0; i < M; i++) {
@@ -195,7 +144,7 @@ void matmul_int8(int8_t* A, int8_t* B, int32_t* C, int M, int N, int K) {
 }
 
 int main(){
-    int8_t* A = (int8_t*)aligned_malloc(M * K * sizeof(int8_t));
+    int8_t* A = (int8_t*)aligned_malloc(M * K / 4 * sizeof(int8_t));
     int8_t* A_ = (int8_t*)aligned_malloc(M * K * sizeof(int8_t));
     int8_t* B = (int8_t*)aligned_malloc(K * N * sizeof(int8_t));
     int32_t* C = (int32_t*)aligned_malloc(M * N * sizeof(int32_t));
@@ -273,7 +222,7 @@ int main(){
     // Verify correctness
     int errors = 0;
     for (int i = 0; i < M * N; i++) {
-        if (C[i] != C_simd[i]) {
+        if (C_[i] != C_simd[i]) {
             errors++;
             if (errors < 10) {
                 printf("Mismatch at index %d: C=%d, C_=%d\n", i, C[i], C_[i]);
