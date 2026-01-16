@@ -157,7 +157,7 @@ int main(){
 
     // Initialize with random values
     printf("Initializing test matrices...\n");
-    for (int i = 0; i < M * K; i++) {
+    for (int i = 0; i < K * N; i++) {
         B[i] = (int8_t)(rand() % 256);
     }
 
@@ -237,7 +237,7 @@ int main(){
 
     // Cleanup
     aligned_free(A);
-    aligned_free(A_);
+    aligned_free(A_);   
     //aligned_free(B);
     //aligned_free(C);
     //aligned_free(C_);
