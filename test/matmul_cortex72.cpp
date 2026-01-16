@@ -78,6 +78,7 @@ void matmul_int8(int8_t* A, int8_t* B, int32_t* C, int M, int N, int K) {
 
 int main(){
     int8_t* A = (int8_t*)aligned_malloc(N * K * sizeof(int8_t));
+    int8_t* A_ = (int8_t*)aligned_malloc(N * K * sizeof(int8_t));
     int8_t* B = (int8_t*)aligned_malloc(M * K * sizeof(int8_t));
     int32_t* C = (int32_t*)aligned_malloc(M * N * sizeof(int32_t));
     int32_t* C_ = (int32_t*)aligned_malloc(M * N * sizeof(int32_t)); // Reference result
