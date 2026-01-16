@@ -210,7 +210,7 @@ int main(){
     // Verify correctness
     int errors = 0;
     for (int i = 0; i < M * N; i++) {
-        if (C[i] != C__[i]) {
+        if (C[i] != C_simd[i]) {
             errors++;
             if (errors < 10) {
                 printf("Mismatch at index %d: C=%d, C_=%d\n", i, C[i], C_[i]);
