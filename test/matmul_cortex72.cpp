@@ -6,6 +6,7 @@
 #include <cmath>
 #include <chrono>
 #include <omp.h>
+#include <arm_neon.h>
 
 #define TILE_K 64
 #define TILE_N 64
@@ -221,7 +222,7 @@ int main(){
     } else {
         printf("Total mismatches: %d\n", errors);
     }
-    
+
     // Cleanup
     aligned_free(A);
     aligned_free(A_);
