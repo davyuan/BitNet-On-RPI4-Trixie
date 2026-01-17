@@ -7,15 +7,15 @@
 #define TILE_K 32
 #define TILE_N 16
 #define TILE_M 4
-#define TILE_SIZE 16
+#define TILE_SIZE 2
 
 const int BM = 160;
 const int BY = 256;
 const int bm = 32;
 const int by = (256/(bm));
-const int M = 32;           // Activation rows (B rows)
-const int K = 32;        // Shared dimension
-const int N = 32;         // Weight rows (A rows) = output size
+const int M = 4;           // Activation rows (B rows)
+const int K = 4;        // Shared dimension
+const int N = 4;         // Weight rows (A rows) = output size
 
 // Repack matrix A according to the tl1 layout pattern
 // BM, BY, bm, by are the tiling parameters
@@ -92,14 +92,15 @@ void matmul_lut(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
     for (int ii = 0; ii < M; ii += TILE_SIZE) {          
         for (int jj = 0; jj < N; jj += TILE_SIZE) {      
             for (int kk = 0; kk < KK; kk += TILE_SIZE) {                
-                for (int i = ii; i < std::min(ii + TILE_SIZE, M); i++) {
-                    for (int j = jj; j < std::min(jj + TILE_SIZE, N); j++) {                        
-                        lut_ctor<32>(QLUT, (float32_t*)(B + j* K), LUT_Scales);    
+                for (int i = ii; i < ii + TILE_SIZE; i++) {
+                    for (int j = jj; j < jj + TILE_SIZE; j++) {                        
+                        lut_ctor<4>(QLUT, (float32_t*)(B + j* K), LUT_Scales);    
                         int32_t local_sum = 0; 
                         
-                        for (int k = kk; k < std::min(kk + TILE_SIZE, KK); k++) {
-                            int8_t high_byte = QLUT[k * 32 + A[i*KK + k]];
-                            uint8_t low_byte = (uint8_t)QLUT[k * 32 + 16 + A[i*KK + k]];
+                        for (int k = kk; k < kk + TILE_SIZE; k++) {
+                            int lut_index = A[i*KK + k];
+                            int8_t high_byte = QLUT[k * 32 + lut_index];
+                            uint8_t low_byte = (uint8_t)QLUT[k * 32 + 16 + lut_index];
                             int16_t combined = ((int16_t)high_byte << 8) | low_byte;
                             local_sum += (int32_t)combined;
                         }
@@ -164,7 +165,7 @@ int main() {
     // Debug: Print sample elements from A matrix for sanity check
     printf("\n=== DEBUG: Sample A matrix elements ===\n");
     printf("A matrix (first 16 bytes, hex representation):\n");
-    for (int i = 0; i < 32; i++) {
+    for (int i = 0; i < 4; i++) {
         uint8_t high = (A[i] >> 4) & 0xF;
         uint8_t low = A[i] & 0xF;
         printf("A[%2d] = 0x%02x (high=%d, low=%d)", i, A[i], high, low);
