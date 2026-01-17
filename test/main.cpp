@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <chrono>
+#include <cmath>
 #include "./bitnet-lut-kernels.h"
 
 #define TILE_K 32
