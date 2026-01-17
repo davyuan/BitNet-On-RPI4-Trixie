@@ -13,9 +13,9 @@ const int BM = 160;
 const int BY = 256;
 const int bm = 32;
 const int by = (256/(bm));
-const int M = 640;           // Activation rows (B rows)
-const int K = 2560;        // Shared dimension
-const int N = 160;         // Weight rows (A rows) = output size
+const int M = 32;           // Activation rows (B rows)
+const int K = 32;        // Shared dimension
+const int N = 32;         // Weight rows (A rows) = output size
 
 // Repack matrix A according to the tl1 layout pattern
 // BM, BY, bm, by are the tiling parameters
@@ -88,13 +88,13 @@ void matmul_lut(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
     *LUT_Scales = 1.0f;
 
     // Partition rows among 4 cores
-    #pragma omp parallel for num_threads(4) 
+    //#pragma omp parallel for num_threads(4) 
     for (int ii = 0; ii < M; ii += TILE_SIZE) {          
         for (int jj = 0; jj < N; jj += TILE_SIZE) {      
             for (int kk = 0; kk < KK; kk += TILE_SIZE) {                
                 for (int i = ii; i < std::min(ii + TILE_SIZE, M); i++) {
                     for (int j = jj; j < std::min(jj + TILE_SIZE, N); j++) {                        
-                        lut_ctor<2560>(QLUT, (float32_t*)(B + j* K), LUT_Scales);    
+                        lut_ctor<32>(QLUT, (float32_t*)(B + j* K), LUT_Scales);    
                         int32_t local_sum = 0; 
                         
                         for (int k = kk; k < std::min(kk + TILE_SIZE, KK); k++) {
@@ -164,20 +164,20 @@ int main() {
     // Debug: Print sample elements from A matrix for sanity check
     printf("\n=== DEBUG: Sample A matrix elements ===\n");
     printf("A matrix (first 16 bytes, hex representation):\n");
-    for (int i = 0; i < 128; i++) {
+    for (int i = 0; i < 32; i++) {
         uint8_t high = (A[i] >> 4) & 0xF;
         uint8_t low = A[i] & 0xF;
         printf("A[%2d] = 0x%02x (high=%d, low=%d)", i, A[i], high, low);
         
         // Show corresponding A_ values
-        printf(" -> A_[%3d..%3d] = [%2d %2d %2d %2d]\n", 
-               i*4, i*4+3, 
-               A_[i*4+0], A_[i*4+1], A_[i*4+2], A_[i*4+3]);
+        printf(" -> A_[%3d..%3d] = [%2d %2d]\n", 
+               i*2, i*2+1, 
+               A_[i*2+0], A_[i*2+1]);
     }
     printf("=== END DEBUG ===\n\n");
     
     printf("Running LUT construction and inference...\n");
-    printf("Matrix dimensions:  A(640x2560), B(160x2560), C(640x160)\n");
+    printf("Matrix dimensions:  A(32x32), B(32x32), C(32x32)\n");
     
     // Debug: Print first 8 B value pairs and corresponding LUT values
     /*printf("\n=== DEBUG: First 8 B pairs and corresponding LUT ===\n");
@@ -210,7 +210,7 @@ int main() {
     printf("=== END DEBUG ===\n\n");*/
 
     // Step 2: Run qGEMM with LUT
-    printf("\nStep 2: Running qGEMM_LUT (640x2560 kernel)\n");
+    printf("\nStep 2: Running qGEMM_LUT (32x32 kernel)\n");
     matmul_lut(A, B_T, C, M, N, K);
     
     printf("Matmul complete.\n");
