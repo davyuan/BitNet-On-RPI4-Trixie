@@ -107,7 +107,7 @@ void matmul_lut(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
                             int16_t combined = ((int16_t)high_byte << 8) | low_byte;
                             
                             // Debug logging for first few iterations
-                            if (debug_count < 10) {
+                            if (debug_count < 32) {
                                 printf("DEBUG [%d]: i=%d, j=%d, k=%d, lut_index=%d, high_byte=%d, low_byte=%u, combined=%d\n",
                                        debug_count, i, j, k, lut_index, (int)high_byte, (unsigned)low_byte, (int)combined);
                                 debug_count++;
