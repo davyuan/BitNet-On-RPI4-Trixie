@@ -134,7 +134,7 @@ void matmul_lut(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
                             }
                             printf("\n");
                         }
-                        
+
                         int32_t local_sum = 0; 
                         
                         for (int k = kk; k < kk + TILE_SIZE; k++) {
@@ -144,14 +144,13 @@ void matmul_lut(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
                             // Combine as unsigned first, then cast to signed int16
                             int16_t combined = (int16_t)(((uint16_t)high_byte << 8) | (uint16_t)low_byte);
                             
-                            // Debug logging for first few iterations
-                            if (debug_count < 32) {
-                                printf("DEBUG [%d]: i=%d, j=%d, k=%d, lut_index=%d, high_byte=%u, low_byte=%u, combined=%d\n",
-                                       debug_count, i, j, k, lut_index, (unsigned)high_byte, (unsigned)low_byte, (int)combined);
-                                debug_count++;
-                            }
-                            
                             local_sum += (int32_t)combined;
+                            // Debug logging for first few iterations
+                            if (debug_count < 64) {
+                                printf("DEBUG [%d]: i=%d, j=%d, k=%d, lut_index=%d, high_byte=%u, low_byte=%u, combined=%d, sum=%d\n",
+                                       debug_count, i, j, k, lut_index, (unsigned)high_byte, (unsigned)low_byte, (int)combined, (int)local_sum);
+                                debug_count++;
+                            }                            
                         }
 
                         // Add to result (C is pre-initialized to 0)
