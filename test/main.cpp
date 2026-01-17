@@ -4,6 +4,11 @@
 #include <cmath>
 #include "./bitnet-lut-kernels.h"
 
+#define TILE_K 32
+#define TILE_N 16
+#define TILE_M 4
+#define TILE_SIZE 16
+
 const int BM = 160;
 const int BY = 256;
 const int bm = 32;
