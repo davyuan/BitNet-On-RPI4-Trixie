@@ -12,9 +12,13 @@
 #define TILE_N 16
 #define TILE_M 4 // Register block height
 #define TILE_SIZE 16  // Tile size for blocking
-const int M  = 640;           // Activation rows (B rows)
-const int K  = 2560;        // Shared dimension
-const int N  = 160;         // Weight rows (A rows) = output size
+#define M  640           // Activation rows (B rows)
+#define K  2560        // Shared dimension
+#define N  160         // Weight rows (A rows) = output size
+#define BM 160
+#define BY 256
+#define bm 32
+#define by (256/(bm))
 
 static void * aligned_malloc(size_t size) {
 #if defined(_WIN32)
@@ -32,6 +36,59 @@ static void aligned_free(void * ptr) {
 #else
     free(ptr);
 #endif
+}
+
+// Repack matrix A according to the tl1 layout pattern
+// BM, BY, bm, by are the tiling parameters
+// Input: weight_in of shape (M, K//2) flattened
+// Output: weight_out of shape (M*K//64, 16) flattened
+void process_tl1(const uint8_t* input_weight, uint8_t* output_weight, 
+                     int M, int K, int BM, int BY, int bm, int by) {
+    // The Python code packs two 4-bit weights into one byte at the end.
+    // The input 'input_weight' is assumed to be M * (K/2) bytes.
+    
+    int out_idx = 0;
+
+    // We follow the hierarchical tiling: BM (Large M block) -> BY (Large K block)
+    for (int i_major = 0; i_major < M; i_major += BM) {
+        for (int j_major = 0; j_major < K; j_major += BY) {
+            
+            // bm (Sub-block M) -> by (Sub-block K)
+            for (int i_minor = 0; i_minor < BM; i_minor += bm) {
+                for (int j_minor = 0; j_minor < BY; j_minor += by) {
+                    
+                    // Hardware Atoms: 16 rows (bm_inner) x 4 columns (by_inner)
+                    for (int i_atom = 0; i_atom < bm; i_atom += 16) {
+                        for (int j_atom = 0; j_atom < by; j_atom += 4) {
+                            
+                            // Inside the 16x4 Atom
+                            for (int r = 0; r < 16; ++r) {
+                                // Python logic: weight = weight_0 << 4 + weight_1
+                                // weight_0 comes from index 0, weight_1 from index 1 of the last dim
+                                // In the K dimension, index 0 and 1 are 2-bits apart in the packed byte.
+                                
+                                int row = i_major + i_minor + i_atom + r;
+                                int col_pair = (j_major + j_minor + j_atom) / 2;
+
+                                // Load the byte containing the 4-bit weights
+                                // In NumPy: weight = weight.reshape(..., 4 // 2, 16)
+                                uint8_t val = input_weight[row * (K / 2) + col_pair];
+                                uint8_t val_next = input_weight[row * (K / 2) + col_pair + 1];
+
+                                // Extract and shift as per the Python bit-packing
+                                // weight_0 = weight[:, :, 0] << 4
+                                // weight_1 = weight[:, :, 1]
+                                uint8_t w0 = (val & 0x0F) << 4;   // Assuming low nibble is weight_0
+                                uint8_t w1 = (val_next & 0x0F);    // Assuming low nibble is weight_1
+                                
+                                output_weight[out_idx++] = w0 | w1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 void matmul_tiled_simd(int8_t* A, int8_t* B, int32_t* C, int M, int N, int K) {
@@ -144,8 +201,9 @@ void matmul_int8(int8_t* A, int8_t* B, int32_t* C, int M, int N, int K) {
 }
 
 int main(){
-    uint8_t* A = (uint8_t*)aligned_malloc(M * K / 4 * sizeof(uint8_t));
+    uint8_t* A = (uint8_t*)aligned_malloc(M * K / 2 * sizeof(uint8_t));
     int8_t* A_ = (int8_t*)aligned_malloc(M * K * sizeof(int8_t));
+    uint8_t* A_packed = (uint8_t*)aligned_malloc(M * K / 4 * sizeof(uint8_t));
     int8_t* B = (int8_t*)aligned_malloc(K * N * sizeof(int8_t));
     int32_t* C = (int32_t*)aligned_malloc(M * N * sizeof(int32_t));
     int32_t* C_ = (int32_t*)aligned_malloc(M * N * sizeof(int32_t)); // Reference result
@@ -161,36 +219,25 @@ int main(){
         B[i] = (int8_t)(rand() % 256);
     }
 
-    for (int i = 0; i < M * K / 4; i++) {
-        uint8_t high = rand() % 9;
-        uint8_t low = rand() % 9;
-        A[i] = (uint8_t)((high << 4) | low);
+    for (int i = 0; i < M * K / 2; i++) {
+        A[i] = rand() % 9;
 
-        //armv8 is little-endian by default
-        switch(low) {
-            case 0: A_[i * 4 + 0] = -1; A_[i * 4 + 1] = -1; break;
-            case 1: A_[i * 4 + 0] = -1; A_[i * 4 + 1] = 0;  break;
-            case 2: A_[i * 4 + 0] = -1; A_[i * 4 + 1] = 1; break;
-            case 3: A_[i * 4 + 0] = 0; A_[i * 4 + 1] = -1; break;
-            case 4: A_[i * 4 + 0] = 0; A_[i * 4 + 1] = 0; break;
-            case 5: A_[i * 4 + 0] = 0; A_[i * 4 + 1] = 1; break;
-            case 6: A_[i * 4 + 0] = 1; A_[i * 4 + 1] = -1; break;
-            case 7: A_[i * 4 + 0] = 1; A_[i * 4 + 1] = 0; break;
-            case 8: A_[i * 4 + 0] = 1; A_[i * 4 + 1] = 1; break;
-        }
-
-        switch(high) {
-            case 0: A_[i * 4 + 2] = -1; A_[i * 4 + 3] = -1; break;
-            case 1: A_[i * 4 + 2] = -1; A_[i * 4 + 3] = 0;  break;
-            case 2: A_[i * 4 + 2] = -1; A_[i * 4 + 3] = 1; break;
-            case 3: A_[i * 4 + 2] = 0; A_[i * 4 + 3] = -1; break;
-            case 4: A_[i * 4 + 2] = 0; A_[i * 4 + 3] = 0; break;
-            case 5: A_[i * 4 + 2] = 0; A_[i * 4 + 3] = 1; break;
-            case 6: A_[i * 4 + 2] = 1; A_[i * 4 + 3] = -1; break;
-            case 7: A_[i * 4 + 2] = 1; A_[i * 4 + 3] = 0; break;
-            case 8: A_[i * 4 + 2] = 1; A_[i * 4 + 3] = 1; break;
+        switch(A[i]) {
+            case 0: A_[i * 2 + 0] = -1; A_[i * 2 + 1] = -1; break;
+            case 1: A_[i * 2 + 0] = -1; A_[i * 2 + 1] = 0;  break;
+            case 2: A_[i * 2 + 0] = -1; A_[i * 2 + 1] = 1; break;
+            case 3: A_[i * 2 + 0] = 0; A_[i * 2 + 1] = -1; break;
+            case 4: A_[i * 2 + 0] = 0; A_[i * 2 + 1] = 0; break;
+            case 5: A_[i * 2 + 0] = 0; A_[i * 2 + 1] = 1; break;
+            case 6: A_[i * 2 + 0] = 1; A_[i * 2 + 1] = -1; break;
+            case 7: A_[i * 2 + 0] = 1; A_[i * 2 + 1] = 0; break;
+            case 8: A_[i * 2 + 0] = 1; A_[i * 2 + 1] = 1; break;
         }        
     }
+
+    // Repack A into tl1 layout
+    printf("Repacking matrix A into tl1 layout...\n");
+    process_tl1(A, A_packed, M, K, BM, BY, bm, by);
 
     printf("Running naive matmul for reference...\n");
     auto naive_start = std::chrono::high_resolution_clock::now();
@@ -238,6 +285,7 @@ int main(){
     // Cleanup
     aligned_free(A);
     aligned_free(A_);   
+    aligned_free(A_packed);
     aligned_free(B);
     aligned_free(C);
     aligned_free(C_);
