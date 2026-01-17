@@ -125,12 +125,12 @@ void matmul_lut(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
                         
                         // Debug: Print QLUT after construction (first iteration only)
                         if (debug_count == 0) {
-                            printf("\n=== DEBUG: QLUT values after construction (K*16=%d bytes) ===\n", K*16);
+                            printf("\n=== DEBUG: QLUT values for %2dth row in B ===\n", j);
                             for (int idx = 0; idx < K * 16; idx++) {
-                                printf("%3d ", (int)QLUT[idx]);
-                                if ((idx + 1) % 16 == 0) {
-                                    printf("\n");
+                                if ((idx) % 16 == 0) {
+                                    printf("\nLUT[%2d]: ", idx/32);
                                 }
+                                printf("%3d ", (int)QLUT[idx]);
                             }
                         }
                         
