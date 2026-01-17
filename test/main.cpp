@@ -159,7 +159,7 @@ int main() {
 
     // Repack A into tl1 layout
     printf("Repacking matrix A into tl1 layout...\n");
-    process_tl1(A, A_packed, M, K, BM, BY, bm, by);
+    //process_tl1(A, A_packed, M, K, BM, BY, bm, by);
     
     // Debug: Print sample elements from A matrix for sanity check
     printf("\n=== DEBUG: Sample A matrix elements ===\n");
