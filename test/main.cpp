@@ -94,7 +94,7 @@ void matmul_lut(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
             for (int kk = 0; kk < KK; kk += TILE_SIZE) {                
                 for (int i = ii; i < std::min(ii + TILE_SIZE, M); i++) {
                     for (int j = jj; j < std::min(jj + TILE_SIZE, N); j++) {                        
-                        lut_ctor<K>(QLUT, (float32_t*)(B + j* K), LUT_Scales);    
+                        lut_ctor<2560>(QLUT, (float32_t*)(B + j* K), LUT_Scales);    
                         int32_t local_sum = 0; 
                         
                         for (int k = kk; k < std::min(kk + TILE_SIZE, KK); k++) {
