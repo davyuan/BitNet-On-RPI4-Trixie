@@ -3,6 +3,7 @@
 #include <cstring>
 #include <chrono>
 #include <cmath>
+#include <omp.h>
 #include "./bitnet-lut-kernels.h"
 
 #define TILE_K 32
@@ -130,7 +131,7 @@ void matmul_lut(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
     int debug_count = 0;*/
 
     // Partition rows among 4 cores
-    //#pragma omp parallel for num_threads(4) 
+    #pragma omp parallel for num_threads(4) 
     for (int ii = 0; ii < M; ii += TILE_SIZE) {          
         for (int jj = 0; jj < N; jj += TILE_SIZE) {      
             for (int kk = 0; kk < KK; kk += TILE_SIZE) {                
