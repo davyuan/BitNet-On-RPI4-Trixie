@@ -4,149 +4,157 @@
 #include <cmath>
 #include "./bitnet-lut-kernels.h"
 
-#define CANARY_VALUE 0xDEADBEEF
-#define CANARY_SIZE 64  // bytes
+const int BM = 160;
+const int BY = 256;
+const int bm = 32;
+const int by = (256/(bm));
+const int M = 640;           // Activation rows (B rows)
+const int K = 2560;        // Shared dimension
+const int N = 160;         // Weight rows (A rows) = output size
 
-struct AllocGuard {
-    const char* name;
-    uint32_t* ptr;
-    size_t size;
-    uint32_t* canary_before;
-    uint32_t* canary_after;
-};
+// Repack matrix A according to the tl1 layout pattern
+// BM, BY, bm, by are the tiling parameters
+// Input: weight_in of shape (M, K//2) flattened
+// Output: weight_out of shape (M*K//64, 16) flattened
+void process_tl1(const uint8_t* input_weight, uint8_t* output_weight, 
+                     int M, int K, int BM, int BY, int bm, int by) {
+    // The Python code packs two 4-bit weights into one byte at the end.
+    // The input 'input_weight' is assumed to be M * (K/2) bytes.
+    
+    int out_idx = 0;
 
-AllocGuard guards[10];
-int guard_count = 0;
+    // We follow the hierarchical tiling: BM (Large M block) -> BY (Large K block)
+    for (int i_major = 0; i_major < M; i_major += BM) {
+        for (int j_major = 0; j_major < K; j_major += BY) {
+            
+            // bm (Sub-block M) -> by (Sub-block K)
+            for (int i_minor = 0; i_minor < BM; i_minor += bm) {
+                for (int j_minor = 0; j_minor < BY; j_minor += by) {
+                    
+                    // Hardware Atoms: 16 rows (bm_inner) x 4 columns (by_inner)
+                    for (int i_atom = 0; i_atom < bm; i_atom += 16) {
+                        for (int j_atom = 0; j_atom < by; j_atom += 4) {
+                            
+                            // Inside the 16x4 Atom
+                            for (int r = 0; r < 16; ++r) {
+                                // Python logic: weight = weight_0 << 4 + weight_1
+                                // weight_0 comes from index 0, weight_1 from index 1 of the last dim
+                                // In the K dimension, index 0 and 1 are 2-bits apart in the packed byte.
+                                
+                                int row = i_major + i_minor + i_atom + r;
+                                int col_pair = (j_major + j_minor + j_atom) / 2;
 
-AllocGuard* create_guard(const char* name, size_t size) {
-    // Allocate: canary_before | data | canary_after
-    size_t total = CANARY_SIZE + size + CANARY_SIZE;
-    uint32_t* ptr = (uint32_t*)aligned_malloc(total);
-    
-    AllocGuard* g = &guards[guard_count++];
-    g->name = name;
-    g->canary_before = ptr;
-    g->ptr = (uint32_t*)((uint8_t*)ptr + CANARY_SIZE);
-    g->canary_after = (uint32_t*)((uint8_t*)g->ptr + size);
-    g->size = size;
-    
-    // Initialize canaries
-    for (int i = 0; i < CANARY_SIZE / 4; i++) {
-        g->canary_before[i] = CANARY_VALUE;
-        g->canary_after[i] = CANARY_VALUE;
-    }
-    
-    printf("Allocated %s: %zu bytes (with guards)\n", name, size);
-    return g;
-}
+                                // Load the byte containing the 4-bit weights
+                                // In NumPy: weight = weight.reshape(..., 4 // 2, 16)
+                                uint8_t val = input_weight[row * (K / 2) + col_pair];
+                                uint8_t val_next = input_weight[row * (K / 2) + col_pair + 1];
 
-bool check_guard(AllocGuard* g) {
-    bool ok = true;
-    
-    // Check before canary
-    for (int i = 0; i < CANARY_SIZE / 4; i++) {
-        if (g->canary_before[i] != CANARY_VALUE) {
-            printf("ERROR: %s BEFORE canary corrupted at offset %d\n", g->name, i * 4);
-            ok = false;
-            break;
+                                // Extract and shift as per the Python bit-packing
+                                // weight_0 = weight[:, :, 0] << 4
+                                // weight_1 = weight[:, :, 1]
+                                uint8_t w0 = (val & 0x0F) << 4;   // Assuming low nibble is weight_0
+                                uint8_t w1 = (val_next & 0x0F);    // Assuming low nibble is weight_1
+                                
+                                output_weight[out_idx++] = w0 | w1;
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
-    
-    // Check after canary
-    for (int i = 0; i < CANARY_SIZE / 4; i++) {
-        if (g->canary_after[i] != CANARY_VALUE) {
-            printf("ERROR: %s AFTER canary corrupted at offset %d\n", g->name, i * 4);
-            ok = false;
-            break;
-        }
-    }
-    
-    if (ok) {
-        printf("✓ %s canaries OK\n", g->name);
-    }
-    return ok;
 }
 
-void check_all_guards() {
-    printf("\n=== Checking all memory guards ===\n");
-    bool all_ok = true;
-    for (int i = 0; i < guard_count; i++) {
-        if (!check_guard(&guards[i])) {
-            all_ok = false;
+// Transpose matrix B from (K x N) to B_T (N x K)
+void transpose_matrix(float32_t* B, float32_t* B_T, int N, int K) {
+    for (int i = 0; i < K; i++) {
+        for (int j = 0; j < N; j++) {
+            B_T[j * N + i] = B[i * K + j];
         }
     }
-    if (all_ok) {
-        printf("All guards OK!\n");
-    } else {
-        printf("MEMORY OVERFLOW DETECTED!\n");
-    }
-    printf("===================================\n\n");
 }
 
-int main() {
-    const int M = 160;           // Activation rows (B rows)
-    const int K = 2560;        // Shared dimension
-    const int N = 640;         // Weight rows (A rows) = output size
-    
-    printf("Allocating matrices with overflow guards...\n");
-    
-    // Allocate matrices with guards
-    AllocGuard* g_B = create_guard("B", M * K * sizeof(float32_t));
-    AllocGuard* g_A = create_guard("A", N * K / 4 * sizeof(uint8_t));
-    AllocGuard* g_A_ = create_guard("A_", N * K * sizeof(int8_t));
-    AllocGuard* g_C = create_guard("C", M * N * sizeof(int32_t));
-    AllocGuard* g_QLUT = create_guard("QLUT", M * K * 16 * sizeof(int8_t));
-    
-    // Cast to actual types
-    float32_t* B = (float32_t*)g_B->ptr;
-    uint8_t* A = (uint8_t*)g_A->ptr;
-    int8_t* A_ = (int8_t*)g_A_->ptr;
-    int32_t* C = (int32_t*)g_C->ptr;
-    int8_t* QLUT = (int8_t*)g_QLUT->ptr;
-    
+void matmul_lut(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
+    int KK = K / 2;
+    int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
     float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
     float32_t* Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
+    *Scales = 1.0f;
+    *LUT_Scales = 1.0f;
+
+    // Partition rows among 4 cores
+    #pragma omp parallel for num_threads(4) 
+    for (int ii = 0; ii < M; ii += TILE_SIZE) {          
+        for (int jj = 0; jj < N; jj += TILE_SIZE) {      
+            for (int kk = 0; kk < KK; kk += TILE_SIZE) {                
+                for (int i = ii; i < std::min(ii + TILE_SIZE, M); i++) {
+                    for (int j = jj; j < std::min(jj + TILE_SIZE, N); j++) {                        
+                        lut_ctor<K>(QLUT, B+ j* K, LUT_Scales);    
+                        int32_t local_sum = 0; 
+                        
+                        for (int k = kk; k < std::min(kk + TILE_SIZE, KK); k++) {
+                            int8_t high_byte = QLUT[k * 32 + A[i*KK + k]];
+                            uint8_t low_byte = (uint8_t)QLUT[k * 32 + 16 + A[i*KK + k]];
+                            int16_t combined = ((int16_t)high_byte << 8) | low_byte;
+                            local_sum += (int32_t)combined;
+                        }
+
+                        // Add to result (C is pre-initialized to 0)
+                        C[i*N + j] += local_sum;
+                    }
+                }
+            }
+        }
+    }
+
+    aligned_free(QLUT);
+    aligned_free(LUT_Scales);
+    aligned_free(Scales);
+}
+
+int main() {    
+    printf("Allocating matrices with overflow guards...\n");
+    
+    // Allocate matrices
+    float32_t* B = (float32_t*)aligned_malloc(N * K * sizeof(float32_t));
+    float32_t* B_T = (float32_t*)aligned_malloc(N * K * sizeof(float32_t));
+    uint8_t* A = (uint8_t*)aligned_malloc(M * K / 2 * sizeof(uint8_t));
+    int8_t* A_ = (int8_t*)aligned_malloc(M * K * sizeof(int8_t));
+    uint8_t* A_packed = (uint8_t*)aligned_malloc(M * K / 4 * sizeof(uint8_t));
+    int32_t* C = (int32_t*)aligned_malloc(M * N * sizeof(int32_t));
+    float32_t* C_ = (float32_t*)aligned_malloc(M * N * sizeof(float32_t));
     
     // Allocate reference output matrix C_
-    float32_t* C_ = (float32_t*)aligned_malloc(M * N * sizeof(float32_t));
     memset(C_, 0, M * N * sizeof(float32_t));
-    
+    memset(C, 0, M * N * sizeof(int32_t));
+
     // Initialize with random values
     printf("Initializing test matrices...\n");
-    for (int i = 0; i < M * K; i++) {
+    for (int i = 0; i < N * K; i++) {
         B[i] = (float32_t)(rand() % 256);
     }
 
-    for (int i = 0; i < N * K / 4; i++) {
-        uint8_t high = rand() % 9;
-        uint8_t low = rand() % 9;
-        A[i] = (high << 4) | low;
+    transpose_matrix(B, B_T, N, K);
 
-        //armv8 is little-endian by default
-        switch(low) {
-            case 0: A_[i * 4 + 0] = -1; A_[i * 4 + 1] = -1; break;
-            case 1: A_[i * 4 + 0] = -1; A_[i * 4 + 1] = 0;  break;
-            case 2: A_[i * 4 + 0] = -1; A_[i * 4 + 1] = 1; break;
-            case 3: A_[i * 4 + 0] = 0; A_[i * 4 + 1] = -1; break;
-            case 4: A_[i * 4 + 0] = 0; A_[i * 4 + 1] = 0; break;
-            case 5: A_[i * 4 + 0] = 0; A_[i * 4 + 1] = 1; break;
-            case 6: A_[i * 4 + 0] = 1; A_[i * 4 + 1] = -1; break;
-            case 7: A_[i * 4 + 0] = 1; A_[i * 4 + 1] = 0; break;
-            case 8: A_[i * 4 + 0] = 1; A_[i * 4 + 1] = 1; break;
-        }
+    for (int i = 0; i < M * K / 2; i++) {
+        A[i] = rand() % 9;
 
-        switch(high) {
-            case 0: A_[i * 4 + 2] = -1; A_[i * 4 + 3] = -1; break;
-            case 1: A_[i * 4 + 2] = -1; A_[i * 4 + 3] = 0;  break;
-            case 2: A_[i * 4 + 2] = -1; A_[i * 4 + 3] = 1; break;
-            case 3: A_[i * 4 + 2] = 0; A_[i * 4 + 3] = -1; break;
-            case 4: A_[i * 4 + 2] = 0; A_[i * 4 + 3] = 0; break;
-            case 5: A_[i * 4 + 2] = 0; A_[i * 4 + 3] = 1; break;
-            case 6: A_[i * 4 + 2] = 1; A_[i * 4 + 3] = -1; break;
-            case 7: A_[i * 4 + 2] = 1; A_[i * 4 + 3] = 0; break;
-            case 8: A_[i * 4 + 2] = 1; A_[i * 4 + 3] = 1; break;
+        switch(A[i]) {
+            case 0: A_[i * 2 + 0] = -1; A_[i * 2 + 1] = -1; break;
+            case 1: A_[i * 2 + 0] = -1; A_[i * 2 + 1] = 0;  break;
+            case 2: A_[i * 2 + 0] = -1; A_[i * 2 + 1] = 1; break;
+            case 3: A_[i * 2 + 0] = 0; A_[i * 2 + 1] = -1; break;
+            case 4: A_[i * 2 + 0] = 0; A_[i * 2 + 1] = 0; break;
+            case 5: A_[i * 2 + 0] = 0; A_[i * 2 + 1] = 1; break;
+            case 6: A_[i * 2 + 0] = 1; A_[i * 2 + 1] = -1; break;
+            case 7: A_[i * 2 + 0] = 1; A_[i * 2 + 1] = 0; break;
+            case 8: A_[i * 2 + 0] = 1; A_[i * 2 + 1] = 1; break;
         }        
     }
+
+    // Repack A into tl1 layout
+    printf("Repacking matrix A into tl1 layout...\n");
+    process_tl1(A, A_packed, M, K, BM, BY, bm, by);
     
     // Set scales to reasonable values
     *LUT_Scales = 1.0f;
@@ -168,7 +176,7 @@ int main() {
     printf("=== END DEBUG ===\n\n");
     
     printf("Running LUT construction and inference...\n");
-    printf("Matrix dimensions: B(160x2560), A(640x2560), C(640x160)\n");
+    printf("Matrix dimensions:  A(640x2560), B(160x2560), C(640x160)\n");
     
     // Debug: Print first 8 B value pairs and corresponding LUT values
     /*printf("\n=== DEBUG: First 8 B pairs and corresponding LUT ===\n");
@@ -202,26 +210,9 @@ int main() {
 
     // Step 2: Run qGEMM with LUT
     printf("\nStep 2: Running qGEMM_LUT (640x2560 kernel)\n");
-    for(int j=0; j< M; j++){
-        // Step 1: Build LUT from weight matrix A (first row for testing)
-        printf("\nStep 1: Building LUT table...\n");
-        
-        lut_ctor<K>(QLUT + j * K * 16, B, LUT_Scales);
-        printf("LUT construction complete. LUT_Scales = %f\n", *LUT_Scales);
-        check_all_guards();
-        
-        for(int i=0; i< N; i++){       
-            qgemm_lut_640_2560(A + i * K / 4, QLUT + j * K * 16, Scales, LUT_Scales, C+i*M);
-            
-            // Check guards after each iteration
-            if ((i + 1) % 100 == 0 || i == N - 1) {
-                check_all_guards();
-            }
-        }
-    }
+    matmul_lut(A, (int8_t*)B_T, C, M, N, K);
     
     printf("Matmul complete.\n");
-    check_all_guards();
     
     // Step 3: Compute reference result using normal matmul (A_ @ B.T -> C_)
     printf("\nStep 3: Computing reference matmul with A_ and B...\n");
@@ -261,11 +252,13 @@ int main() {
     aligned_free(LUT_Scales);
     aligned_free(Scales);
     aligned_free(C_);
-    aligned_free((void*)g_B->canary_before);
-    aligned_free((void*)g_A->canary_before);
-    aligned_free((void*)g_A_->canary_before);
-    aligned_free((void*)g_C->canary_before);
-    aligned_free((void*)g_QLUT->canary_before);
+    aligned_free(B);
+    aligned_free(A);
+    aligned_free(A_);
+    aligned_free(C);
+    aligned_free(QLUT);
+    aligned_free(A_packed);
+    aligned_free(B_T);
     
     printf("\nTest complete.\n");
     return 0;

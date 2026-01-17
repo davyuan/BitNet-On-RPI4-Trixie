@@ -15,10 +15,6 @@
 const int M  = 640;
 const int K  = 2560;
 const int N  = 160;
-const int BM = 160;
-const int BY = 256;
-const int bm = 32;
-const int by = (256/(bm));
 
 static void * aligned_malloc(size_t size) {
 #if defined(_WIN32)
