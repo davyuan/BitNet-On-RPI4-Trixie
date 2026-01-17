@@ -87,6 +87,9 @@ void matmul_lut(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
     *Scales = 1.0f;
     *LUT_Scales = 1.0f;
 
+    // Debug counter for first few iterations
+    int debug_count = 0;
+
     // Partition rows among 4 cores
     //#pragma omp parallel for num_threads(4) 
     for (int ii = 0; ii < M; ii += TILE_SIZE) {          
@@ -102,6 +105,14 @@ void matmul_lut(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
                             int8_t high_byte = QLUT[k * 32 + lut_index];
                             uint8_t low_byte = (uint8_t)QLUT[k * 32 + 16 + lut_index];
                             int16_t combined = ((int16_t)high_byte << 8) | low_byte;
+                            
+                            // Debug logging for first few iterations
+                            if (debug_count < 10) {
+                                printf("DEBUG [%d]: i=%d, j=%d, k=%d, lut_index=%d, high_byte=%d, low_byte=%u, combined=%d\n",
+                                       debug_count, i, j, k, lut_index, (int)high_byte, (unsigned)low_byte, (int)combined);
+                                debug_count++;
+                            }
+                            
                             local_sum += (int32_t)combined;
                         }
 
