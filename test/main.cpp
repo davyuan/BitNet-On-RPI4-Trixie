@@ -133,6 +133,7 @@ void matmul_lut(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
                                 printf("%4d ", (int)QLUT[idx]);
                             }
                             printf("\n");
+                        }
                         
                         int32_t local_sum = 0; 
                         
