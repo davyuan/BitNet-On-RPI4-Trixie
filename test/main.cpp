@@ -78,6 +78,19 @@ void transpose_matrix(float32_t* B, float32_t* B_T, int N, int K) {
         }
     }
 }
+
+void matmul_naive(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
+    for (int i = 0; i < M; i++) {
+        for (int j = 0; j < N; j++) {
+            int32_t sum = 0;
+            for (int k = 0; k < K; k++) {
+                sum += (int32_t)A[i*K + k] * (int32_t)B[k*N + j];
+            }
+            C[i*N + j] = sum;
+        }
+    }
+}
+
 /* A(MxK/2), B(NxK)
    QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
         each K represents 2 activations in B. 
@@ -176,10 +189,10 @@ int main() {
     int8_t* A_ = (int8_t*)aligned_malloc(M * K * sizeof(int8_t));
     uint8_t* A_packed = (uint8_t*)aligned_malloc(M * K / 4 * sizeof(uint8_t));
     int32_t* C = (int32_t*)aligned_malloc(M * N * sizeof(int32_t));
-    float32_t* C_ = (float32_t*)aligned_malloc(M * N * sizeof(float32_t));
+    int32_t* C_ = (int32_t*)aligned_malloc(M * N * sizeof(int32_t));
     
     // Allocate reference output matrix C_
-    memset(C_, 0, M * N * sizeof(float32_t));
+    memset(C_, 0, M * N * sizeof(int32_t));
     memset(C, 0, M * N * sizeof(int32_t));
 
     // Initialize with random values
@@ -227,36 +240,6 @@ int main() {
     
     printf("Running LUT construction and inference...\n");
     printf("Matrix dimensions:  A(32x32), B(32x32), C(32x32)\n");
-    
-    // Debug: Print first 8 B value pairs and corresponding LUT values
-    /*printf("\n=== DEBUG: First 8 B pairs and corresponding LUT ===\n");
-    for (int idx = 0; idx < 8; idx++) {
-        printf("\nB pair %d: B[%d]=%.1f, B[%d]=%.1f\n", 
-               idx, idx*2, B[idx*2], idx*2+1, B[idx*2+1]);
-        
-        // Print corresponding LUT values (32 bytes per index)
-        // First 16 bytes are high bytes, second 16 are low bytes
-        printf("  LUT[%d] - high bytes:\n", idx);
-        int8_t* lut_ptr = QLUT + idx * 32;
-        for (int i = 0; i < 16; i++) {
-            printf("%3d ", lut_ptr[i]);
-        }
-        printf("\n");
-        
-        printf("  LUT[%d] - low bytes:\n", idx);
-        for (int i = 0; i < 16; i++) {
-            printf("%3d ", lut_ptr[16 + i]);
-        }
-        printf("\n");
-        
-        printf("  LUT[%d] - reconstructed int16 values:\n", idx);
-        for (int i = 0; i < 16; i++) {
-            int16_t val = ((int16_t)lut_ptr[i] << 8) | (lut_ptr[16 + i] & 0xFF);
-            printf("%6d ", val);
-        }
-        printf("\n");
-    }
-    printf("=== END DEBUG ===\n\n");*/
 
     // Step 2: Run qGEMM with LUT
     printf("\nStep 2: Running qGEMM_LUT (32x32 kernel)\n");
@@ -267,15 +250,7 @@ int main() {
     // Step 3: Compute reference result using normal matmul (A_ @ B.T -> C_)
     printf("\nStep 3: Computing reference matmul with A_ and B...\n");
     // C_[m,n] = sum_k A_[n,k] * B[m,k]
-    for (int m = 0; m < M; m++) {
-        for (int n = 0; n < N; n++) {
-            float32_t sum = 0.0f;
-            for (int k = 0; k < K; k++) {
-                sum += (float32_t)A_[n * K + k] * B[m * K + k];
-            }
-            C_[m * N + n] = sum;
-        }
-    }
+    matmul_naive(A_, B, (int32_t*)C_, M, N, K);
     printf("Reference matmul complete.\n");
     
     // Step 4: Compare results
