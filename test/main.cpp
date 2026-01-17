@@ -132,7 +132,7 @@ void matmul_lut(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
                                 }
                                 printf("%4d ", (int)QLUT[idx]);
                             }
-                        }
+                            printf("\n");
                         
                         int32_t local_sum = 0; 
                         
@@ -145,7 +145,7 @@ void matmul_lut(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
                             
                             // Debug logging for first few iterations
                             if (debug_count < 32) {
-                                printf("\nDEBUG [%d]: i=%d, j=%d, k=%d, lut_index=%d, high_byte=%u, low_byte=%u, combined=%d\n",
+                                printf("DEBUG [%d]: i=%d, j=%d, k=%d, lut_index=%d, high_byte=%u, low_byte=%u, combined=%d\n",
                                        debug_count, i, j, k, lut_index, (unsigned)high_byte, (unsigned)low_byte, (int)combined);
                                 debug_count++;
                             }
