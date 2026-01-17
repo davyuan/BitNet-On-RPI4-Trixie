@@ -1,21 +1,21 @@
 #define GGML_BITNET_ARM_TL1 ON
 #include <cstdlib>
 #include <cstring>
-#include <cmath>
+#include <chrono>
 #include "./bitnet-lut-kernels.h"
 
 #define TILE_K 32
 #define TILE_N 16
 #define TILE_M 4
-#define TILE_SIZE 2
+#define TILE_SIZE 4
 
 const int BM = 160;
 const int BY = 256;
 const int bm = 32;
 const int by = (256/(bm));
-const int M = 16;           // Activation rows (B rows)
-const int K = 16;        // Shared dimension
-const int N = 16;         // Weight rows (A rows) = output size
+const int M = 64;           // Activation rows (B rows)
+const int K = 64;        // Shared dimension
+const int N = 64;         // Weight rows (A rows) = output size
 
 // Repack matrix A according to the tl1 layout pattern
 // BM, BY, bm, by are the tiling parameters
@@ -105,7 +105,7 @@ void matmul_lut(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
     *LUT_Scales = 1.0f;
 
     // Debug: Print full A matrix
-    printf("\n=== DEBUG: Full A matrix (M=%d, KK=%d) ===\n", M, KK);
+    /*printf("\n=== DEBUG: Full A matrix (M=%d, KK=%d) ===\n", M, KK);
     for (int i = 0; i < M; i++) {
         printf("A[%2d]: ", i);
         for (int k = 0; k < KK; k++) {
@@ -125,7 +125,7 @@ void matmul_lut(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
     }
 
     // Debug counter for first few iterations
-    int debug_count = 0;
+    int debug_count = 0;*/
 
     // Partition rows among 4 cores
     //#pragma omp parallel for num_threads(4) 
@@ -137,7 +137,7 @@ void matmul_lut(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
                         lut_ctor<16>(QLUT, (float32_t*)(B + j* K), LUT_Scales);    
                         
                         // Debug: Print QLUT after construction (first iteration only)
-                        if (debug_count == 0) {
+                        /*if (debug_count == 0) {
                             printf("\n=== DEBUG: QLUT values for %2dth row in B ===\n", j);
                             for (int idx = 0; idx < K * 16; idx++) {
                                 if ((idx) % 16 == 0) {
@@ -146,7 +146,7 @@ void matmul_lut(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
                                 printf("%4d ", (int)QLUT[idx]);
                             }
                             printf("\n");
-                        }
+                        }*/
 
                         int32_t local_sum = 0; 
                         
@@ -158,12 +158,11 @@ void matmul_lut(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
                             int16_t combined = (int16_t)(((uint16_t)high_byte << 8) | (uint16_t)low_byte);
                             
                             local_sum += (int32_t)combined;
-                            // Debug logging for first few iterations
-                            if (debug_count < 64) {
+                            /*if (debug_count < 64) {
                                 printf("DEBUG [%d]: i=%d, j=%d, k=%d, lut_index=%d, high_byte=%u, low_byte=%u, combined=%d, sum=%d\n",
                                        debug_count, i, j, k, lut_index, (unsigned)high_byte, (unsigned)low_byte, (int)combined, (int)local_sum);
                                 debug_count++;
-                            }                            
+                            }*/                            
                         }
 
                         // Add to result (C is pre-initialized to 0)
@@ -180,7 +179,7 @@ void matmul_lut(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
 }
 
 int main() {    
-    printf("Allocating matrices with overflow guards...\n");
+    printf("Allocating matrices...\n");
     
     // Allocate matrices
     float32_t* B = (float32_t*)aligned_malloc(N * K * sizeof(float32_t));
@@ -223,35 +222,34 @@ int main() {
     printf("Repacking matrix A into tl1 layout...\n");
     //process_tl1(A, A_packed, M, K, BM, BY, bm, by);
     
-    // Debug: Print sample elements from A matrix for sanity check
-    printf("\n=== DEBUG: Sample A matrix elements ===\n");
-    printf("A matrix (first 16 bytes, hex representation):\n");
-    for (int i = 0; i < 4; i++) {
-        uint8_t high = (A[i] >> 4) & 0xF;
-        uint8_t low = A[i] & 0xF;
-        printf("A[%2d] = 0x%02x (high=%d, low=%d)", i, A[i], high, low);
-        
-        // Show corresponding A_ values
-        printf(" -> A_[%3d..%3d] = [%2d %2d]\n", 
-               i*2, i*2+1, 
-               A_[i*2+0], A_[i*2+1]);
-    }
-    printf("=== END DEBUG ===\n\n");
-    
     printf("Running LUT construction and inference...\n");
     printf("Matrix dimensions:  A(32x32), B(32x32), C(32x32)\n");
 
     // Step 2: Run qGEMM with LUT
     printf("\nStep 2: Running qGEMM_LUT (32x32 kernel)\n");
+    auto lut_start = std::chrono::high_resolution_clock::now();
     matmul_lut(A, B_T, C, M, N, K);
+    auto lut_end = std::chrono::high_resolution_clock::now();
+    auto lut_duration = std::chrono::duration_cast<std::chrono::milliseconds>(lut_end - lut_start);
     
-    printf("Matmul complete.\n");
+    printf("Matmul complete. Time: %lld ms\n", lut_duration.count());
     
     // Step 3: Compute reference result using normal matmul (A_ @ B.T -> C_)
     printf("\nStep 3: Computing reference matmul with A_ and B...\n");
     // C_[m,n] = sum_k A_[n,k] * B[m,k]
+    auto naive_start = std::chrono::high_resolution_clock::now();
     matmul_naive(A_, B, (int32_t*)C_, M, N, K);
-    printf("Reference matmul complete.\n");
+    auto naive_end = std::chrono::high_resolution_clock::now();
+    auto naive_duration = std::chrono::duration_cast<std::chrono::milliseconds>(naive_end - naive_start);
+    
+    printf("Reference matmul complete. Time: %lld ms\n", naive_duration.count());
+    
+    // Print performance comparison
+    double speedup = (double)naive_duration.count() / (double)lut_duration.count();
+    printf("\n=== PERFORMANCE COMPARISON ===\n");
+    printf("Naive matmul: %lld ms\n", naive_duration.count());
+    printf("LUT matmul:   %lld ms\n", lut_duration.count());
+    printf("Speedup: %.2fx\n\n", speedup);
     
     // Step 4: Compare results
     printf("\nStep 4: Comparing kernel output (C) with reference (C_)...\n");
