@@ -74,7 +74,7 @@ void process_tl1(const uint8_t* input_weight, uint8_t* output_weight,
 void transpose_matrix(float32_t* B, float32_t* B_T, int N, int K) {
     for (int i = 0; i < K; i++) {
         for (int j = 0; j < N; j++) {
-            B_T[j * N + i] = B[i * K + j];
+            B_T[j * K + i] = B[i * N + j];
         }
     }
 }
