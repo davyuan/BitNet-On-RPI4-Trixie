@@ -12,13 +12,13 @@
 #define TILE_N 16
 #define TILE_M 4
 #define TILE_SIZE 16
-#define M  640
-#define K  2560
-#define N  160
-#define BM 160
-#define BY 256
-#define bm 32
-#define by (256/(bm))
+const int M  = 640;
+const int K  = 2560;
+const int N  = 160;
+const int BM = 160;
+const int BY = 256;
+const int bm = 32;
+const int by = (256/(bm));
 
 static void * aligned_malloc(size_t size) {
 #if defined(_WIN32)
