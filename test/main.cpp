@@ -161,10 +161,6 @@ int main() {
     printf("Repacking matrix A into tl1 layout...\n");
     process_tl1(A, A_packed, M, K, BM, BY, bm, by);
     
-    // Set scales to reasonable values
-    *LUT_Scales = 1.0f;
-    *Scales = 1.0f;
-    
     // Debug: Print sample elements from A matrix for sanity check
     printf("\n=== DEBUG: Sample A matrix elements ===\n");
     printf("A matrix (first 16 bytes, hex representation):\n");
@@ -254,14 +250,11 @@ int main() {
            max_error, error_count, M * N);
     
     // Cleanup
-    aligned_free(LUT_Scales);
-    aligned_free(Scales);
     aligned_free(C_);
     aligned_free(B);
     aligned_free(A);
     aligned_free(A_);
     aligned_free(C);
-    aligned_free(QLUT);
     aligned_free(A_packed);
     aligned_free(B_T);
     
