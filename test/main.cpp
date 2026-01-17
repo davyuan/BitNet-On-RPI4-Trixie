@@ -15,7 +15,7 @@ const int BY = 256;
 const int bm = 32;
 const int by = (256/(bm));
 const int M =16;           // Activation rows (B rows)
-const int K = 16;        // Shared dimension
+const int K = 32;        // Shared dimension
 const int N = 16;         // Weight rows (A rows) = output size
 
 // Repack matrix A according to the tl1 layout pattern
