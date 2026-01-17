@@ -10,11 +10,11 @@
 
 #define TILE_K 32
 #define TILE_N 16
-#define TILE_M 4 // Register block height
-#define TILE_SIZE 16  // Tile size for blocking
-#define M  640           // Activation rows (B rows)
-#define K  2560        // Shared dimension
-#define N  160         // Weight rows (A rows) = output size
+#define TILE_M 4
+#define TILE_SIZE 16
+#define M  640
+#define K  2560
+#define N  160
 #define BM 160
 #define BY 256
 #define bm 32
