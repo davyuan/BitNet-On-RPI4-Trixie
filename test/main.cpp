@@ -9,6 +9,7 @@
 #define TILE_N 16
 #define TILE_M 4
 #define TILE_SIZE 2
+#define K_DIM 32
 
 const int BM = 160;
 const int BY = 256;
@@ -135,7 +136,7 @@ void matmul_lut(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
             for (int kk = 0; kk < KK; kk += TILE_SIZE) {                
                 for (int i = ii; i < ii + TILE_SIZE; i++) {
                     for (int j = jj; j < jj + TILE_SIZE; j++) {                        
-                        lut_ctor<16>(QLUT, (float32_t*)(B + j* K), LUT_Scales);    
+                        lut_ctor<K_DIM>(QLUT, (float32_t*)(B + j* K), LUT_Scales);    
                         
                         // Debug: Print QLUT after construction (first iteration only)
                         /*if (debug_count == 0) {
