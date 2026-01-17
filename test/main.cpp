@@ -78,7 +78,11 @@ void transpose_matrix(float32_t* B, float32_t* B_T, int N, int K) {
         }
     }
 }
-
+/* A(MxK/2), B(NxK)
+   QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
+        each K represents 2 activations in B. 
+   C(MxN)   
+*/
 void matmul_lut(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
     int KK = K / 2;
     int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
@@ -86,6 +90,26 @@ void matmul_lut(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
     float32_t* Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
     *Scales = 1.0f;
     *LUT_Scales = 1.0f;
+
+    // Debug: Print full A matrix
+    printf("\n=== DEBUG: Full A matrix (M=%d, KK=%d) ===\n", M, KK);
+    for (int i = 0; i < M; i++) {
+        printf("A[%2d]: ", i);
+        for (int k = 0; k < KK; k++) {
+            printf("%2d ", (int)A[i*KK + k]);
+        }
+        printf("\n");
+    }
+
+    // Debug: Print full B matrix (first row only for sanity)
+    printf("\n=== DEBUG: Full B matrix (N=%d, K=%d) ===\n", N, K);
+    for (int i = 0; i < N; i++) {
+        printf("B[%2d]: ", i);
+        for (int k = 0; k < K; k++) {
+            printf("%.1f ", B[i*K + k]);
+        }
+        printf("\n");
+    }
 
     // Debug counter for first few iterations
     int debug_count = 0;
@@ -98,6 +122,16 @@ void matmul_lut(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
                 for (int i = ii; i < ii + TILE_SIZE; i++) {
                     for (int j = jj; j < jj + TILE_SIZE; j++) {                        
                         lut_ctor<16>(QLUT, (float32_t*)(B + j* K), LUT_Scales);    
+                        
+                        // Debug: Print QLUT after construction (first iteration only)
+                        if (debug_count == 0) {
+                            printf("\n=== DEBUG: QLUT values after construction ===\n");
+                            for (int idx = 0; idx < 32 && idx < K * 16; idx += 2) {
+                                printf("QLUT[%d] (high) = %d, QLUT[%d] (low) = %d\n", 
+                                       idx, (int)QLUT[idx], idx+16, (int)QLUT[idx+16]);
+                            }
+                        }
+                        
                         int32_t local_sum = 0; 
                         
                         for (int k = kk; k < kk + TILE_SIZE; k++) {
