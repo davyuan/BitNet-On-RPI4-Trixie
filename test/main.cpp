@@ -8,15 +8,15 @@
 #define TILE_K 32
 #define TILE_N 16
 #define TILE_M 4
-#define TILE_SIZE 4
+#define TILE_SIZE 2
 
 const int BM = 160;
 const int BY = 256;
 const int bm = 32;
 const int by = (256/(bm));
-const int M = 64;           // Activation rows (B rows)
-const int K = 64;        // Shared dimension
-const int N = 64;         // Weight rows (A rows) = output size
+const int M = 32;           // Activation rows (B rows)
+const int K = 32;        // Shared dimension
+const int N = 32;         // Weight rows (A rows) = output size
 
 // Repack matrix A according to the tl1 layout pattern
 // BM, BY, bm, by are the tiling parameters
