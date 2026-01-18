@@ -12,10 +12,10 @@
 #define TILE_SIZE 2
 #define K_DIM 64
 
-const int BM = 160;
-const int BY = 256;
-const int bm = 32;
-const int by = (256/(bm));
+const int BM = 32;
+const int BY = 32;
+//const int bm = 32;
+//const int by = (256/(bm));
 const int M =64;           // Activation rows (B rows)
 const int K = 64;        // Shared dimension
 const int N = 64;         // Weight rows (A rows) = output size
@@ -97,9 +97,10 @@ void matmul_naive(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
 /* A(MxK/2), B(NxK)
    QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
         each K represents 2 activations in B. 
-   C(MxN)   
+   C(MxN)
+   This version natively implements the LUT-based matmul without SIMD optimizations.   
 */
-void matmul_lut(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
+void matmul_lut_naive(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
     int KK = K / 2;
     int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
     float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
@@ -181,6 +182,52 @@ void matmul_lut(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
     aligned_free(Scales);
 }
 
+/* A(MxK/2), B(NxK)
+   QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
+        each K represents 2 activations in B. 
+   C(MxN)
+   This version doesn't use SIMD optimizations either, but focus on one LUT table at once to avoid
+   overhead of reconstructing LUTs in the same tile. 
+*/
+void matmul_lut_naive2(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
+    int KK = K / 2;
+    int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
+    float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
+    float32_t* Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
+    *Scales = 1.0f;
+    *LUT_Scales = 1.0f;
+
+    // Partition rows among 4 cores
+    #pragma omp parallel for num_threads(4) 
+    for (int j = 0; j < N; j++) {                        
+        lut_ctor<K_DIM>(QLUT, (float32_t*)(B + j* K), LUT_Scales);    
+        for (int ii = 0; ii < M; ii += BM) {          
+            for (int kk = 0; kk < KK; kk += BK) {                
+                for (int i = ii; i < ii + BM; i++) {
+                    int32_t local_sum = 0; 
+                    
+                    for (int k = kk; k < kk + TILE_SIZE; k++) {
+                        int lut_index = A[i*KK + k];
+                        uint8_t high_byte = (uint8_t)QLUT[k * 32 + lut_index];
+                        uint8_t low_byte = (uint8_t)QLUT[k * 32 + 16 + lut_index];
+                        // Combine as unsigned first, then cast to signed int16
+                        int16_t combined = (int16_t)(((uint16_t)high_byte << 8) | (uint16_t)low_byte);
+                        
+                        local_sum += (int32_t)combined;                          
+                    }
+
+                    // Add to result (C is pre-initialized to 0)
+                    C[i*N + j] += local_sum;
+                }
+            }
+        }
+    }
+
+    aligned_free(QLUT);
+    aligned_free(LUT_Scales);
+    aligned_free(Scales);
+}
+
 int main() {    
     printf("Allocating matrices...\n");
     
@@ -231,7 +278,7 @@ int main() {
     // Step 2: Run qGEMM with LUT
     printf("\nStep 2: Running qGEMM_LUT (32x32 kernel)\n");
     auto lut_start = std::chrono::high_resolution_clock::now();
-    matmul_lut(A, B_T, C, M, N, K);
+    matmul_lut_naive2(A, B_T, C, M, N, K);
     auto lut_end = std::chrono::high_resolution_clock::now();
     auto lut_duration = std::chrono::duration_cast<std::chrono::milliseconds>(lut_end - lut_start);
     
