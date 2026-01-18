@@ -275,7 +275,7 @@ void matmul_lut_simd(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
                     // one weight pair has 32 LUT entries (16 high, 16 low), and one byte in 'a' has 2 weight pairs.
                     // in every k iteration, we process 16 bytes from 'a' (32 weight pairs).
                     for (int k = kk; k < kk + BK; k+= 32) {
-                        uint8x16_t vec_a0 = vld1q_u8(A + i * KK + k * 32);
+                        uint8x16_t vec_a0 = vld1q_u8((uint8*)A + i * KK + k * 32);
                         
                         // Lookup on high and low tables separately
                         int8x16_t vec_c0_h = vqtbl1q_s8(QLUT[32 * k + 0], vec_a0);
@@ -294,7 +294,7 @@ void matmul_lut_simd(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
                         vec_c[0] += out0;
                         vec_c[1] += out1;
 
-                        uint8x16_t vec_a1 = vld1q_u8(A + i * KK + k * 32 + 16);
+                        uint8x16_t vec_a1 = vld1q_u8((uint8*)A + i * KK + k * 32 + 16);
                         
                         // Lookup on high and low tables separately
                         int8x16_t vec_c1_h = vqtbl1q_s8(QLUT[32 * k + 0], vec_a1);
