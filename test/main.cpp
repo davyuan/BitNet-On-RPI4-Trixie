@@ -206,10 +206,10 @@ void matmul_lut_naive2(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K)
     *Scales = 1.0f;
     *LUT_Scales = 1.0f;
 
-    // Partition rows among 4 cores
-    #pragma omp parallel for num_threads(4) 
     for (int j = 0; j < N; j++) {                        
         lut_ctor<K_DIM>(QLUT, (float32_t*)(B + j* K), LUT_Scales);    
+        
+        #pragma omp parallel for num_threads(4)
         for (int ii = 0; ii < M; ii += BM) {          
             for (int kk = 0; kk < KK; kk += BK) {                
                 for (int i = ii; i < ii + BM; i++) {
@@ -252,11 +252,11 @@ void matmul_lut_simd(int8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K)
     *Scales = 1.0f;
     *LUT_Scales = 1.0f;
 
-    // Partition rows among 4 cores
-#pragma omp parallel for num_threads(4) 
     for (int j = 0; j < N; j++) {                        
         lut_ctor<K_DIM>(QLUT, (float32_t*)(B + j* K), LUT_Scales);    
-#pragma unroll
+        
+        // Parallelize over row blocks
+        #pragma omp parallel for num_threads(4)
         for (int ii = 0; ii < M; ii += BM) {          
             for (int kk = 0; kk < KK; kk += BK) {
                 int8x16_t vec_lut_high[BK];
