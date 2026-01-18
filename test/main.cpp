@@ -246,7 +246,6 @@ void matmul_lut_naive2(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K)
 */
 void matmul_lut_simd(int8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K) {
     int KK = K / 2;
-    const uint8x16_t vec_mask = vdupq_n_u8(0x0f);
     int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
     float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
     float32_t* Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
@@ -258,9 +257,7 @@ void matmul_lut_simd(int8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K)
     for (int j = 0; j < N; j++) {                        
         lut_ctor<K_DIM>(QLUT, (float32_t*)(B + j* K), LUT_Scales);    
         for (int ii = 0; ii < M; ii += BM) {          
-            for (int kk = 0; kk < KK; kk += BK) {                
-
-                // Load LUT high and low byte tables separately
+            for (int kk = 0; kk < KK; kk += BK) {
                 int8x16_t vec_lut_high[BK];
                 int8x16_t vec_lut_low[BK];
                 
@@ -270,6 +267,7 @@ void matmul_lut_simd(int8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K)
                     vec_lut_high[k] = vld1q_s8(QLUT + (kk + k) * 32);      // Load high bytes
                     vec_lut_low[k] = vld1q_s8(QLUT + (kk + k) * 32 + 16);   // Load low bytes
                 }
+                
 #pragma unroll
                 for (int i = ii; i < ii + BM; i += 16) {
                     int16x8_t vec_c[2] = {vdupq_n_s16(0), vdupq_n_s16(0)};
@@ -294,7 +292,7 @@ void matmul_lut_simd(int8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K)
                         vec_c[1] = vaddq_s16(vec_c[1], out01);
                     }
 
-                    // Extract each int16 element and write to corresponding row
+                    // Extract and store results
                     C[(i+0)*N + j] += vgetq_lane_s16(vec_c[0], 0);
                     C[(i+1)*N + j] += vgetq_lane_s16(vec_c[0], 1);
                     C[(i+2)*N + j] += vgetq_lane_s16(vec_c[0], 2);
