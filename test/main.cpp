@@ -13,7 +13,7 @@
 #define K_DIM 64
 
 const int BM = 32;
-const int BY = 32;
+const int BK = 32;
 //const int bm = 32;
 //const int by = (256/(bm));
 const int M =64;           // Activation rows (B rows)
@@ -25,7 +25,7 @@ const int N = 64;         // Weight rows (A rows) = output size
 // Input: weight_in of shape (M, K//2) flattened
 // Output: weight_out of shape (M*K//64, 16) flattened
 void process_tl1(const uint8_t* input_weight, uint8_t* output_weight, 
-                     int M, int K, int BM, int BY, int bm, int by) {
+                     int M, int K, int BM, int BK, int bm, int bk) {
     // The Python code packs two 4-bit weights into one byte at the end.
     // The input 'input_weight' is assumed to be M * (K/2) bytes.
     
@@ -206,7 +206,7 @@ void matmul_lut_naive2(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K)
                 for (int i = ii; i < ii + BM; i++) {
                     int32_t local_sum = 0; 
                     
-                    for (int k = kk; k < kk + TILE_SIZE; k++) {
+                    for (int k = kk; k < kk + BK; k++) {
                         int lut_index = A[i*KK + k];
                         uint8_t high_byte = (uint8_t)QLUT[k * 32 + lut_index];
                         uint8_t low_byte = (uint8_t)QLUT[k * 32 + 16 + lut_index];
