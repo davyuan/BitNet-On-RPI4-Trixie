@@ -316,20 +316,20 @@ void matmul_lut_simd(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
 
                     int32x4_t vec_c0_low = vmovl_s16(vget_low_s16(vec_c[0]));
                     int32x4_t vec_c0_high = vmovl_high_s16(vec_c[0]);
-                    vst1q_s32(C * N + j + 0, vld1q_s32(C * N + j + 0) + vec_c0_low);
-                    vst1q_s32(C * N + j + 4, vld1q_s32(C * N + j + 4) + vec_c0_high);
+                    vst1q_s32(C + i * N + j + 0, vld1q_s32(C + i * N + j + 0) + vec_c0_low);
+                    vst1q_s32(C + i * N + j + 4, vld1q_s32(C + i * N + j + 4) + vec_c0_high);
                     int32x4_t vec_c1_low = vmovl_s16(vget_low_s16(vec_c[1]));
                     int32x4_t vec_c1_high = vmovl_high_s16(vec_c[1]);
-                    vst1q_s32(C * N + j + 8, vld1q_s32(C * N + j + 8) + vec_c1_low);
-                    vst1q_s32(C * N + j + 12, vld1q_s32(C * N + j + 12) + vec_c1_high);
+                    vst1q_s32(C + i * N + j + 8, vld1q_s32(C + i * N + j + 8) + vec_c1_low);
+                    vst1q_s32(C + i * N + j + 12, vld1q_s32(C + i * N + j + 12) + vec_c1_high);
                     int32x4_t vec_c2_low = vmovl_s16(vget_low_s16(vec_c[2]));
                     int32x4_t vec_c2_high = vmovl_high_s16(vec_c[2]);
-                    vst1q_s32(C * N + j + 16, vld1q_s32(C * N + j + 16) + vec_c2_low);
-                    vst1q_s32(C * N + j + 20, vld1q_s32(C * N + j + 20) + vec_c2_high);
+                    vst1q_s32(C + i * N + j + 16, vld1q_s32(C + i * N + j + 16) + vec_c2_low);
+                    vst1q_s32(C + i * N + j + 20, vld1q_s32(C + i * N + j + 20) + vec_c2_high);
                     int32x4_t vec_c3_low = vmovl_s16(vget_low_s16(vec_c[3]));
                     int32x4_t vec_c3_high = vmovl_high_s16(vec_c[3]);
-                    vst1q_s32(C * N + j + 24, vld1q_s32(C * N + j + 24) + vec_c3_low);
-                    vst1q_s32(C * N + j + 28, vld1q_s32(C * N + j + 28) + vec_c3_high);
+                    vst1q_s32(C + i * N + j + 24, vld1q_s32(C + i * N + j + 24) + vec_c3_low);
+                    vst1q_s32(C + i * N + j + 28, vld1q_s32(C + i * N + j + 28) + vec_c3_high);
                 }
             }
         }
