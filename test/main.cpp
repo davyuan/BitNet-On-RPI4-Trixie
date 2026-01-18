@@ -278,7 +278,7 @@ void matmul_lut_simd(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
                     vec_lut_low[k] = vld1q_s8(QLUT + (kk + k) * 32 + 16);   // Load low bytes (offset by all high bytes)
                 }
 #pragma unroll
-                for (int i = ii; i < ii + BM; i += 32) {
+                for (int i = ii; i < ii + BM; i ++) {
                     int16x8_t vec_c[4] = {vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0)};
 
 #pragma unroll
@@ -322,7 +322,10 @@ void matmul_lut_simd(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
                         vec_c[3] += out3;
                     }
 
-                    int32x4_t vec_c0_low = vmovl_s16(vget_low_s16(vec_c[0]));
+                    int16_t sum = vaddv_s16(vec_c[0]) + vaddv_s16(vec_c[1]) + vaddv_s16(vec_c[2]) + vaddv_s16(vec_c[3]);
+                    C[i*N + j] += sum;
+
+                    /*int32x4_t vec_c0_low = vmovl_s16(vget_low_s16(vec_c[0]));
                     int32x4_t vec_c0_high = vmovl_high_s16(vec_c[0]);
                     vst1q_s32(C + i * N + j + 0, vld1q_s32(C + i * N + j + 0) + vec_c0_low);
                     vst1q_s32(C + i * N + j + 4, vld1q_s32(C + i * N + j + 4) + vec_c0_high);
@@ -337,7 +340,7 @@ void matmul_lut_simd(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
                     int32x4_t vec_c3_low = vmovl_s16(vget_low_s16(vec_c[3]));
                     int32x4_t vec_c3_high = vmovl_high_s16(vec_c[3]);
                     vst1q_s32(C + i * N + j + 24, vld1q_s32(C + i * N + j + 24) + vec_c3_low);
-                    vst1q_s32(C + i * N + j + 28, vld1q_s32(C + i * N + j + 28) + vec_c3_high);
+                    vst1q_s32(C + i * N + j + 28, vld1q_s32(C + i * N + j + 28) + vec_c3_high);*/
                 }
             }
         }
