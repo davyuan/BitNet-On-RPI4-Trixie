@@ -266,6 +266,17 @@ void matmul_lut_simd(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
                     // Add to result (C is pre-initialized to 0)
                     C[i*N + j] += local_sum;
                 }*/
+
+                // Load LUT high and low byte tables separately
+                int8x16_t vec_lut_high[BK];
+                int8x16_t vec_lut_low[BK];
+                
+                // LUT layout per index: [16 high_bytes] [16 low_bytes] = 32 bytes
+#pragma unroll
+                for (int k = 0; k < BK; k++) {
+                    vec_lut_high[k] = vld1q_s8(QLUT + (kk + k) * 32);      // Load high bytes
+                    vec_lut_low[k] = vld1q_s8(QLUT + (kk + k) * 32 + 16);   // Load low bytes (offset by all high bytes)
+                }
 #pragma unroll
                 for (int i = ii; i < ii + BM; i += 32) {
                     int16x8_t vec_c[4] = {vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0)};
@@ -278,8 +289,8 @@ void matmul_lut_simd(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
                         uint8x16_t vec_a0 = vld1q_u8((uint8_t*)A + i * KK + k * 32);
                         
                         // Lookup on high and low tables separately
-                        int8x16_t vec_c0_h = vqtbl1q_s8(QLUT[32 * k + 0], vec_a0);
-                        int8x16_t vec_c0_l = vqtbl1q_s8(QLUT[32 * k + 16], vec_a0);
+                        int8x16_t vec_c0_h = vqtbl1q_s8(vec_lut_high[k - kk], vec_a0);
+                        int8x16_t vec_c0_l = vqtbl1q_s8(vec_lut_low[k - kk], vec_a0);
                         
                         // Reconstruct int16 from high/low bytes: (high << 8) | low
                         int16x8_t v0h_lo_16 = vshlq_n_s16(vmovl_s8(vget_low_s8(vec_c0_h)), 8);
@@ -297,8 +308,8 @@ void matmul_lut_simd(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
                         uint8x16_t vec_a1 = vld1q_u8((uint8_t*)A + i * KK + k * 32 + 16);
                         
                         // Lookup on high and low tables separately
-                        int8x16_t vec_c1_h = vqtbl1q_s8(QLUT[32 * k + 0], vec_a1);
-                        int8x16_t vec_c1_l = vqtbl1q_s8(QLUT[32 * k + 16], vec_a1);
+                        int8x16_t vec_c1_h = vqtbl1q_s8(vec_lut_high[k - kk], vec_a1);
+                        int8x16_t vec_c1_l = vqtbl1q_s8(vec_lut_low[k - kk], vec_a1);
                         
                         // Reconstruct int16 from high/low bytes: (high << 8) | low
                         int16x8_t v1h_lo_16 = vshlq_n_s16(vmovl_s8(vget_low_s8(vec_c1_h)), 8);
