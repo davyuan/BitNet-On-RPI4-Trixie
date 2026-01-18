@@ -305,8 +305,8 @@ void matmul_lut_simd(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
                         int8x16_t vec_a1 = vld1q_s8(A + i * KK + k * 32 + 16);
                         
                         // Lookup on high and low tables separately
-                        int8x16_t vec_c1_h = vqtbl1q_s8(vec_lut_high[k - kk], vec_a1);
-                        int8x16_t vec_c1_l = vqtbl1q_s8(vec_lut_low[k - kk], vec_a1);
+                        int8x16_t vec_c1_h = vqtbl1q_s8(vec_lut_high[k - kk + 16], vec_a1);
+                        int8x16_t vec_c1_l = vqtbl1q_s8(vec_lut_low[k - kk + 16], vec_a1);
                         
                         // Reconstruct int16 from high/low bytes: (high << 8) | low
                         int16x8_t v1h_lo_16 = vshlq_n_s16(vmovl_s8(vget_low_s8(vec_c1_h)), 8);
