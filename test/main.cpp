@@ -322,7 +322,7 @@ void matmul_lut_simd(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
                         vec_c[3] += out3;
                     }
 
-                    int16_t sum = vaddv_s16(vec_c[0]) + vaddv_s16(vec_c[1]) + vaddv_s16(vec_c[2]) + vaddv_s16(vec_c[3]);
+                    int16_t sum = vaddvq_s16(vec_c[0]) + vaddvq_s16(vec_c[1]) + vaddvq_s16(vec_c[2]) + vaddvq_s16(vec_c[3]);
                     C[i*N + j] += sum;
 
                     /*int32x4_t vec_c0_low = vmovl_s16(vget_low_s16(vec_c[0]));
