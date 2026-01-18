@@ -237,6 +237,7 @@ void matmul_lut_naive2(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K)
 */
 void matmul_lut_simd(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
     int KK = K / 2;
+    const uint8x16_t vec_mask = vdupq_n_u8(0x0f);
     int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
     float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
     float32_t* Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
@@ -249,7 +250,7 @@ void matmul_lut_simd(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
         lut_ctor<K_DIM>(QLUT, (float32_t*)(B + j* K), LUT_Scales);    
         for (int ii = 0; ii < M; ii += BM) {          
             for (int kk = 0; kk < KK; kk += BK) {                
-                for (int i = ii; i < ii + BM; i++) {
+                /*for (int i = ii; i < ii + BM; i++) {
                     int32_t local_sum = 0; 
                     
                     for (int k = kk; k < kk + BK; k++) {
@@ -264,6 +265,71 @@ void matmul_lut_simd(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
 
                     // Add to result (C is pre-initialized to 0)
                     C[i*N + j] += local_sum;
+                }*/
+#pragma unroll
+                for (int i = ii; i < ii + BM; i += 32) {
+                    int16x8_t vec_c[4] = {vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0)};
+
+#pragma unroll
+                    // KK is the number of weight pairs. KK/2 is the number of bytes to have BBK640_2560 weights.
+                    // one weight pair has 32 LUT entries (16 high, 16 low), and one byte in 'a' has 2 weight pairs.
+                    // in every k iteration, we process 16 bytes from 'a' (32 weight pairs).
+                    for (int k = kk; k < kk + BK; k+= 32) {
+                        uint8x16_t vec_a0 = vld1q_u8(A + i * KK + k * 32);
+                        
+                        // Lookup on high and low tables separately
+                        int8x16_t vec_c0_h = vqtbl1q_s8(QLUT[32 * k + 0], vec_a0);
+                        int8x16_t vec_c0_l = vqtbl1q_s8(QLUT[32 * k + 16], vec_a0);
+                        
+                        // Reconstruct int16 from high/low bytes: (high << 8) | low
+                        int16x8_t v0h_lo_16 = vshlq_n_s16(vmovl_s8(vget_low_s8(vec_c0_h)), 8);
+                        int16x8_t v0h_hi_16 = vshlq_n_s16(vmovl_s8(vget_high_s8(vec_c0_h)), 8);  
+                        int16x8_t v0l_lo_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_low_s8(vec_c0_l))));
+                        int16x8_t v0l_hi_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_high_s8(vec_c0_l))));
+
+                        // combine
+                        int16x8_t out0 = vorrq_s16(v0h_lo_16, v0l_lo_16);
+                        int16x8_t out1 = vorrq_s16(v0h_hi_16, v0l_hi_16);
+                        
+                        vec_c[0] += out0;
+                        vec_c[1] += out1;
+
+                        uint8x16_t vec_a1 = vld1q_u8(A + i * KK + k * 32 + 16);
+                        
+                        // Lookup on high and low tables separately
+                        int8x16_t vec_c1_h = vqtbl1q_s8(QLUT[32 * k + 0], vec_a1);
+                        int8x16_t vec_c1_l = vqtbl1q_s8(QLUT[32 * k + 16], vec_a1);
+                        
+                        // Reconstruct int16 from high/low bytes: (high << 8) | low
+                        int16x8_t v1h_lo_16 = vshlq_n_s16(vmovl_s8(vget_low_s8(vec_c1_h)), 8);
+                        int16x8_t v1h_hi_16 = vshlq_n_s16(vmovl_s8(vget_high_s8(vec_c1_h)), 8);  
+                        int16x8_t v1l_lo_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_low_s8(vec_c1_l))));
+                        int16x8_t v1l_hi_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_high_s8(vec_c1_l))));
+
+                        // combine
+                        int16x8_t out2 = vorrq_s16(v1h_lo_16, v1l_lo_16);
+                        int16x8_t out3 = vorrq_s16(v1h_hi_16, v1l_hi_16);
+                        
+                        vec_c[2] += out2;
+                        vec_c[3] += out3;
+                    }
+
+                    int32x4_t vec_c0_low = vmovl_s16(vget_low_s16(vec_c[0]));
+                    int32x4_t vec_c0_high = vmovl_high_s16(vec_c[0]);
+                    vst1q_s32(C * N + j + 0, vld1q_s32(C * N + j + 0) + vec_c0_low);
+                    vst1q_s32(C * N + j + 4, vld1q_s32(C * N + j + 4) + vec_c0_high);
+                    int32x4_t vec_c1_low = vmovl_s16(vget_low_s16(vec_c[1]));
+                    int32x4_t vec_c1_high = vmovl_high_s16(vec_c[1]);
+                    vst1q_s32(C * N + j + 8, vld1q_s32(C * N + j + 8) + vec_c1_low);
+                    vst1q_s32(C * N + j + 12, vld1q_s32(C * N + j + 12) + vec_c1_high);
+                    int32x4_t vec_c2_low = vmovl_s16(vget_low_s16(vec_c[2]));
+                    int32x4_t vec_c2_high = vmovl_high_s16(vec_c[2]);
+                    vst1q_s32(C * N + j + 16, vld1q_s32(C * N + j + 16) + vec_c2_low);
+                    vst1q_s32(C * N + j + 20, vld1q_s32(C * N + j + 20) + vec_c2_high);
+                    int32x4_t vec_c3_low = vmovl_s16(vget_low_s16(vec_c[3]));
+                    int32x4_t vec_c3_high = vmovl_high_s16(vec_c[3]);
+                    vst1q_s32(C * N + j + 24, vld1q_s32(C * N + j + 24) + vec_c3_low);
+                    vst1q_s32(C * N + j + 28, vld1q_s32(C * N + j + 28) + vec_c3_high);
                 }
             }
         }
@@ -285,6 +351,7 @@ int main() {
     uint8_t* A_packed = (uint8_t*)aligned_malloc(M * K / 4 * sizeof(uint8_t));
     int32_t* C = (int32_t*)aligned_malloc(M * N * sizeof(int32_t));
     int32_t* C_ = (int32_t*)aligned_malloc(M * N * sizeof(int32_t));
+    int32_t* C_simd = (int32_t*)aligned_malloc(M * N * sizeof(int32_t));
     
     // Allocate reference output matrix C_
     memset(C_, 0, M * N * sizeof(int32_t));
@@ -328,10 +395,19 @@ int main() {
     auto lut_end = std::chrono::high_resolution_clock::now();
     auto lut_duration = std::chrono::duration_cast<std::chrono::milliseconds>(lut_end - lut_start);
     
-    printf("Matmul complete. Time: %lld ms\n", lut_duration.count());
+    printf("Matmul_naive2 complete. Time: %lld ms\n", lut_duration.count());
     
-    // Step 3: Compute reference result using normal matmul (A_ @ B.T -> C_)
-    printf("\nStep 3: Computing reference matmul with A_ and B...\n");
+    // Step 3: Run qGEMM with LUT + SIMD
+    printf("\nStep 3: Running qGEMM_LUT (32x64 kernel)\n");
+    auto lut_simd_start = std::chrono::high_resolution_clock::now();
+    matmul_lut_simd(A, B_T, C_simd, M, N, K);
+    auto lut_simd_end = std::chrono::high_resolution_clock::now();
+    auto lut_simd_duration = std::chrono::duration_cast<std::chrono::milliseconds>(lut_simd_end - lut_simd_start);
+    
+    printf("Matmul_simd complete. Time: %lld ms\n", lut_duration.count());
+
+    // Step 4: Compute reference result using normal matmul (A_ @ B.T -> C_)
+    printf("\nStep 4: Computing reference matmul with A_ and B...\n");
     // C_[m,n] = sum_k A_[n,k] * B[m,k]
     auto naive_start = std::chrono::high_resolution_clock::now();
     matmul_naive(A_, B, (int32_t*)C_, M, N, K);
@@ -341,18 +417,21 @@ int main() {
     printf("Reference matmul complete. Time: %lld ms\n", naive_duration.count());
     
     // Print performance comparison
-    double speedup = (double)naive_duration.count() / (double)lut_duration.count();
+    double speedup_naive2 = (double)naive_duration.count() / (double)lut_duration.count();
+    double speedup_simd = (double)naive_duration.count() / (double)lut_simd_duration.count();
     printf("\n=== PERFORMANCE COMPARISON ===\n");
     printf("Naive matmul: %lld ms\n", naive_duration.count());
-    printf("LUT matmul nativ2:   %lld ms\n", lut_duration.count());
-    printf("Speedup: %.2fx\n\n", speedup);
+    printf("LUT matmul native2:   %lld ms\n", lut_duration.count());
+    printf("LUT matmul SIMD:   %lld ms\n", lut_simd_duration.count());
+    printf("Speedup naive2: %.2fx\n", speedup_naive2);
+    printf("Speedup SIMD: %.2fx\n\n", speedup_simd);
     
     // Step 4: Compare results
     printf("\nStep 4: Comparing kernel output (C) with reference (C_)...\n");
     float32_t max_error = 0.0f;
     int error_count = 0;
     for (int i = 0; i < M * N; i++) {
-        float32_t error = fabs((float32_t)C[i] - C_[i]);
+        float32_t error = fabs((float32_t)C_simd[i] - C_[i]);
         if (error > max_error) {
             max_error = error;
         }
@@ -360,7 +439,7 @@ int main() {
             error_count++;
             if (error_count <= 10) {  // Print first 10 errors
                 printf("  Mismatch at [%d]: kernel=%d, ref=%.1f, error=%.1f\n", 
-                       i, C[i], C_[i], error);
+                       i, C_simd[i], C_[i], error);
             }
         }
     }
@@ -375,6 +454,7 @@ int main() {
     aligned_free(C);
     aligned_free(A_packed);
     aligned_free(B_T);
+    aligned_free(C_simd);
     
     printf("\nTest complete.\n");
     return 0;
