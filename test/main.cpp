@@ -254,23 +254,23 @@ void matmul_lut_simd(int8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K)
 
     // Partition rows among 4 cores
     #pragma omp parallel for num_threads(4) 
-    for (int j = 0; j < N; j++) {                        
-        lut_ctor<K_DIM>(QLUT, (float32_t*)(B + j* K), LUT_Scales);    
-        for (int ii = 0; ii < M; ii += BM) {          
-            for (int kk = 0; kk < KK; kk += BK) {
-                int8x16_t vec_lut_high[BK];
-                int8x16_t vec_lut_low[BK];
-                
-                // LUT layout per index: [16 high_bytes] [16 low_bytes] = 32 bytes
+    lut_ctor<K_DIM>(QLUT, (float32_t*)(B + j* K), LUT_Scales);    
+    for (int ii = 0; ii < M; ii += BM) {          
+        for (int kk = 0; kk < KK; kk += BK) {
+            int8x16_t vec_lut_high[BK];
+            int8x16_t vec_lut_low[BK];
+            
+            // LUT layout per index: [16 high_bytes] [16 low_bytes] = 32 bytes
 #pragma unroll
-                for (int k = 0; k < BK; k++) {
-                    vec_lut_high[k] = vld1q_s8(QLUT + (kk + k) * 32);      // Load high bytes
-                    vec_lut_low[k] = vld1q_s8(QLUT + (kk + k) * 32 + 16);   // Load low bytes
-                }
-                
+            for (int k = 0; k < BK; k++) {
+                vec_lut_high[k] = vld1q_s8(QLUT + (kk + k) * 32);      // Load high bytes
+                vec_lut_low[k] = vld1q_s8(QLUT + (kk + k) * 32 + 16);   // Load low bytes
+            }
+            
 #pragma unroll
-                for (int i = ii; i < ii + BM; i += 16) {
-                    int16x8_t vec_c[2] = {vdupq_n_s16(0), vdupq_n_s16(0)};
+            for (int i = ii; i < ii + BM; i += 16) {
+                int16x8_t vec_c[2] = {vdupq_n_s16(0), vdupq_n_s16(0)};
+                for (int j = 0; j < N; j++) {                        
 #pragma unroll
                     for (int k = kk; k < kk + BK; k++) {
                         // Load 16 activations from same k, different rows (from transposed A)
