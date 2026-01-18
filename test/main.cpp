@@ -14,8 +14,8 @@
 
 const int BM = 32;
 const int BK = 32;
-//const int bm = 32;
-//const int by = (256/(bm));
+const int bm = 32;
+const int by = (256/(bm));
 const int M =64;           // Activation rows (B rows)
 const int K = 64;        // Shared dimension
 const int N = 64;         // Weight rows (A rows) = output size
@@ -33,11 +33,11 @@ void process_tl1(const uint8_t* input_weight, uint8_t* output_weight,
 
     // We follow the hierarchical tiling: BM (Large M block) -> BY (Large K block)
     for (int i_major = 0; i_major < M; i_major += BM) {
-        for (int j_major = 0; j_major < K; j_major += BY) {
+        for (int j_major = 0; j_major < K; j_major += BK) {
             
             // bm (Sub-block M) -> by (Sub-block K)
             for (int i_minor = 0; i_minor < BM; i_minor += bm) {
-                for (int j_minor = 0; j_minor < BY; j_minor += by) {
+                for (int j_minor = 0; j_minor < BK; j_minor += bk) {
                     
                     // Hardware Atoms: 16 rows (bm_inner) x 4 columns (by_inner)
                     for (int i_atom = 0; i_atom < bm; i_atom += 16) {
