@@ -283,10 +283,10 @@ void matmul_lut_simd(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
 #pragma unroll
                      for (int k = kk; k < kk + BK; k+= 16) {
                          // Load 16 activations from A
-                         int8x16_t vec_a0 = vld1q_s8(A + (i+0) * KK + k * 16);
-                         int8x16_t vec_a1 = vld1q_s8(A + (i+1) * KK + k * 16);
-                         int8x16_t vec_a2 = vld1q_s8(A + (i+2) * KK + k * 16);
-                         int8x16_t vec_a3 = vld1q_s8(A + (i+3) * KK + k * 16);
+                         int8x16_t vec_a0 = vld1q_s8(A + (i+0) * KK + k);
+                         int8x16_t vec_a1 = vld1q_s8(A + (i+1) * KK + k);
+                         int8x16_t vec_a2 = vld1q_s8(A + (i+2) * KK + k);
+                         int8x16_t vec_a3 = vld1q_s8(A + (i+3) * KK + k);
                          
                          // Lookup on high and low tables separately
                          int8x16_t vec_c0_h = vqtbl1q_s8(vec_lut_high[k - kk], vec_a0);
