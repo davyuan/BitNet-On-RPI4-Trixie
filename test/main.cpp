@@ -421,7 +421,7 @@ int main() {
     float32_t max_error = 0.0f;
     int error_count = 0;
     for (int i = 0; i < M * N; i++) {
-        float32_t error = fabs((float32_t)C[i] - C_[i]);
+        float32_t error = fabs((float32_t)C_simd[i] - C_[i]);
         if (error > max_error) {
             max_error = error;
         }
@@ -429,7 +429,7 @@ int main() {
             error_count++;
             if (error_count <= 10) {  // Print first 10 errors
                 printf("  Mismatch at [%d]: kernel=%d, ref=%.1f, error=%.1f\n", 
-                       i, C[i], C_[i], error);
+                       i, C_simd[i], C_[i], error);
             }
         }
     }
