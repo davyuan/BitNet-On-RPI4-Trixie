@@ -304,10 +304,10 @@ void matmul_lut_simd(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
                         int16x8_t v0l_lo_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_low_s8(vec_c0_l))));
                         int16x8_t v0l_hi_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_high_s8(vec_c0_l))));
                         int16x8_t out00 = vorrq_s16(v0h_lo_16, v0l_lo_16);
-                        int16x8_t out10 = vorrq_s16(v0h_hi_16, v0l_hi_16);
+                        int16x8_t out01 = vorrq_s16(v0h_hi_16, v0l_hi_16);
                         
                         vec_c[0] += out00;
-                        vec_c[0] += out10;
+                        vec_c[0] += out01;
 
                         // Reconstruct int16 from high/low bytes: (high << 8) | low
                         int16x8_t v1h_lo_16 = vshlq_n_s16(vmovl_s8(vget_low_s8(vec_c1_h)), 8);
