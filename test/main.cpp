@@ -383,15 +383,20 @@ int main() {
     
     printf("Matmul_naive2 complete. Time: %lld ms\n", lut_duration.count());
     
-    // Step 3: Run qGEMM with LUT + SIMD
-    printf("\nStep 3: Running qGEMM_LUT (32x64 kernel)\n");
-    memset(C_simd, 0, M * N * sizeof(int32_t));
-    auto lut_simd_start = std::chrono::high_resolution_clock::now();
-    matmul_lut_simd(A_T, B_T, C_simd, M, N, K);
-    auto lut_simd_end = std::chrono::high_resolution_clock::now();
-    auto lut_simd_duration = std::chrono::duration_cast<std::chrono::milliseconds>(lut_simd_end - lut_simd_start);
-    
-    printf("Matmul_simd complete. Time: %lld ms\n", lut_simd_duration.count());
+    // Step 3: Run qGEMM with LUT + SIMD (50 runs for averaging)
+    printf("\nStep 3: Running qGEMM_LUT SIMD (50 iterations for average)\n");
+    long long total_simd_time = 0;
+    const int num_iterations = 50;
+    for (int iter = 0; iter < num_iterations; iter++) {
+        memset(C_simd, 0, M * N * sizeof(int32_t));
+        auto lut_simd_start = std::chrono::high_resolution_clock::now();
+        matmul_lut_simd(A_T, B_T, C_simd, M, N, K);
+        auto lut_simd_end = std::chrono::high_resolution_clock::now();
+        auto lut_simd_duration = std::chrono::duration_cast<std::chrono::milliseconds>(lut_simd_end - lut_simd_start);
+        total_simd_time += lut_simd_duration.count();
+    }
+    long long avg_simd_time = total_simd_time / num_iterations;
+    printf("Matmul_simd complete. Average time over %d runs: %lld ms\n", num_iterations, avg_simd_time);
 
     // Step 4: Compute reference result using normal matmul (A_ @ B.T -> C_)
     printf("\nStep 4: Computing reference matmul with A_ and B...\n");
@@ -404,14 +409,11 @@ int main() {
     printf("Reference matmul complete. Time: %lld ms\n", naive_duration.count());
     
     // Print performance comparison
-    double speedup_naive2 = (double)naive_duration.count() / (double)lut_duration.count();
-    double speedup_simd = (double)naive_duration.count() / (double)lut_simd_duration.count();
+    double speedup_naive2 = (double)lut_duration.count() / (double)avg_simd_time;
     printf("\n=== PERFORMANCE COMPARISON ===\n");
-    printf("Naive matmul: %lld ms\n", naive_duration.count());
-    printf("LUT matmul native2:   %lld ms\n", lut_duration.count());
-    printf("LUT matmul SIMD:   %lld ms\n", lut_simd_duration.count());
-    printf("Speedup naive2: %.2fx\n", speedup_naive2);
-    printf("Speedup SIMD: %.2fx\n\n", speedup_simd);
+    printf("LUT matmul naive2:   %lld ms\n", lut_duration.count());
+    printf("LUT matmul SIMD (avg):   %lld ms\n", avg_simd_time);
+    printf("Speedup (naive2 / SIMD): %.2fx\n\n", speedup_naive2);
     
     // Step 4: Compare results
     printf("\nStep 4: Comparing kernel output (C) with reference (C_)...\n");
