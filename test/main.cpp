@@ -10,7 +10,7 @@
 #define TILE_N 16
 #define TILE_M 4
 #define TILE_SIZE 2
-#define K_DIM 64
+#define K_DIM 2560
 
 const int BM = 32;
 const int BK = 64;
