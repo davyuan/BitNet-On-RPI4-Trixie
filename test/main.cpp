@@ -82,6 +82,15 @@ void transpose_matrix(float32_t* B, float32_t* B_T, int N, int K) {
     }
 }
 
+// Transpose matrix A from (M x K/2) to A_T (K/2 x M)
+void transpose_A_matrix(int8_t* A, int8_t* A_T, int M, int KK) {
+    for (int i = 0; i < KK; i++) {
+        for (int j = 0; j < M; j++) {
+            A_T[i * M + j] = A[j * KK + i];
+        }
+    }
+}
+
 void matmul_naive(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
     for (int i = 0; i < M; i++) {
         for (int j = 0; j < N; j++) {
@@ -235,7 +244,7 @@ void matmul_lut_naive2(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K)
    This version doesn't use SIMD optimizations either, but focus on one LUT table at once to avoid
    overhead of reconstructing LUTs in the same tile. 
 */
-void matmul_lut_simd(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
+void matmul_lut_simd(int8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K) {
     int KK = K / 2;
     const uint8x16_t vec_mask = vdupq_n_u8(0x0f);
     int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
@@ -250,22 +259,6 @@ void matmul_lut_simd(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
         lut_ctor<K_DIM>(QLUT, (float32_t*)(B + j* K), LUT_Scales);    
         for (int ii = 0; ii < M; ii += BM) {          
             for (int kk = 0; kk < KK; kk += BK) {                
-                /*for (int i = ii; i < ii + BM; i++) {
-                    int32_t local_sum = 0; 
-                    
-                    for (int k = kk; k < kk + BK; k++) {
-                        int lut_index = A[i*KK + k];
-                        uint8_t high_byte = (uint8_t)QLUT[k * 32 + lut_index];
-                        uint8_t low_byte = (uint8_t)QLUT[k * 32 + 16 + lut_index];
-                        // Combine as unsigned first, then cast to signed int16
-                        int16_t combined = (int16_t)(((uint16_t)high_byte << 8) | (uint16_t)low_byte);
-                        
-                        local_sum += (int32_t)combined;                          
-                    }
-
-                    // Add to result (C is pre-initialized to 0)
-                    C[i*N + j] += local_sum;
-                }*/
 
                 // Load LUT high and low byte tables separately
                 int8x16_t vec_lut_high[BK];
@@ -275,29 +268,20 @@ void matmul_lut_simd(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
 #pragma unroll
                 for (int k = 0; k < BK; k++) {
                     vec_lut_high[k] = vld1q_s8(QLUT + (kk + k) * 32);      // Load high bytes
-                    vec_lut_low[k] = vld1q_s8(QLUT + (kk + k) * 32 + 16);   // Load low bytes (offset by all high bytes)
+                    vec_lut_low[k] = vld1q_s8(QLUT + (kk + k) * 32 + 16);   // Load low bytes
                 }
 #pragma unroll
-                for (int i = ii; i < ii + BM; i +=4) {
-                    int16x8_t vec_c[4] = {vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0)};
+                for (int i = ii; i < ii + BM; i += 16) {
+                    int16x8_t vec_c[2] = {vdupq_n_s16(0), vdupq_n_s16(0)};
 #pragma unroll
-                     for (int k = kk; k < kk + BK; k+= 16) {
-                         // Load 16 activations from A
-                         int8x16_t vec_a0 = vld1q_s8(A + (i+0) * KK + k);
-                         int8x16_t vec_a1 = vld1q_s8(A + (i+1) * KK + k);
-                         int8x16_t vec_a2 = vld1q_s8(A + (i+2) * KK + k);
-                         int8x16_t vec_a3 = vld1q_s8(A + (i+3) * KK + k);
-                         
-                         // Lookup on high and low tables separately
-                         int8x16_t vec_c0_h = vqtbl1q_s8(vec_lut_high[k - kk], vec_a0);
-                         int8x16_t vec_c0_l = vqtbl1q_s8(vec_lut_low[k - kk], vec_a0);
-                         int8x16_t vec_c1_h = vqtbl1q_s8(vec_lut_high[k - kk], vec_a1);
-                         int8x16_t vec_c1_l = vqtbl1q_s8(vec_lut_low[k - kk], vec_a1);
-                         int8x16_t vec_c2_h = vqtbl1q_s8(vec_lut_high[k - kk], vec_a2);
-                         int8x16_t vec_c2_l = vqtbl1q_s8(vec_lut_low[k - kk], vec_a2);
-                         int8x16_t vec_c3_h = vqtbl1q_s8(vec_lut_high[k - kk], vec_a3);
-                         int8x16_t vec_c3_l = vqtbl1q_s8(vec_lut_low[k - kk], vec_a3);
-                                                 
+                    for (int k = kk; k < kk + BK; k++) {
+                        // Load 16 activations from same k, different rows (from transposed A)
+                        int8x16_t vec_a0 = vld1q_s8(A_T + k * M + i);
+                        
+                        // Lookup on high and low tables (same LUT table for all 16 indices)
+                        int8x16_t vec_c0_h = vqtbl1q_s8(vec_lut_high[k - kk], vec_a0);
+                        int8x16_t vec_c0_l = vqtbl1q_s8(vec_lut_low[k - kk], vec_a0);
+                                               
                         // Reconstruct int16 from high/low bytes: (high << 8) | low
                         int16x8_t v0h_lo_16 = vshlq_n_s16(vmovl_s8(vget_low_s8(vec_c0_h)), 8);
                         int16x8_t v0h_hi_16 = vshlq_n_s16(vmovl_s8(vget_high_s8(vec_c0_h)), 8);  
@@ -306,68 +290,15 @@ void matmul_lut_simd(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
                         int16x8_t out00 = vorrq_s16(v0h_lo_16, v0l_lo_16);
                         int16x8_t out01 = vorrq_s16(v0h_hi_16, v0l_hi_16);
                         
-                        vec_c[0] += out00;
-                        vec_c[0] += out01;
-
-                        // Reconstruct int16 from high/low bytes: (high << 8) | low
-                        int16x8_t v1h_lo_16 = vshlq_n_s16(vmovl_s8(vget_low_s8(vec_c1_h)), 8);
-                        int16x8_t v1h_hi_16 = vshlq_n_s16(vmovl_s8(vget_high_s8(vec_c1_h)), 8);  
-                        int16x8_t v1l_lo_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_low_s8(vec_c1_l))));
-                        int16x8_t v1l_hi_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_high_s8(vec_c1_l))));
-                        int16x8_t out10 = vorrq_s16(v1h_lo_16, v1l_lo_16);
-                        int16x8_t out11 = vorrq_s16(v1h_hi_16, v1l_hi_16);
-                        
-                        vec_c[1] += out10;
-                        vec_c[1] += out11;
-
-                        // Reconstruct int16 from high/low bytes: (high << 8) | low
-                        int16x8_t v2h_lo_16 = vshlq_n_s16(vmovl_s8(vget_low_s8(vec_c2_h)), 8);
-                        int16x8_t v2h_hi_16 = vshlq_n_s16(vmovl_s8(vget_high_s8(vec_c2_h)), 8);  
-                        int16x8_t v2l_lo_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_low_s8(vec_c2_l))));
-                        int16x8_t v2l_hi_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_high_s8(vec_c2_l))));
-                        int16x8_t out20 = vorrq_s16(v2h_lo_16, v2l_lo_16);
-                        int16x8_t out21 = vorrq_s16(v2h_hi_16, v2l_hi_16);
-                        
-                        vec_c[2] += out20;
-                        vec_c[2] += out21;
-
-                        // Reconstruct int16 from high/low bytes: (high << 8) | low
-                        int16x8_t v3h_lo_16 = vshlq_n_s16(vmovl_s8(vget_low_s8(vec_c3_h)), 8);
-                        int16x8_t v3h_hi_16 = vshlq_n_s16(vmovl_s8(vget_high_s8(vec_c3_h)), 8);  
-                        int16x8_t v3l_lo_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_low_s8(vec_c3_l))));
-                        int16x8_t v3l_hi_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_high_s8(vec_c3_l))));
-                        int16x8_t out30 = vorrq_s16(v3h_lo_16, v3l_lo_16);
-                        int16x8_t out31 = vorrq_s16(v3h_hi_16, v3l_hi_16);
-                        
-                        vec_c[3] += out30;
-                        vec_c[3] += out31;
+                        vec_c[0] = vaddq_s16(vec_c[0], out00);
+                        vec_c[1] = vaddq_s16(vec_c[1], out01);
                     }
 
-                    int16_t sum = vaddvq_s16(vec_c[0]);
-                    C[(i+0)*N + j] += sum;
-                    sum = vaddvq_s16(vec_c[1]);
-                    C[(i+1)*N + j] += sum;
-                    sum = vaddvq_s16(vec_c[2]);
-                    C[(i+2)*N + j] += sum;
-                    sum = vaddvq_s16(vec_c[3]);
-                    C[(i+3)*N + j] += sum;
-
-                    /*int32x4_t vec_c0_low = vmovl_s16(vget_low_s16(vec_c[0]));
-                    int32x4_t vec_c0_high = vmovl_high_s16(vec_c[0]);
-                    vst1q_s32(C + i * N + j + 0, vld1q_s32(C + i * N + j + 0) + vec_c0_low);
-                    vst1q_s32(C + i * N + j + 4, vld1q_s32(C + i * N + j + 4) + vec_c0_high);
-                    int32x4_t vec_c1_low = vmovl_s16(vget_low_s16(vec_c[1]));
-                    int32x4_t vec_c1_high = vmovl_high_s16(vec_c[1]);
-                    vst1q_s32(C + i * N + j + 8, vld1q_s32(C + i * N + j + 8) + vec_c1_low);
-                    vst1q_s32(C + i * N + j + 12, vld1q_s32(C + i * N + j + 12) + vec_c1_high);
-                    int32x4_t vec_c2_low = vmovl_s16(vget_low_s16(vec_c[2]));
-                    int32x4_t vec_c2_high = vmovl_high_s16(vec_c[2]);
-                    vst1q_s32(C + i * N + j + 16, vld1q_s32(C + i * N + j + 16) + vec_c2_low);
-                    vst1q_s32(C + i * N + j + 20, vld1q_s32(C + i * N + j + 20) + vec_c2_high);
-                    int32x4_t vec_c3_low = vmovl_s16(vget_low_s16(vec_c[3]));
-                    int32x4_t vec_c3_high = vmovl_high_s16(vec_c[3]);
-                    vst1q_s32(C + i * N + j + 24, vld1q_s32(C + i * N + j + 24) + vec_c3_low);
-                    vst1q_s32(C + i * N + j + 28, vld1q_s32(C + i * N + j + 28) + vec_c3_high);*/
+                    // Extract each int16 element and write to corresponding row
+                    for (int x = 0; x < 8; x++) {
+                        C[(i+x)*N + j] += vgetq_lane_s16(vec_c[0], x);
+                        C[(i+x+8)*N + j] += vgetq_lane_s16(vec_c[1], x);
+                    }
                 }
             }
         }
@@ -385,6 +316,7 @@ int main() {
     float32_t* B = (float32_t*)aligned_malloc(N * K * sizeof(float32_t));
     float32_t* B_T = (float32_t*)aligned_malloc(N * K * sizeof(float32_t));
     int8_t* A = (int8_t*)aligned_malloc(M * K / 2 * sizeof(int8_t));
+    int8_t* A_T = (int8_t*)aligned_malloc(M * K / 2 * sizeof(int8_t));
     int8_t* A_ = (int8_t*)aligned_malloc(M * K * sizeof(int8_t));
     uint8_t* A_packed = (uint8_t*)aligned_malloc(M * K / 4 * sizeof(uint8_t));
     int32_t* C = (int32_t*)aligned_malloc(M * N * sizeof(int32_t));
@@ -420,6 +352,10 @@ int main() {
         }        
     }
 
+    // Transpose A for SIMD version
+    int KK = K / 2;
+    transpose_A_matrix(A, A_T, M, KK);
+
     // Repack A into tl1 layout
     printf("Repacking matrix A into tl1 layout...\n");
     //process_tl1(A, A_packed, M, K, BM, BY, bm, by);
@@ -438,8 +374,9 @@ int main() {
     
     // Step 3: Run qGEMM with LUT + SIMD
     printf("\nStep 3: Running qGEMM_LUT (32x64 kernel)\n");
+    memset(C_simd, 0, M * N * sizeof(int32_t));
     auto lut_simd_start = std::chrono::high_resolution_clock::now();
-    matmul_lut_simd(A, B_T, C_simd, M, N, K);
+    matmul_lut_simd(A_T, B_T, C_simd, M, N, K);
     auto lut_simd_end = std::chrono::high_resolution_clock::now();
     auto lut_simd_duration = std::chrono::duration_cast<std::chrono::milliseconds>(lut_simd_end - lut_simd_start);
     
@@ -489,6 +426,7 @@ int main() {
     aligned_free(C_);
     aligned_free(B);
     aligned_free(A);
+    aligned_free(A_T);
     aligned_free(A_);
     aligned_free(C);
     aligned_free(A_packed);
