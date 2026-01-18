@@ -394,6 +394,7 @@ int main() {
     // Allocate reference output matrix C_
     memset(C_, 0, M * N * sizeof(int32_t));
     memset(C, 0, M * N * sizeof(int32_t));
+    memset(C_simd, 0, M * N * sizeof(int32_t));
 
     // Initialize with random values
     printf("Initializing test matrices...\n");
