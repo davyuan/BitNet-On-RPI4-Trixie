@@ -295,10 +295,22 @@ void matmul_lut_simd(int8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K)
                     }
 
                     // Extract each int16 element and write to corresponding row
-                    for (int x = 0; x < 8; x++) {
-                        C[(i+x)*N + j] += vgetq_lane_s16(vec_c[0], x);
-                        C[(i+x+8)*N + j] += vgetq_lane_s16(vec_c[1], x);
-                    }
+                    C[(i+0)*N + j] += vgetq_lane_s16(vec_c[0], 0);
+                    C[(i+1)*N + j] += vgetq_lane_s16(vec_c[0], 1);
+                    C[(i+2)*N + j] += vgetq_lane_s16(vec_c[0], 2);
+                    C[(i+3)*N + j] += vgetq_lane_s16(vec_c[0], 3);
+                    C[(i+4)*N + j] += vgetq_lane_s16(vec_c[0], 4);
+                    C[(i+5)*N + j] += vgetq_lane_s16(vec_c[0], 5);
+                    C[(i+6)*N + j] += vgetq_lane_s16(vec_c[0], 6);
+                    C[(i+7)*N + j] += vgetq_lane_s16(vec_c[0], 7);
+                    C[(i+8)*N + j] += vgetq_lane_s16(vec_c[1], 0);
+                    C[(i+9)*N + j] += vgetq_lane_s16(vec_c[1], 1);
+                    C[(i+10)*N + j] += vgetq_lane_s16(vec_c[1], 2);
+                    C[(i+11)*N + j] += vgetq_lane_s16(vec_c[1], 3);
+                    C[(i+12)*N + j] += vgetq_lane_s16(vec_c[1], 4);
+                    C[(i+13)*N + j] += vgetq_lane_s16(vec_c[1], 5);
+                    C[(i+14)*N + j] += vgetq_lane_s16(vec_c[1], 6);
+                    C[(i+15)*N + j] += vgetq_lane_s16(vec_c[1], 7);
                 }
             }
         }
