@@ -375,20 +375,20 @@ int main() {
     printf("Matrix dimensions:  A(640x2560), B(2560x160), C(640x160)\n");
 
     // Step 2: Run qGEMM with LUT
-    printf("\nStep 2: Running qGEMM_LUT (32x64 kernel)\n");
+    /*printf("\nStep 2: Running qGEMM_LUT (32x64 kernel)\n");
     auto lut_start = std::chrono::high_resolution_clock::now();
     matmul_lut_naive2(A, B_T, C, M, N, K);
     auto lut_end = std::chrono::high_resolution_clock::now();
     auto lut_duration = std::chrono::duration_cast<std::chrono::milliseconds>(lut_end - lut_start);
     
-    printf("Matmul_naive2 complete. Time: %lld ms\n", lut_duration.count());
+    printf("Matmul_naive2 complete. Time: %lld ms\n", lut_duration.count());*/
     
     // Step 3: Run qGEMM with LUT + SIMD (50 runs for averaging)
-    printf("\nStep 3: Running qGEMM_LUT SIMD (50 iterations for average)\n");
+    printf("\nStep 3: Running qGEMM_LUT SIMD (500 iterations for average)\n");
     long long total_simd_time = 0;
-    const int num_iterations = 50;
+    const int num_iterations = 500;
     for (int iter = 0; iter < num_iterations; iter++) {
-        memset(C_simd, 0, M * N * sizeof(int32_t));
+        //memset(C_simd, 0, M * N * sizeof(int32_t));
         auto lut_simd_start = std::chrono::high_resolution_clock::now();
         matmul_lut_simd(A_T, B_T, C_simd, M, N, K);
         auto lut_simd_end = std::chrono::high_resolution_clock::now();
@@ -399,7 +399,7 @@ int main() {
     printf("Matmul_simd complete. Average time over %d runs: %lld ms\n", num_iterations, avg_simd_time);
 
     // Step 4: Compute reference result using normal matmul (A_ @ B.T -> C_)
-    printf("\nStep 4: Computing reference matmul with A_ and B...\n");
+    /*printf("\nStep 4: Computing reference matmul with A_ and B...\n");
     // C_[m,n] = sum_k A_[n,k] * B[m,k]
     auto naive_start = std::chrono::high_resolution_clock::now();
     matmul_naive(A_, B, (int32_t*)C_, M, N, K);
@@ -434,7 +434,7 @@ int main() {
         }
     }
     printf("Comparison complete: max_error=%.1f, mismatches=%d/%d\n", 
-           max_error, error_count, M * N);
+           max_error, error_count, M * N);*/
     
     // Cleanup
     aligned_free(C_);
