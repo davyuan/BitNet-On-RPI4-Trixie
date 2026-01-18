@@ -282,11 +282,8 @@ void matmul_lut_simd(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
                     int16x8_t vec_c[4] = {vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0)};
 
 #pragma unroll
-                    // KK is the number of weight pairs. KK/2 is the number of bytes to have BBK640_2560 weights.
-                    // one weight pair has 32 LUT entries (16 high, 16 low), and one byte in 'a' has 2 weight pairs.
-                    // in every k iteration, we process 16 bytes from 'a' (32 weight pairs).
-                    for (int k = kk; k < kk + BK; k+= 32) {
-                        uint8x16_t vec_a0 = vld1q_u8((uint8_t*)A + i * KK + k * 32);
+                     for (int k = kk; k < kk + BK; k+= 32) {
+                        int8x16_t vec_a0 = vld1q_s8(A + i * KK + k * 32);
                         
                         // Lookup on high and low tables separately
                         int8x16_t vec_c0_h = vqtbl1q_s8(vec_lut_high[k - kk], vec_a0);
@@ -305,7 +302,7 @@ void matmul_lut_simd(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
                         vec_c[0] += out0;
                         vec_c[1] += out1;
 
-                        uint8x16_t vec_a1 = vld1q_u8((uint8_t*)A + i * KK + k * 32 + 16);
+                        int8x16_t vec_a1 = vld1q_s8(A + i * KK + k * 32 + 16);
                         
                         // Lookup on high and low tables separately
                         int8x16_t vec_c1_h = vqtbl1q_s8(vec_lut_high[k - kk], vec_a1);
@@ -415,7 +412,7 @@ int main() {
     auto lut_simd_end = std::chrono::high_resolution_clock::now();
     auto lut_simd_duration = std::chrono::duration_cast<std::chrono::milliseconds>(lut_simd_end - lut_simd_start);
     
-    printf("Matmul_simd complete. Time: %lld ms\n", lut_duration.count());
+    printf("Matmul_simd complete. Time: %lld ms\n", lut_simd_duration.count());
 
     // Step 4: Compute reference result using normal matmul (A_ @ B.T -> C_)
     printf("\nStep 4: Computing reference matmul with A_ and B...\n");
