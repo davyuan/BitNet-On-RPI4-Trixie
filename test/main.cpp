@@ -654,7 +654,7 @@ int main() {
     printf("Reference matmul complete. Time: %lld ms\n", naive_duration.count());
     
     // Print performance comparison
-    double speedup_naive2 = (double)naive_duration.count() / (double)lut_duration.count();
+    //double speedup_naive2 = (double)naive_duration.count() / (double)lut_duration.count();
     double speedup_simd = (double)naive_duration.count() / (double)avg_simd_time;
     printf("\n=== PERFORMANCE COMPARISON ===\n");
     printf("LUT matmul naive2:   %lld ms\n", lut_duration.count());
