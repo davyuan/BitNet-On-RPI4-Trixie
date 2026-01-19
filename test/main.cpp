@@ -91,6 +91,17 @@ void transpose_A_matrix(int8_t* A, int8_t* A_T, int M, int KK) {
     }
 }
 
+static inline void interleave_vec_c_block(int16x4_t c0, int16x4_t c1, int16x4_t c2, int16x4_t c3, int32x4_t out[4]) {
+    int16x4x2_t zip01 = vzip_s16(c0, c1);
+    int16x4x2_t zip23 = vzip_s16(c2, c3);
+    int16x4x2_t zip0213 = vzip_s16(zip01.val[0], zip23.val[0]);
+    int16x4x2_t zip1313 = vzip_s16(zip01.val[1], zip23.val[1]);
+    out[0] = vmovl_s16(zip0213.val[0]);
+    out[1] = vmovl_s16(zip0213.val[1]);
+    out[2] = vmovl_s16(zip1313.val[0]);
+    out[3] = vmovl_s16(zip1313.val[1]);
+}
+
 void matmul_naive(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
     for (int i = 0; i < M; i++) {
         for (int j = 0; j < N; j++) {
@@ -448,110 +459,50 @@ void matmul_lut_simd2(int8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K
                         vec_c3[1] = vaddq_s16(vec_c3[1], out31);
                     }
 
-                    // Interleave: create int32x4_t vectors by taking one lane from each vec_c
-                    // vec_out[0] = [vec_c0[0], vec_c1[0], vec_c2[0], vec_c3[0]] as int32
-                    // vec_out[1] = [vec_c0[1], vec_c1[1], vec_c2[1], vec_c3[1]] as int32, etc.
-                    int32x4_t vec_out[16];
+                    int32x4_t vec_out_lo[4];
+                    int32x4_t vec_out_hi[4];
+                    interleave_vec_c_block(vget_low_s16(vec_c0[0]), vget_low_s16(vec_c1[0]), vget_low_s16(vec_c2[0]), vget_low_s16(vec_c3[0]), vec_out_lo);
+                    interleave_vec_c_block(vget_high_s16(vec_c0[0]), vget_high_s16(vec_c1[0]), vget_high_s16(vec_c2[0]), vget_high_s16(vec_c3[0]), vec_out_hi);
                     
-                    // Extract low 4 elements from all 4 vec_c and interleave
-                    int16x4_t c0_lo = vget_low_s16(vec_c0[0]);
-                    int16x4_t c1_lo = vget_low_s16(vec_c1[0]);
-                    int16x4_t c2_lo = vget_low_s16(vec_c2[0]);
-                    int16x4_t c3_lo = vget_low_s16(vec_c3[0]);
+                    int32x4_t c_vals0 = vld1q_s32((int32_t*)&C[(i+0)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+0)*N + j], vaddq_s32(c_vals0, vec_out_lo[0]));
+                    int32x4_t c_vals1 = vld1q_s32((int32_t*)&C[(i+1)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+1)*N + j], vaddq_s32(c_vals1, vec_out_lo[1]));
+                    int32x4_t c_vals2 = vld1q_s32((int32_t*)&C[(i+2)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+2)*N + j], vaddq_s32(c_vals2, vec_out_lo[2]));
+                    int32x4_t c_vals3 = vld1q_s32((int32_t*)&C[(i+3)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+3)*N + j], vaddq_s32(c_vals3, vec_out_lo[3]));
+                    int32x4_t c_vals4 = vld1q_s32((int32_t*)&C[(i+4)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+4)*N + j], vaddq_s32(c_vals4, vec_out_hi[0]));
+                    int32x4_t c_vals5 = vld1q_s32((int32_t*)&C[(i+5)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+5)*N + j], vaddq_s32(c_vals5, vec_out_hi[1]));
+                    int32x4_t c_vals6 = vld1q_s32((int32_t*)&C[(i+6)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+6)*N + j], vaddq_s32(c_vals6, vec_out_hi[2]));
+                    int32x4_t c_vals7 = vld1q_s32((int32_t*)&C[(i+7)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+7)*N + j], vaddq_s32(c_vals7, vec_out_hi[3]));
                     
-                    // Interleave and expand to int32
-                    int16x4x2_t zip_lo01 = vzip_s16(c0_lo, c1_lo);
-                    int16x4x2_t zip_lo23 = vzip_s16(c2_lo, c3_lo);
-                    int16x4x2_t zip_lo0213 = vzip_s16(zip_lo01.val[0], zip_lo23.val[0]);
-                    int16x4x2_t zip_lo1313 = vzip_s16(zip_lo01.val[1], zip_lo23.val[1]);
+                    int32x4_t vec_out_lo2[4];
+                    int32x4_t vec_out_hi2[4];
+                    interleave_vec_c_block(vget_low_s16(vec_c0[1]), vget_low_s16(vec_c1[1]), vget_low_s16(vec_c2[1]), vget_low_s16(vec_c3[1]), vec_out_lo2);
+                    interleave_vec_c_block(vget_high_s16(vec_c0[1]), vget_high_s16(vec_c1[1]), vget_high_s16(vec_c2[1]), vget_high_s16(vec_c3[1]), vec_out_hi2);
                     
-                    vec_out[0] = vmovl_s16(zip_lo0213.val[0]);  // [vec_c0[0], vec_c1[0], vec_c2[0], vec_c3[0]]
-                    vec_out[1] = vmovl_s16(zip_lo0213.val[1]);  // [vec_c0[1], vec_c1[1], vec_c2[1], vec_c3[1]]
-                    vec_out[2] = vmovl_s16(zip_lo1313.val[0]);  // [vec_c0[2], vec_c1[2], vec_c2[2], vec_c3[2]]
-                    vec_out[3] = vmovl_s16(zip_lo1313.val[1]);  // [vec_c0[3], vec_c1[3], vec_c2[3], vec_c3[3]]
+                    int32x4_t c_vals8 = vld1q_s32((int32_t*)&C[(i+8)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+8)*N + j], vaddq_s32(c_vals8, vec_out_lo2[0]));
+                    int32x4_t c_vals9 = vld1q_s32((int32_t*)&C[(i+9)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+9)*N + j], vaddq_s32(c_vals9, vec_out_lo2[1]));
+                    int32x4_t c_vals10 = vld1q_s32((int32_t*)&C[(i+10)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+10)*N + j], vaddq_s32(c_vals10, vec_out_lo2[2]));
+                    int32x4_t c_vals11 = vld1q_s32((int32_t*)&C[(i+11)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+11)*N + j], vaddq_s32(c_vals11, vec_out_lo2[3]));
+                    int32x4_t c_vals12 = vld1q_s32((int32_t*)&C[(i+12)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+12)*N + j], vaddq_s32(c_vals12, vec_out_hi2[0]));
+                    int32x4_t c_vals13 = vld1q_s32((int32_t*)&C[(i+13)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+13)*N + j], vaddq_s32(c_vals13, vec_out_hi2[1]));
+                    int32x4_t c_vals14 = vld1q_s32((int32_t*)&C[(i+14)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+14)*N + j], vaddq_s32(c_vals14, vec_out_hi2[2]));
+                    int32x4_t c_vals15 = vld1q_s32((int32_t*)&C[(i+15)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+15)*N + j], vaddq_s32(c_vals15, vec_out_hi2[3]));
                     
-                    // Extract high 4 elements and interleave
-                    int16x4_t c0_hi = vget_high_s16(vec_c0[0]);
-                    int16x4_t c1_hi = vget_high_s16(vec_c1[0]);
-                    int16x4_t c2_hi = vget_high_s16(vec_c2[0]);
-                    int16x4_t c3_hi = vget_high_s16(vec_c3[0]);
-                    
-                    int16x4x2_t zip_hi01 = vzip_s16(c0_hi, c1_hi);
-                    int16x4x2_t zip_hi23 = vzip_s16(c2_hi, c3_hi);
-                    int16x4x2_t zip_hi0213 = vzip_s16(zip_hi01.val[0], zip_hi23.val[0]);
-                    int16x4x2_t zip_hi1313 = vzip_s16(zip_hi01.val[1], zip_hi23.val[1]);
-                    
-                    vec_out[4] = vmovl_s16(zip_hi0213.val[0]);  // [vec_c0[4], vec_c1[4], vec_c2[4], vec_c3[4]]
-                    vec_out[5] = vmovl_s16(zip_hi0213.val[1]);  // [vec_c0[5], vec_c1[5], vec_c2[5], vec_c3[5]]
-                    vec_out[6] = vmovl_s16(zip_hi1313.val[0]);  // [vec_c0[6], vec_c1[6], vec_c2[6], vec_c3[6]]
-                    vec_out[7] = vmovl_s16(zip_hi1313.val[1]);  // [vec_c0[7], vec_c1[7], vec_c2[7], vec_c3[7]]
-                    
-                     // Extract low 4 elements from all 4 vec_c and interleave
-                    c0_lo = vget_low_s16(vec_c0[1]);
-                    c1_lo = vget_low_s16(vec_c1[1]);
-                    c2_lo = vget_low_s16(vec_c2[1]);
-                    c3_lo = vget_low_s16(vec_c3[1]);
-                    
-                    // Interleave and expand to int32
-                    zip_lo01 = vzip_s16(c0_lo, c1_lo);
-                    zip_lo23 = vzip_s16(c2_lo, c3_lo);
-                    zip_lo0213 = vzip_s16(zip_lo01.val[0], zip_lo23.val[0]);
-                    zip_lo1313 = vzip_s16(zip_lo01.val[1], zip_lo23.val[1]);
-                    
-                    vec_out[8] = vmovl_s16(zip_lo0213.val[0]);  
-                    vec_out[9] = vmovl_s16(zip_lo0213.val[1]);  
-                    vec_out[10] = vmovl_s16(zip_lo1313.val[0]);  
-                    vec_out[11] = vmovl_s16(zip_lo1313.val[1]);  
-                    
-                    // Extract high 4 elements and interleave
-                    c0_hi = vget_high_s16(vec_c0[1]);
-                    c1_hi = vget_high_s16(vec_c1[1]);
-                    c2_hi = vget_high_s16(vec_c2[1]);
-                    c3_hi = vget_high_s16(vec_c3[1]);
-                    
-                    zip_hi01 = vzip_s16(c0_hi, c1_hi);
-                    zip_hi23 = vzip_s16(c2_hi, c3_hi);
-                    zip_hi0213 = vzip_s16(zip_hi01.val[0], zip_hi23.val[0]);
-                    zip_hi1313 = vzip_s16(zip_hi01.val[1], zip_hi23.val[1]);
-                    
-                    vec_out[12] = vmovl_s16(zip_hi0213.val[0]);  
-                    vec_out[13] = vmovl_s16(zip_hi0213.val[1]);  
-                    vec_out[14] = vmovl_s16(zip_hi1313.val[0]);  
-                    vec_out[15] = vmovl_s16(zip_hi1313.val[1]);  
-                    
-                    
-                    int32_t* p0 = &C[(i+0)*N + j];
-                    vst1q_s32(p0, vaddq_s32(vld1q_s32(p0), vec_out[0]));                    
-                    int32_t* p1 = &C[(i+1)*N + j];
-                    vst1q_s32(p1, vaddq_s32(vld1q_s32(p1), vec_out[1]));                    
-                    int32_t* p2 = &C[(i+2)*N + j];
-                    vst1q_s32(p2, vaddq_s32(vld1q_s32(p2), vec_out[2]));                    
-                    int32_t* p3 = &C[(i+3)*N + j];
-                    vst1q_s32(p3, vaddq_s32(vld1q_s32(p3), vec_out[3]));                    
-                    int32_t* p4 = &C[(i+4)*N + j];
-                    vst1q_s32(p4, vaddq_s32(vld1q_s32(p4), vec_out[4]));                    
-                    int32_t* p5 = &C[(i+5)*N + j];
-                    vst1q_s32(p5, vaddq_s32(vld1q_s32(p5), vec_out[5]));                    
-                    int32_t* p6 = &C[(i+6)*N + j];
-                    vst1q_s32(p6, vaddq_s32(vld1q_s32(p6), vec_out[6]));                    
-                    int32_t* p7 = &C[(i+7)*N + j];
-                    vst1q_s32(p7, vaddq_s32(vld1q_s32(p7), vec_out[7]));
-                    int32_t* p8 = &C[(i+8)*N + j];
-                    vst1q_s32(p8, vaddq_s32(vld1q_s32(p8), vec_out[8]));                    
-                    int32_t* p9 = &C[(i+9)*N + j];
-                    vst1q_s32(p9, vaddq_s32(vld1q_s32(p9), vec_out[9]));                    
-                    int32_t* p10 = &C[(i+10)*N + j];
-                    vst1q_s32(p10, vaddq_s32(vld1q_s32(p10), vec_out[10]));                    
-                    int32_t* p11 = &C[(i+11)*N + j];
-                    vst1q_s32(p11, vaddq_s32(vld1q_s32(p11), vec_out[11]));                    
-                    int32_t* p12 = &C[(i+12)*N + j];
-                    vst1q_s32(p12, vaddq_s32(vld1q_s32(p12), vec_out[12]));                    
-                    int32_t* p13 = &C[(i+13)*N + j];
-                    vst1q_s32(p13, vaddq_s32(vld1q_s32(p13), vec_out[13]));                    
-                    int32_t* p14 = &C[(i+14)*N + j];
-                    vst1q_s32(p14, vaddq_s32(vld1q_s32(p14), vec_out[14]));                    
-                    int32_t* p15 = &C[(i+15)*N + j];
-                    vst1q_s32(p15, vaddq_s32(vld1q_s32(p15), vec_out[15]));
                 }
             }
         }
