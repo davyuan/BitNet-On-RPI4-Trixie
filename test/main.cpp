@@ -657,7 +657,7 @@ int main() {
     //double speedup_naive2 = (double)naive_duration.count() / (double)lut_duration.count();
     double speedup_simd = (double)naive_duration.count() / (double)avg_simd_time;
     printf("\n=== PERFORMANCE COMPARISON ===\n");
-    printf("LUT matmul naive2:   %lld ms\n", lut_duration.count());
+    //printf("LUT matmul naive2:   %lld ms\n", lut_duration.count());
     printf("LUT matmul SIMD (avg):   %lld ms\n", avg_simd_time);
     printf("Speedup (naive / SIMD): %.2fx\n\n", speedup_simd);
     
