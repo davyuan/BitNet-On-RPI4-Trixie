@@ -92,14 +92,34 @@ void transpose_A_matrix(int8_t* A, int8_t* A_T, int M, int KK) {
 }
 
 static inline void interleave_vec_c_block(int16x4_t c0, int16x4_t c1, int16x4_t c2, int16x4_t c3, int32x4_t out[4]) {
-    int16x4x2_t zip01 = vzip_s16(c0, c1);
-    int16x4x2_t zip23 = vzip_s16(c2, c3);
-    int16x4x2_t zip0213 = vzip_s16(zip01.val[0], zip23.val[0]);
-    int16x4x2_t zip1313 = vzip_s16(zip01.val[1], zip23.val[1]);
-    out[0] = vmovl_s16(zip0213.val[0]);
-    out[1] = vmovl_s16(zip0213.val[1]);
-    out[2] = vmovl_s16(zip1313.val[0]);
-    out[3] = vmovl_s16(zip1313.val[1]);
+    int16x4_t row0 = vdup_n_s16(0);
+    row0 = vsetq_lane_s16(vget_lane_s16(c0, 0), row0, 0);
+    row0 = vsetq_lane_s16(vget_lane_s16(c1, 0), row0, 1);
+    row0 = vsetq_lane_s16(vget_lane_s16(c2, 0), row0, 2);
+    row0 = vsetq_lane_s16(vget_lane_s16(c3, 0), row0, 3);
+
+    int16x4_t row1 = vdup_n_s16(0);
+    row1 = vsetq_lane_s16(vget_lane_s16(c0, 1), row1, 0);
+    row1 = vsetq_lane_s16(vget_lane_s16(c1, 1), row1, 1);
+    row1 = vsetq_lane_s16(vget_lane_s16(c2, 1), row1, 2);
+    row1 = vsetq_lane_s16(vget_lane_s16(c3, 1), row1, 3);
+
+    int16x4_t row2 = vdup_n_s16(0);
+    row2 = vsetq_lane_s16(vget_lane_s16(c0, 2), row2, 0);
+    row2 = vsetq_lane_s16(vget_lane_s16(c1, 2), row2, 1);
+    row2 = vsetq_lane_s16(vget_lane_s16(c2, 2), row2, 2);
+    row2 = vsetq_lane_s16(vget_lane_s16(c3, 2), row2, 3);
+
+    int16x4_t row3 = vdup_n_s16(0);
+    row3 = vsetq_lane_s16(vget_lane_s16(c0, 3), row3, 0);
+    row3 = vsetq_lane_s16(vget_lane_s16(c1, 3), row3, 1);
+    row3 = vsetq_lane_s16(vget_lane_s16(c2, 3), row3, 2);
+    row3 = vsetq_lane_s16(vget_lane_s16(c3, 3), row3, 3);
+
+    out[0] = vmovl_s16(row0);
+    out[1] = vmovl_s16(row1);
+    out[2] = vmovl_s16(row2);
+    out[3] = vmovl_s16(row3);
 }
 
 void matmul_naive(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
