@@ -13,7 +13,7 @@
 #define K_DIM 2560
 
 const int BM = 128;
-const int BK = 256;
+const int BK = 64;
 const int bm = 32;
 const int by = (256/(bm));
 const int M =2560;           // Weight rows (A rows)
