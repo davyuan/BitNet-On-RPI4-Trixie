@@ -223,7 +223,7 @@ void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT,
 #pragma unroll
             for (int k = kk; k < kk + BK; k++) {
                 // Load 16 activations from same k, different rows (from transposed A)
-                int8x16_t vec_a = vld1q_s8(A + k * M + i);
+                uint8x16_t vec_a = vld1q_u8(A + k * M + i);
                 uint8x16_t vec_a_top = vshrq_n_u8(vec_a, 4);
                 uint8x16_t vec_a_bot = vandq_u8(vec_a, vec_mask);
                 uint8x16x2_t vec_a_unpacked = vzipq_u8(vec_a_top, vec_a_bot);
@@ -250,22 +250,22 @@ void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT,
             // Extract and store results
             bitnet_float_type* pC = (bitnet_float_type*) &(C[(i+0)*N + j]);
 #pragma unroll
-            for (int i = 0; i < 8; i++; pC += N) {
+            for (int i = 0; i < 8; i++, pC += N) {
                 float32_t val = vgetq_lane_s16(vec_c[0], i) / ((bitnet_float_type*)LUT_Scales)[0] * ((bitnet_float_type*)Scales)[0];
                 vst1q_f32(pC, vaddq_f32(vld1q_f32(pC), val));
             }            
 #pragma unroll
-            for (int i = 0; i < 8; i++; pC += N) {
+            for (int i = 0; i < 8; i++, pC += N) {
                 float32_t val = vgetq_lane_s16(vec_c[1], i) / ((bitnet_float_type*)LUT_Scales)[0] * ((bitnet_float_type*)Scales)[0];
                 vst1q_f32(pC, vaddq_f32(vld1q_f32(pC), val));
             }            
 #pragma unroll
-            for (int i = 0; i < 8; i++; pC += N) {
+            for (int i = 0; i < 8; i++, pC += N) {
                 float32_t val = vgetq_lane_s16(vec_c[2], i) / ((bitnet_float_type*)LUT_Scales)[0] * ((bitnet_float_type*)Scales)[0];
                 vst1q_f32(pC, vaddq_f32(vld1q_f32(pC), val));
             }            
 #pragma unroll
-            for (int i = 0; i < 8; i++; pC += N) {
+            for (int i = 0; i < 8; i++, pC += N) {
                 float32_t val = vgetq_lane_s16(vec_c[3], i) / ((bitnet_float_type*)LUT_Scales)[0] * ((bitnet_float_type*)Scales)[0];
                 vst1q_f32(pC, vaddq_f32(vld1q_f32(pC), val));
             }            
