@@ -557,7 +557,10 @@ void matmul_lut_simd2(int8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K
         }
     }
 
-    aligned_free(QLUT);
+    aligned_free(QLUT0);
+    aligned_free(QLUT1);
+    aligned_free(QLUT2);
+    aligned_free(QLUT3);
     aligned_free(LUT_Scales);
     aligned_free(Scales);
 }
