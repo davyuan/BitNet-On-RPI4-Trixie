@@ -92,15 +92,17 @@ void transpose_A_matrix(int8_t* A, int8_t* A_T, int M, int KK) {
 }
 
 static inline void interleave_vec_c_block(int16x4_t c0, int16x4_t c1, int16x4_t c2, int16x4_t c3, int32x4_t out[4]) {
-    int16x4_t row0 = { vget_lane_s16(c0, 0), vget_lane_s16(c1, 0), vget_lane_s16(c2, 0), vget_lane_s16(c3, 0) };
-    int16x4_t row1 = { vget_lane_s16(c0, 1), vget_lane_s16(c1, 1), vget_lane_s16(c2, 1), vget_lane_s16(c3, 1) };
-    int16x4_t row2 = { vget_lane_s16(c0, 2), vget_lane_s16(c1, 2), vget_lane_s16(c2, 2), vget_lane_s16(c3, 2) };
-    int16x4_t row3 = { vget_lane_s16(c0, 3), vget_lane_s16(c1, 3), vget_lane_s16(c2, 3), vget_lane_s16(c3, 3) };
+    int16x4x2_t zip01 = vzip_s16(c0, c1);
+    int16x4x2_t zip23 = vzip_s16(c2, c3);
+    int16x4x2_t trn0 = vtrn_s16(zip01.val[0], zip23.val[0]);
+    int16x4x2_t trn1 = vtrn_s16(zip01.val[1], zip23.val[1]);
+    int16x4x2_t rows01 = vzip_s16(trn0.val[0], trn0.val[1]);
+    int16x4x2_t rows23 = vzip_s16(trn1.val[0], trn1.val[1]);
 
-    out[0] = vmovl_s16(row0);
-    out[1] = vmovl_s16(row1);
-    out[2] = vmovl_s16(row2);
-    out[3] = vmovl_s16(row3);
+    out[0] = vmovl_s16(rows01.val[0]);
+    out[1] = vmovl_s16(rows01.val[1]);
+    out[2] = vmovl_s16(rows23.val[0]);
+    out[3] = vmovl_s16(rows23.val[1]);
 }
 
 static inline void reconstruct_int16_pair(int8x16_t high, int8x16_t low, int16x8_t& out_lo, int16x8_t& out_hi) {
