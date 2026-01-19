@@ -16,9 +16,9 @@ const int BM = 64;
 const int BK = 128;
 const int bm = 32;
 const int by = (256/(bm));
-const int M =640;           // Activation rows (B rows)
+const int M =640;           // Weight rows (A rows)
 const int K = 2560;        // Shared dimension
-const int N = 160;         // Weight rows (A rows) = output size
+const int N = 160;         // Activation rows (B rows) = output size
 
 // Repack matrix A according to the tl1 layout pattern
 // BM, BY, bm, by are the tiling parameters
@@ -633,7 +633,7 @@ int main() {
     long long total_simd_time = 0;
     const int num_iterations = 200;
     for (int iter = 0; iter < num_iterations; iter++) {
-        //memset(C_simd, 0, M * N * sizeof(int32_t));
+        memset(C_simd, 0, M * N * sizeof(int32_t));
         auto lut_simd_start = std::chrono::high_resolution_clock::now();
         matmul_lut_simd2(A_T, B_T, C_simd, M, N, K);
         auto lut_simd_end = std::chrono::high_resolution_clock::now();
