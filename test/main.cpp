@@ -103,6 +103,15 @@ static inline void interleave_vec_c_block(int16x4_t c0, int16x4_t c1, int16x4_t 
     out[3] = vmovl_s16(row3);
 }
 
+static inline void reconstruct_int16_pair(int8x16_t high, int8x16_t low, int16x8_t& out_lo, int16x8_t& out_hi) {
+    int16x8_t high_lo = vshlq_n_s16(vmovl_s8(vget_low_s8(high)), 8);
+    int16x8_t high_hi = vshlq_n_s16(vmovl_s8(vget_high_s8(high)), 8);
+    int16x8_t low_lo = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_low_s8(low))));
+    int16x8_t low_hi = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_high_s8(low))));
+    out_lo = vorrq_s16(high_lo, low_lo);
+    out_hi = vorrq_s16(high_hi, low_hi);
+}
+
 void matmul_naive(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
     for (int i = 0; i < M; i++) {
         for (int j = 0; j < N; j++) {
@@ -401,33 +410,14 @@ void matmul_lut_simd2(int8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K
                         int8x16_t vec_c3_h = vqtbl1q_s8(vec_lut3_high[k - kk], vec_a);
                         int8x16_t vec_c3_l = vqtbl1q_s8(vec_lut3_low[k - kk], vec_a);
 
-                        int16x8_t v0h_lo_16 = vshlq_n_s16(vmovl_s8(vget_low_s8(vec_c0_h)), 8);
-                        int16x8_t v0h_hi_16 = vshlq_n_s16(vmovl_s8(vget_high_s8(vec_c0_h)), 8);
-                        int16x8_t v0l_lo_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_low_s8(vec_c0_l))));
-                        int16x8_t v0l_hi_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_high_s8(vec_c0_l))));
-                        int16x8_t out00 = vorrq_s16(v0h_lo_16, v0l_lo_16);
-                        int16x8_t out01 = vorrq_s16(v0h_hi_16, v0l_hi_16);
-
-                        int16x8_t v1h_lo_16 = vshlq_n_s16(vmovl_s8(vget_low_s8(vec_c1_h)), 8);
-                        int16x8_t v1h_hi_16 = vshlq_n_s16(vmovl_s8(vget_high_s8(vec_c1_h)), 8);
-                        int16x8_t v1l_lo_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_low_s8(vec_c1_l))));
-                        int16x8_t v1l_hi_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_high_s8(vec_c1_l))));
-                        int16x8_t out10 = vorrq_s16(v1h_lo_16, v1l_lo_16);
-                        int16x8_t out11 = vorrq_s16(v1h_hi_16, v1l_hi_16);
-
-                        int16x8_t v2h_lo_16 = vshlq_n_s16(vmovl_s8(vget_low_s8(vec_c2_h)), 8);
-                        int16x8_t v2h_hi_16 = vshlq_n_s16(vmovl_s8(vget_high_s8(vec_c2_h)), 8);
-                        int16x8_t v2l_lo_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_low_s8(vec_c2_l))));
-                        int16x8_t v2l_hi_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_high_s8(vec_c2_l))));
-                        int16x8_t out20 = vorrq_s16(v2h_lo_16, v2l_lo_16);
-                        int16x8_t out21 = vorrq_s16(v2h_hi_16, v2l_hi_16);
-
-                        int16x8_t v3h_lo_16 = vshlq_n_s16(vmovl_s8(vget_low_s8(vec_c3_h)), 8);
-                        int16x8_t v3h_hi_16 = vshlq_n_s16(vmovl_s8(vget_high_s8(vec_c3_h)), 8);
-                        int16x8_t v3l_lo_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_low_s8(vec_c3_l))));
-                        int16x8_t v3l_hi_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_high_s8(vec_c3_l))));
-                        int16x8_t out30 = vorrq_s16(v3h_lo_16, v3l_lo_16);
-                        int16x8_t out31 = vorrq_s16(v3h_hi_16, v3l_hi_16);
+                        int16x8_t out00, out01;
+                        int16x8_t out10, out11;
+                        int16x8_t out20, out21;
+                        int16x8_t out30, out31;
+                        reconstruct_int16_pair(vec_c0_h, vec_c0_l, out00, out01);
+                        reconstruct_int16_pair(vec_c1_h, vec_c1_l, out10, out11);
+                        reconstruct_int16_pair(vec_c2_h, vec_c2_l, out20, out21);
+                        reconstruct_int16_pair(vec_c3_h, vec_c3_l, out30, out31);
 
                         vec_c0[0] = vaddq_s16(vec_c0[0], out00);
                         vec_c0[1] = vaddq_s16(vec_c0[1], out01);
@@ -441,8 +431,13 @@ void matmul_lut_simd2(int8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K
 
                     int32x4_t vec_out_lo[4];
                     int32x4_t vec_out_hi[4];
+                    int32x4_t vec_out_lo2[4];
+                    int32x4_t vec_out_hi2[4];
                     interleave_vec_c_block(vget_low_s16(vec_c0[0]), vget_low_s16(vec_c1[0]), vget_low_s16(vec_c2[0]), vget_low_s16(vec_c3[0]), vec_out_lo);
                     interleave_vec_c_block(vget_high_s16(vec_c0[0]), vget_high_s16(vec_c1[0]), vget_high_s16(vec_c2[0]), vget_high_s16(vec_c3[0]), vec_out_hi);
+                    interleave_vec_c_block(vget_low_s16(vec_c0[1]), vget_low_s16(vec_c1[1]), vget_low_s16(vec_c2[1]), vget_low_s16(vec_c3[1]), vec_out_lo2);
+                    interleave_vec_c_block(vget_high_s16(vec_c0[1]), vget_high_s16(vec_c1[1]), vget_high_s16(vec_c2[1]), vget_high_s16(vec_c3[1]), vec_out_hi2);
+                    
                     
                     int32_t* p0 = &C[(i+0)*N + j];
                     vst1q_s32(p0, vaddq_s32(vld1q_s32(p0), vec_out_lo[0]));
@@ -460,12 +455,6 @@ void matmul_lut_simd2(int8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K
                     vst1q_s32(p6, vaddq_s32(vld1q_s32(p6), vec_out_hi[2]));
                     int32_t* p7 = &C[(i+7)*N + j];
                     vst1q_s32(p7, vaddq_s32(vld1q_s32(p7), vec_out_hi[3]));
-                    
-                    int32x4_t vec_out_lo2[4];
-                    int32x4_t vec_out_hi2[4];
-                    interleave_vec_c_block(vget_low_s16(vec_c0[1]), vget_low_s16(vec_c1[1]), vget_low_s16(vec_c2[1]), vget_low_s16(vec_c3[1]), vec_out_lo2);
-                    interleave_vec_c_block(vget_high_s16(vec_c0[1]), vget_high_s16(vec_c1[1]), vget_high_s16(vec_c2[1]), vget_high_s16(vec_c3[1]), vec_out_hi2);
-                    
                     int32_t* p8 = &C[(i+8)*N + j];
                     vst1q_s32(p8, vaddq_s32(vld1q_s32(p8), vec_out_lo2[0]));
                     int32_t* p9 = &C[(i+9)*N + j];
@@ -482,7 +471,6 @@ void matmul_lut_simd2(int8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K
                     vst1q_s32(p14, vaddq_s32(vld1q_s32(p14), vec_out_hi2[2]));
                     int32_t* p15 = &C[(i+15)*N + j];
                     vst1q_s32(p15, vaddq_s32(vld1q_s32(p15), vec_out_hi2[3]));
-                    
                 }
             }
         }
