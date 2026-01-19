@@ -415,16 +415,15 @@ void matmul_lut_simd2(int8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K
                         int16x8_t out20, out21;
                         int16x8_t out30, out31;
                         reconstruct_int16_pair(vec_c0_h, vec_c0_l, out00, out01);
-                        reconstruct_int16_pair(vec_c1_h, vec_c1_l, out10, out11);
-                        reconstruct_int16_pair(vec_c2_h, vec_c2_l, out20, out21);
-                        reconstruct_int16_pair(vec_c3_h, vec_c3_l, out30, out31);
-
                         vec_c0[0] = vaddq_s16(vec_c0[0], out00);
                         vec_c0[1] = vaddq_s16(vec_c0[1], out01);
+                        reconstruct_int16_pair(vec_c1_h, vec_c1_l, out10, out11);
                         vec_c1[0] = vaddq_s16(vec_c1[0], out10);
                         vec_c1[1] = vaddq_s16(vec_c1[1], out11);
+                        reconstruct_int16_pair(vec_c2_h, vec_c2_l, out20, out21);
                         vec_c2[0] = vaddq_s16(vec_c2[0], out20);
                         vec_c2[1] = vaddq_s16(vec_c2[1], out21);
+                        reconstruct_int16_pair(vec_c3_h, vec_c3_l, out30, out31);
                         vec_c3[0] = vaddq_s16(vec_c3[0], out30);
                         vec_c3[1] = vaddq_s16(vec_c3[1], out31);
                     }
