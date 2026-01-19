@@ -16,9 +16,9 @@ const int BM = 64;
 const int BK = 64;
 const int bm = 32;
 const int by = (256/(bm));
-const int M =640;           // Weight rows (A rows)
+const int M =2560;           // Weight rows (A rows)
 const int K = 2560;        // Shared dimension
-const int N = 160;         // Activation rows (B rows) = output size
+const int N = 640;         // Activation rows (B rows) = output size
 
 // Repack matrix A according to the tl1 layout pattern
 // BM, BY, bm, by are the tiling parameters
