@@ -18,7 +18,7 @@ const int bm = 32;
 const int by = (256/(bm));
 const int M =2560;           // Weight rows (A rows)
 const int K = 2560;        // Shared dimension
-const int N = 640;         // Activation rows (B rows) = output size
+const int N = 160;         // Activation rows (B rows) = output size
 
 // Repack matrix A according to the tl1 layout pattern
 // BM, BY, bm, by are the tiling parameters
@@ -537,7 +537,7 @@ int main() {
     //process_tl1(A, A_packed, M, K, BM, BY, bm, by);
     
     printf("Running LUT construction and inference...\n");
-    printf("Matrix dimensions:  A(640x2560), B(2560x160), C(640x160)\n");
+    printf("Matrix dimensions:  A(2560x2560), B(2560x640), C(2560x160)\n");
 
     // Step 2: Run qGEMM with LUT
     /*printf("\nStep 2: Running qGEMM_LUT (32x64 kernel)\n");
