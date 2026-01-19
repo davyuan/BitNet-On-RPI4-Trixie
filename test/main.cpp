@@ -12,7 +12,7 @@
 #define TILE_SIZE 2
 #define K_DIM 2560
 
-const int BM = 64;
+const int BM = 128;
 const int BK = 64;
 const int bm = 32;
 const int by = (256/(bm));
@@ -230,7 +230,7 @@ void matmul_lut_naive2(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K)
     *LUT_Scales = 1.0f;
 
     for (int j = 0; j < N; j++) {                        
-        lut_ctor<K_DIM>(QLUT, (float32_t*)(B + j* K), LUT_Scales);    
+        lut_ctor(K, QLUT, (float32_t*)(B + j* K), LUT_Scales);    
         
         #pragma omp parallel for num_threads(4)
         for (int ii = 0; ii < M; ii += BM) {          
@@ -276,7 +276,7 @@ void matmul_lut_simd(int8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K)
     *LUT_Scales = 1.0f;
 
     for (int j = 0; j < N; j++) {                        
-        lut_ctor<K_DIM>(QLUT, (float32_t*)(B + j* K), LUT_Scales);    
+        lut_ctor(K, QLUT, (float32_t*)(B + j* K), LUT_Scales);    
         
         // Parallelize over row blocks
         #pragma omp parallel for num_threads(4)

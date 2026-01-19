@@ -782,7 +782,7 @@ void ggml_preprocessor(int m, int k, void* B, void* LUT_Scales, void* QLUT) {
         preprocessor_k<2560>(B, LUT_Scales, QLUT);
     }
 }
-void ggml_qgemm_lut(int m, int k, void* A, void* LUT, void* Scales, void* LUT_Scales, void* C) {
+void ggml_qgemm_lut(int m, int n, int k, int ii, void* A, void* LUT, void* Scales, void* LUT_Scales, void* C) {
     fprintf(stderr, "BitNet: ggml_qgemm_lut called with m=%d, k=%d\n", m, k);
     if (m == 640 && k == 2560) {
         fprintf(stderr, "  -> Using 640x2560 kernel\n");
