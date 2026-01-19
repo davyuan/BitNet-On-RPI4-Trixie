@@ -546,20 +546,34 @@ int main() {
     
     printf("Matmul_naive2 complete. Time: %lld ms\n", lut_duration.count());*/
     
-    // Step 3: Run qGEMM with LUT + SIMD (200 runs for averaging)
-    printf("\nStep 3: Running qGEMM_LUT SIMD (200 iterations for average)\n");
+    // Step 2: Run qGEMM with LUT + SIMD (100 runs for averaging)
+    printf("\nStep 2: Running qGEMM_LUT SIMD (100 iterations for average)\n");
     long long total_simd_time = 0;
-    const int num_iterations = 200;
+    const int num_iterations = 100;
     for (int iter = 0; iter < num_iterations; iter++) {
         memset(C_simd, 0, M * N * sizeof(int32_t));
         auto lut_simd_start = std::chrono::high_resolution_clock::now();
-        matmul_lut_simd2(A_T, B_T, C_simd, M, N, K);
+        matmul_lut_simd(A_T, B_T, C_simd, M, N, K);
         auto lut_simd_end = std::chrono::high_resolution_clock::now();
         auto lut_simd_duration = std::chrono::duration_cast<std::chrono::milliseconds>(lut_simd_end - lut_simd_start);
         total_simd_time += lut_simd_duration.count();
     }
     long long avg_simd_time = total_simd_time / num_iterations;
-    printf("Matmul_simd complete. Average time over %d runs: %lld ms\n", num_iterations, avg_simd_time);
+    printf("Matmul_simd2 complete. Average time over %d runs: %lld ms\n", num_iterations, avg_simd_time);
+
+    // Step 3: Run qGEMM with LUT + SIMD (100 runs for averaging)
+    printf("\nStep 3: Running qGEMM_LUT SIMD2 (100 iterations for average)\n");
+    long long total_simd_time2 = 0;
+    for (int iter = 0; iter < num_iterations; iter++) {
+        memset(C_simd, 0, M * N * sizeof(int32_t));
+        auto lut_simd_start2 = std::chrono::high_resolution_clock::now();
+        matmul_lut_simd2(A_T, B_T, C_simd, M, N, K);
+        auto lut_simd_end2 = std::chrono::high_resolution_clock::now();
+        auto lut_simd_duration = std::chrono::duration_cast<std::chrono::milliseconds>(lut_simd_end2 - lut_simd_start2);
+        total_simd_time2 += lut_simd_duration.count();
+    }
+    long long avg_simd_time2 = total_simd_time2 / num_iterations;
+    printf("Matmul_simd2 complete. Average time over %d runs: %lld ms\n", num_iterations, avg_simd_time2);
 
     // Step 4: Compute reference result using normal matmul (A_ @ B.T -> C_)
     printf("\nStep 4: Computing reference matmul with A_ and B...\n");
@@ -574,13 +588,16 @@ int main() {
     // Print performance comparison
     //double speedup_naive2 = (double)naive_duration.count() / (double)lut_duration.count();
     double speedup_simd = (double)naive_duration.count() / (double)avg_simd_time;
+    double speedup_simd2 = (double)naive_duration.count() / (double)avg_simd_time2;
     printf("\n=== PERFORMANCE COMPARISON ===\n");
-    //printf("LUT matmul naive2:   %lld ms\n", lut_duration.count());
+    printf("matmul naive:   %lld ms\n", naive_duration.count());
     printf("LUT matmul SIMD (avg):   %lld ms\n", avg_simd_time);
     printf("Speedup (naive / SIMD): %.2fx\n\n", speedup_simd);
+    printf("LUT matmul SIMD2 (avg):   %lld ms\n", avg_simd_time2);
+    printf("Speedup (naive / SIMD2): %.2fx\n\n", speedup_simd2);
     
     // Step 4: Compare results
-    printf("\nStep 4: Comparing kernel output (C) with reference (C_)...\n");
+    printf("\nStep 5: Comparing kernel output (C) with reference (C_)...\n");
     float32_t max_error = 0.0f;
     int error_count = 0;
     for (int i = 0; i < M * N; i++) {
