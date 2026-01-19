@@ -252,22 +252,22 @@ void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT,
 #pragma unroll
             for (int i = 0; i < 8; i++, pC += N) {
                 float32_t val = vgetq_lane_s16(vec_c[0], i) / ((bitnet_float_type*)LUT_Scales)[0] * ((bitnet_float_type*)Scales)[0];
-                vst1q_f32(pC, vaddq_f32(vld1q_f32(pC), val));
+                (*pC) += val;
             }            
 #pragma unroll
             for (int i = 0; i < 8; i++, pC += N) {
                 float32_t val = vgetq_lane_s16(vec_c[1], i) / ((bitnet_float_type*)LUT_Scales)[0] * ((bitnet_float_type*)Scales)[0];
-                vst1q_f32(pC, vaddq_f32(vld1q_f32(pC), val));
+                (*pC) += val;
             }            
 #pragma unroll
             for (int i = 0; i < 8; i++, pC += N) {
                 float32_t val = vgetq_lane_s16(vec_c[2], i) / ((bitnet_float_type*)LUT_Scales)[0] * ((bitnet_float_type*)Scales)[0];
-                vst1q_f32(pC, vaddq_f32(vld1q_f32(pC), val));
+                (*pC) += val;
             }            
 #pragma unroll
             for (int i = 0; i < 8; i++, pC += N) {
                 float32_t val = vgetq_lane_s16(vec_c[3], i) / ((bitnet_float_type*)LUT_Scales)[0] * ((bitnet_float_type*)Scales)[0];
-                vst1q_f32(pC, vaddq_f32(vld1q_f32(pC), val));
+                (*pC) += val;
             }            
         }
     }
