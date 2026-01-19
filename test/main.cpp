@@ -12,7 +12,7 @@
 #define TILE_SIZE 2
 #define K_DIM 2560
 
-const int BM = 128;
+const int BM = 64;
 const int BK = 64;
 const int bm = 32;
 const int by = (256/(bm));
