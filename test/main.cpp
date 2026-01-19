@@ -92,29 +92,10 @@ void transpose_A_matrix(int8_t* A, int8_t* A_T, int M, int KK) {
 }
 
 static inline void interleave_vec_c_block(int16x4_t c0, int16x4_t c1, int16x4_t c2, int16x4_t c3, int32x4_t out[4]) {
-    int16x4_t row0 = vdup_n_s16(0);
-    row0 = vsetq_lane_s16(vget_lane_s16(c0, 0), row0, 0);
-    row0 = vsetq_lane_s16(vget_lane_s16(c1, 0), row0, 1);
-    row0 = vsetq_lane_s16(vget_lane_s16(c2, 0), row0, 2);
-    row0 = vsetq_lane_s16(vget_lane_s16(c3, 0), row0, 3);
-
-    int16x4_t row1 = vdup_n_s16(0);
-    row1 = vsetq_lane_s16(vget_lane_s16(c0, 1), row1, 0);
-    row1 = vsetq_lane_s16(vget_lane_s16(c1, 1), row1, 1);
-    row1 = vsetq_lane_s16(vget_lane_s16(c2, 1), row1, 2);
-    row1 = vsetq_lane_s16(vget_lane_s16(c3, 1), row1, 3);
-
-    int16x4_t row2 = vdup_n_s16(0);
-    row2 = vsetq_lane_s16(vget_lane_s16(c0, 2), row2, 0);
-    row2 = vsetq_lane_s16(vget_lane_s16(c1, 2), row2, 1);
-    row2 = vsetq_lane_s16(vget_lane_s16(c2, 2), row2, 2);
-    row2 = vsetq_lane_s16(vget_lane_s16(c3, 2), row2, 3);
-
-    int16x4_t row3 = vdup_n_s16(0);
-    row3 = vsetq_lane_s16(vget_lane_s16(c0, 3), row3, 0);
-    row3 = vsetq_lane_s16(vget_lane_s16(c1, 3), row3, 1);
-    row3 = vsetq_lane_s16(vget_lane_s16(c2, 3), row3, 2);
-    row3 = vsetq_lane_s16(vget_lane_s16(c3, 3), row3, 3);
+    int16x4_t row0 = { vget_lane_s16(c0, 0), vget_lane_s16(c1, 0), vget_lane_s16(c2, 0), vget_lane_s16(c3, 0) };
+    int16x4_t row1 = { vget_lane_s16(c0, 1), vget_lane_s16(c1, 1), vget_lane_s16(c2, 1), vget_lane_s16(c3, 1) };
+    int16x4_t row2 = { vget_lane_s16(c0, 2), vget_lane_s16(c1, 2), vget_lane_s16(c2, 2), vget_lane_s16(c3, 2) };
+    int16x4_t row3 = { vget_lane_s16(c0, 3), vget_lane_s16(c1, 3), vget_lane_s16(c2, 3), vget_lane_s16(c3, 3) };
 
     out[0] = vmovl_s16(row0);
     out[1] = vmovl_s16(row1);
@@ -585,7 +566,7 @@ int main() {
     for (int iter = 0; iter < num_iterations; iter++) {
         memset(C_simd, 0, M * N * sizeof(int32_t));
         auto lut_simd_start = std::chrono::high_resolution_clock::now();
-        matmul_lut_simd2(A_T, B_T, C_simd, M, N, K);
+        matmul_lut_simd(A_T, B_T, C_simd, M, N, K);
         auto lut_simd_end = std::chrono::high_resolution_clock::now();
         auto lut_simd_duration = std::chrono::duration_cast<std::chrono::milliseconds>(lut_simd_end - lut_simd_start);
         total_simd_time += lut_simd_duration.count();
