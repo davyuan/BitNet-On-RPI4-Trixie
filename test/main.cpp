@@ -237,7 +237,7 @@ void matmul_lut_naive2(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K)
     aligned_free(Scales);
 }
 
-/* A(MxK/2), B(NxK)
+/* A(K/2 x M), B(N x K)
    QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
         each K represents 2 activations in B. 
    C(MxN)
@@ -310,6 +310,248 @@ void matmul_lut_simd(int8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K)
                     C[(i+13)*N + j] += vgetq_lane_s16(vec_c[1], 5);
                     C[(i+14)*N + j] += vgetq_lane_s16(vec_c[1], 6);
                     C[(i+15)*N + j] += vgetq_lane_s16(vec_c[1], 7);
+                }
+            }
+        }
+    }
+
+    aligned_free(QLUT);
+    aligned_free(LUT_Scales);
+    aligned_free(Scales);
+}
+
+/* A(K/2 x M), B(N x K)
+   QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
+        each K represents 2 activations in B. 
+   C(MxN)
+   This version doesn't use SIMD optimizations either, but focus on one LUT table at once to avoid
+   overhead of reconstructing LUTs in the same tile. 
+*/
+void matmul_lut_simd2(int8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K) {
+    int KK = K / 2;
+    int8_t* QLUT0 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));
+    int8_t* QLUT1 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));
+    int8_t* QLUT2 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));
+    int8_t* QLUT3 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
+    float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
+    float32_t* Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
+    *Scales = 1.0f;
+    *LUT_Scales = 1.0f;
+
+    for (int j = 0; j < N; j+=4) {                        
+        lut_ctor<K_DIM>(QLUT0, (float32_t*)(B + j* K), LUT_Scales);    
+        lut_ctor<K_DIM>(QLUT1, (float32_t*)(B + (j+1)* K), LUT_Scales);    
+        lut_ctor<K_DIM>(QLUT2, (float32_t*)(B + (j+2)* K), LUT_Scales);    
+        lut_ctor<K_DIM>(QLUT3, (float32_t*)(B + (j+3)* K), LUT_Scales);    
+        
+        // Parallelize over row blocks
+        #pragma omp parallel for num_threads(4)
+        for (int ii = 0; ii < M; ii += BM) {          
+            for (int kk = 0; kk < KK; kk += BK) {
+                int8x16_t vec_lut0_high[BK];
+                int8x16_t vec_lut0_low[BK];
+                int8x16_t vec_lut1_high[BK];
+                int8x16_t vec_lut1_low[BK];
+                int8x16_t vec_lut2_high[BK];
+                int8x16_t vec_lut2_low[BK];
+                int8x16_t vec_lut3_high[BK];
+                int8x16_t vec_lut3_low[BK];
+                
+                // LUT layout per index: [16 high_bytes] [16 low_bytes] = 32 bytes
+#pragma unroll
+                for (int k = 0; k < BK; k++) {
+                    vec_lut0_high[k] = vld1q_s8(QLUT0 + (kk + k) * 32);      // Load high bytes
+                    vec_lut0_low[k] = vld1q_s8(QLUT0 + (kk + k) * 32 + 16);   // Load low bytes
+                    vec_lut1_high[k] = vld1q_s8(QLUT1 + (kk + k) * 32);      // Load high bytes
+                    vec_lut1_low[k] = vld1q_s8(QLUT1 + (kk + k) * 32 + 16);   // Load low bytes
+                    vec_lut2_high[k] = vld1q_s8(QLUT2 + (kk + k) * 32);      // Load high bytes
+                    vec_lut2_low[k] = vld1q_s8(QLUT2 + (kk + k) * 32 + 16);   // Load low bytes
+                    vec_lut3_high[k] = vld1q_s8(QLUT3 + (kk + k) * 32);      // Load high bytes
+                    vec_lut3_low[k] = vld1q_s8(QLUT3 + (kk + k) * 32 + 16);   // Load low bytes
+                }
+                
+#pragma unroll
+                for (int i = ii; i < ii + BM; i += 16) {
+                    int16x8_t vec_c0[2] = {vdupq_n_s16(0), vdupq_n_s16(0)};
+                    int16x8_t vec_c1[2] = {vdupq_n_s16(0), vdupq_n_s16(0)};
+                    int16x8_t vec_c2[2] = {vdupq_n_s16(0), vdupq_n_s16(0)};
+                    int16x8_t vec_c3[2] = {vdupq_n_s16(0), vdupq_n_s16(0)};
+#pragma unroll
+                    for (int k = kk; k < kk + BK; k++) {
+                        // Load 16 activations from same k, different rows (from transposed A)
+                        int8x16_t vec_a0 = vld1q_s8(A_T + k * M + i);
+                        
+                        // Lookup on high and low tables (same LUT table for all 16 indices)
+                        int8x16_t vec_c0_h = vqtbl1q_s8(vec_lut0_high[k - kk], vec_a0);
+                        int8x16_t vec_c0_l = vqtbl1q_s8(vec_lut0_low[k - kk], vec_a0);
+                                               
+                        // Reconstruct int16 from high/low bytes: (high << 8) | low
+                        int16x8_t v0h_lo_16 = vshlq_n_s16(vmovl_s8(vget_low_s8(vec_c0_h)), 8);
+                        int16x8_t v0h_hi_16 = vshlq_n_s16(vmovl_s8(vget_high_s8(vec_c0_h)), 8);  
+                        int16x8_t v0l_lo_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_low_s8(vec_c0_l))));
+                        int16x8_t v0l_hi_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_high_s8(vec_c0_l))));
+                        int16x8_t out00 = vorrq_s16(v0h_lo_16, v0l_lo_16);
+                        int16x8_t out01 = vorrq_s16(v0h_hi_16, v0l_hi_16);
+                        
+                        vec_c0[0] = vaddq_s16(vec_c0[0], out00);
+                        vec_c0[1] = vaddq_s16(vec_c0[1], out01);
+
+                        int8x16_t vec_a1 = vld1q_s8(A_T + (k+1) * M + i);
+                        
+                        // Lookup on high and low tables (same LUT table for all 16 indices)
+                        int8x16_t vec_c1_h = vqtbl1q_s8(vec_lut1_high[k - kk], vec_a1);
+                        int8x16_t vec_c1_l = vqtbl1q_s8(vec_lut1_low[k - kk], vec_a1);
+                                               
+                        // Reconstruct int16 from high and low bytes: (high << 8) | low
+                        int16x8_t v1h_lo_16 = vshlq_n_s16(vmovl_s8(vget_low_s8(vec_c1_h)), 8);
+                        int16x8_t v1h_hi_16 = vshlq_n_s16(vmovl_s8(vget_high_s8(vec_c1_h)), 8);  
+                        int16x8_t v1l_lo_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_low_s8(vec_c1_l))));
+                        int16x8_t v1l_hi_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_high_s8(vec_c1_l))));
+                        int16x8_t out10 = vorrq_s16(v1h_lo_16, v1l_lo_16);
+                        int16x8_t out11 = vorrq_s16(v1h_hi_16, v1l_hi_16);
+                        
+                        vec_c1[0] = vaddq_s16(vec_c1[0], out10);
+                        vec_c1[1] = vaddq_s16(vec_c1[1], out11);
+
+                        int8x16_t vec_a2 = vld1q_s8(A_T + (k+2) * M + i);
+                        
+                        // Lookup on high and low tables (same LUT table for all 16 indices)
+                        int8x16_t vec_c2_h = vqtbl1q_s8(vec_lut2_high[k - kk], vec_a2);
+                        int8x16_t vec_c2_l = vqtbl1q_s8(vec_lut2_low[k - kk], vec_a2);
+                                               
+                        // Reconstruct int16 from high/low bytes: (high << 8) | low
+                        int16x8_t v2h_lo_16 = vshlq_n_s16(vmovl_s8(vget_low_s8(vec_c2_h)), 8);
+                        int16x8_t v2h_hi_16 = vshlq_n_s16(vmovl_s8(vget_high_s8(vec_c2_h)), 8);  
+                        int16x8_t v2l_lo_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_low_s8(vec_c2_l))));
+                        int16x8_t v2l_hi_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_high_s8(vec_c2_l))));
+                        int16x8_t out20 = vorrq_s16(v2h_lo_16, v2l_lo_16);
+                        int16x8_t out21 = vorrq_s16(v2h_hi_16, v2l_hi_16);
+                        
+                        vec_c2[0] = vaddq_s16(vec_c2[0], out20);
+                        vec_c2[1] = vaddq_s16(vec_c2[1], out21);
+
+                        int8x16_t vec_a3 = vld1q_s8(A_T + (k+3) * M + i);
+                        
+                        // Lookup on high and low tables (same LUT table for all 16 indices)
+                        int8x16_t vec_c3_h = vqtbl1q_s8(vec_lut3_high[k - kk], vec_a3);
+                        int8x16_t vec_c3_l = vqtbl1q_s8(vec_lut3_low[k - kk], vec_a3);
+                                               
+                        // Reconstruct int16 from high/low bytes: (high << 8) | low
+                        int16x8_t v3h_lo_16 = vshlq_n_s16(vmovl_s8(vget_low_s8(vec_c3_h)), 8);
+                        int16x8_t v3h_hi_16 = vshlq_n_s16(vmovl_s8(vget_high_s8(vec_c3_h)), 8);  
+                        int16x8_t v3l_lo_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_low_s8(vec_c3_l))));
+                        int16x8_t v3l_hi_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_high_s8(vec_c3_l))));
+                        int16x8_t out30 = vorrq_s16(v3h_lo_16, v3l_lo_16);
+                        int16x8_t out31 = vorrq_s16(v3h_hi_16, v3l_hi_16);
+                        
+                        vec_c3[0] = vaddq_s16(vec_c3[0], out30);
+                        vec_c3[1] = vaddq_s16(vec_c3[1], out31);
+                    }
+
+                    // Interleave: create int32x4_t vectors by taking one lane from each vec_c
+                    // vec_out[0] = [vec_c0[0], vec_c1[0], vec_c2[0], vec_c3[0]] as int32
+                    // vec_out[1] = [vec_c0[1], vec_c1[1], vec_c2[1], vec_c3[1]] as int32, etc.
+                    int32x4_t vec_out[16];
+                    
+                    // Extract low 4 elements from all 4 vec_c and interleave
+                    int16x4_t c0_lo = vget_low_s16(vec_c0[0]);
+                    int16x4_t c1_lo = vget_low_s16(vec_c1[0]);
+                    int16x4_t c2_lo = vget_low_s16(vec_c2[0]);
+                    int16x4_t c3_lo = vget_low_s16(vec_c3[0]);
+                    
+                    // Interleave and expand to int32
+                    int16x4x2_t zip_lo01 = vzip_s16(c0_lo, c1_lo);
+                    int16x4x2_t zip_lo23 = vzip_s16(c2_lo, c3_lo);
+                    int16x4x2_t zip_lo0213 = vzip_s16(zip_lo01.val[0], zip_lo23.val[0]);
+                    int16x4x2_t zip_lo1313 = vzip_s16(zip_lo01.val[1], zip_lo23.val[1]);
+                    
+                    vec_out[0] = vmovl_s16(zip_lo0213.val[0]);  // [vec_c0[0], vec_c1[0], vec_c2[0], vec_c3[0]]
+                    vec_out[1] = vmovl_s16(zip_lo0213.val[1]);  // [vec_c0[1], vec_c1[1], vec_c2[1], vec_c3[1]]
+                    vec_out[2] = vmovl_s16(zip_lo1313.val[0]);  // [vec_c0[2], vec_c1[2], vec_c2[2], vec_c3[2]]
+                    vec_out[3] = vmovl_s16(zip_lo1313.val[1]);  // [vec_c0[3], vec_c1[3], vec_c2[3], vec_c3[3]]
+                    
+                    // Extract high 4 elements and interleave
+                    int16x4_t c0_hi = vget_high_s16(vec_c0[0]);
+                    int16x4_t c1_hi = vget_high_s16(vec_c1[0]);
+                    int16x4_t c2_hi = vget_high_s16(vec_c2[0]);
+                    int16x4_t c3_hi = vget_high_s16(vec_c3[0]);
+                    
+                    int16x4x2_t zip_hi01 = vzip_s16(c0_hi, c1_hi);
+                    int16x4x2_t zip_hi23 = vzip_s16(c2_hi, c3_hi);
+                    int16x4x2_t zip_hi0213 = vzip_s16(zip_hi01.val[0], zip_hi23.val[0]);
+                    int16x4x2_t zip_hi1313 = vzip_s16(zip_hi01.val[1], zip_hi23.val[1]);
+                    
+                    vec_out[4] = vmovl_s16(zip_hi0213.val[0]);  // [vec_c0[4], vec_c1[4], vec_c2[4], vec_c3[4]]
+                    vec_out[5] = vmovl_s16(zip_hi0213.val[1]);  // [vec_c0[5], vec_c1[5], vec_c2[5], vec_c3[5]]
+                    vec_out[6] = vmovl_s16(zip_hi1313.val[0]);  // [vec_c0[6], vec_c1[6], vec_c2[6], vec_c3[6]]
+                    vec_out[7] = vmovl_s16(zip_hi1313.val[1]);  // [vec_c0[7], vec_c1[7], vec_c2[7], vec_c3[7]]
+                    
+                     // Extract low 4 elements from all 4 vec_c and interleave
+                    c0_lo = vget_low_s16(vec_c0[1]);
+                    c1_lo = vget_low_s16(vec_c1[1]);
+                    c2_lo = vget_low_s16(vec_c2[1]);
+                    c3_lo = vget_low_s16(vec_c3[1]);
+                    
+                    // Interleave and expand to int32
+                    zip_lo01 = vzip_s16(c0_lo, c1_lo);
+                    zip_lo23 = vzip_s16(c2_lo, c3_lo);
+                    zip_lo0213 = vzip_s16(zip_lo01.val[0], zip_lo23.val[0]);
+                    zip_lo1313 = vzip_s16(zip_lo01.val[1], zip_lo23.val[1]);
+                    
+                    vec_out[8] = vmovl_s16(zip_lo0213.val[0]);  
+                    vec_out[9] = vmovl_s16(zip_lo0213.val[1]);  
+                    vec_out[10] = vmovl_s16(zip_lo1313.val[0]);  
+                    vec_out[11] = vmovl_s16(zip_lo1313.val[1]);  
+                    
+                    // Extract high 4 elements and interleave
+                    c0_hi = vget_high_s16(vec_c0[1]);
+                    c1_hi = vget_high_s16(vec_c1[1]);
+                    c2_hi = vget_high_s16(vec_c2[1]);
+                    c3_hi = vget_high_s16(vec_c3[1]);
+                    
+                    zip_hi01 = vzip_s16(c0_hi, c1_hi);
+                    zip_hi23 = vzip_s16(c2_hi, c3_hi);
+                    zip_hi0213 = vzip_s16(zip_hi01.val[0], zip_hi23.val[0]);
+                    zip_hi1313 = vzip_s16(zip_hi01.val[1], zip_hi23.val[1]);
+                    
+                    vec_out[12] = vmovl_s16(zip_hi0213.val[0]);  
+                    vec_out[13] = vmovl_s16(zip_hi0213.val[1]);  
+                    vec_out[14] = vmovl_s16(zip_hi1313.val[0]);  
+                    vec_out[15] = vmovl_s16(zip_hi1313.val[1]);  
+                    
+                    
+                    int32x4_t c_vals0 = vld1q_s32((int32_t*)&C[(i+0)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+0)*N + j], vaddq_s32(c_vals0, vec_out[0]));                    
+                    int32x4_t c_vals1 = vld1q_s32((int32_t*)&C[(i+1)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+1)*N + j], vaddq_s32(c_vals1, vec_out[1]));                    
+                    int32x4_t c_vals2 = vld1q_s32((int32_t*)&C[(i+2)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+2)*N + j], vaddq_s32(c_vals2, vec_out[2]));                    
+                    int32x4_t c_vals3 = vld1q_s32((int32_t*)&C[(i+3)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+3)*N + j], vaddq_s32(c_vals3, vec_out[3]));                    
+                    int32x4_t c_vals4 = vld1q_s32((int32_t*)&C[(i+4)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+4)*N + j], vaddq_s32(c_vals4, vec_out[4]));                    
+                    int32x4_t c_vals5 = vld1q_s32((int32_t*)&C[(i+5)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+5)*N + j], vaddq_s32(c_vals5, vec_out[5]));                    
+                    int32x4_t c_vals6 = vld1q_s32((int32_t*)&C[(i+6)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+6)*N + j], vaddq_s32(c_vals6, vec_out[6]));                    
+                    int32x4_t c_vals7 = vld1q_s32((int32_t*)&C[(i+7)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+7)*N + j], vaddq_s32(c_vals7, vec_out[7]));
+                    int32x4_t c_vals8 = vld1q_s32((int32_t*)&C[(i+8)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+8)*N + j], vaddq_s32(c_vals8, vec_out[8]));                    
+                    int32x4_t c_vals9 = vld1q_s32((int32_t*)&C[(i+9)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+9)*N + j], vaddq_s32(c_vals9, vec_out[9]));                    
+                    int32x4_t c_vals10 = vld1q_s32((int32_t*)&C[(i+10)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+10)*N + j], vaddq_s32(c_vals10, vec_out[10]));                    
+                    int32x4_t c_vals11 = vld1q_s32((int32_t*)&C[(i+11)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+11)*N + j], vaddq_s32(c_vals11, vec_out[11]));                    
+                    int32x4_t c_vals12 = vld1q_s32((int32_t*)&C[(i+12)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+12)*N + j], vaddq_s32(c_vals12, vec_out[12]));                    
+                    int32x4_t c_vals13 = vld1q_s32((int32_t*)&C[(i+13)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+13)*N + j], vaddq_s32(c_vals13, vec_out[13]));                    
+                    int32x4_t c_vals14 = vld1q_s32((int32_t*)&C[(i+14)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+14)*N + j], vaddq_s32(c_vals14, vec_out[14]));                    
+                    int32x4_t c_vals15 = vld1q_s32((int32_t*)&C[(i+15)*N + j]);
+                    vst1q_s32((int32_t*)&C[(i+15)*N + j], vaddq_s32(c_vals15, vec_out[15]));
                 }
             }
         }
