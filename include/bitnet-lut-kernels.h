@@ -282,33 +282,11 @@ void ggml_bitnet_transform_tensor(struct ggml_tensor * tensor) {
     int m = tensor->ne[1];
     const int lut_scales_size = 1;
     const int scales_size = 1;
-    int bk = 0;
-    int bm = 0;
 
-    if (m == 640 && k == 2560) {
-        bm = BM640_2560;
-        bk = BBK640_2560;
-    }
-    else if (m == 2560 && k == 2560) {
-        bm = BM2560_2560;
-        bk = BBK2560_2560;
-    }
-    else if (m == 2560 && k == 6912) {
-        bm = BM2560_6912;
-        bk = BBK2560_6912;
-    }
-    else if (m == 6912 && k == 2560) {
-        bm = BM6912_2560;
-        bk = BBK6912_2560;
-    }
-    else {
-        // Unmatched dimension - skip BitNet preprocessing
-        fprintf(stderr, "BitNet: Skipping unmatched tensor dimension (%d, %d)\n", m, k);
-        return;
-    }
+    GGML_ASSERT(k==2560 || k==6912);
+    GGML_ASSERT(m==2560 || m==640);
 
-    const int n_tile_num = m / bm;
-    const int BK = bk;
+    const int n_tile_num = m / BM;
     uint8_t * qweights;
     bitnet_float_type * scales;
 
