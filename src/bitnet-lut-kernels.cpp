@@ -1,10 +1,15 @@
 #if defined(GGML_BITNET_ARM_TL1)
-#include "bitnet-lut-kernels.h"
-#include "ggml-bitnet.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <arm_neon.h>
+#include <cmath>
+#include "ggml-bitnet.h"
+#include "bitnet-lut-kernels.h"
+
+#ifndef __ARM_NEON
+#error "__ARM_NEON is not defined - NEON optimizations will not be used. Check compiler flags: -march=armv8-a"
+#endif
 
 #define BM 128
 #define BK 64
@@ -56,6 +61,14 @@ static void per_tensor_quant(int k, void* lut_scales_, void* b_) {
     max1 = _mm_max_ss(max1, _mm_movehdup_ps(max1));
     float scales = 127 / _mm_cvtss_f32(max1);
     *lut_scales = scales;
+#else
+    // Fallback: scalar implementation
+    float max_val = 0.0f;
+    for (int i = 0; i < k; i++) {
+        float abs_val = fabs(b[i]);
+        if (abs_val > max_val) max_val = abs_val;
+    }
+    *lut_scales = (max_val > 0) ? (127.0f / max_val) : 1.0f;
 #endif
 }
 
