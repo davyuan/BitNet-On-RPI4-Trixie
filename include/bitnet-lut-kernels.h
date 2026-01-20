@@ -8,6 +8,10 @@
 #define BM 128
 #define BK 64
 
+extern bool initialized;
+extern bitnet_tensor_extra * bitnet_tensor_extras;
+extern size_t bitnet_tensor_extras_index;
+
 // Inline helpers
 #ifdef __ARM_NEON
 inline void Transpose_8_8(

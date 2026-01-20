@@ -8,9 +8,9 @@
 #define BM 128
 #define BK 64
 
-static bool initialized = false;
-static bitnet_tensor_extra * bitnet_tensor_extras = nullptr;
-static size_t bitnet_tensor_extras_index = 0;
+bool initialized = false;
+bitnet_tensor_extra * bitnet_tensor_extras = nullptr;
+size_t bitnet_tensor_extras_index = 0;
 
 static void * aligned_malloc(size_t size) {
 #if defined(_WIN32)
