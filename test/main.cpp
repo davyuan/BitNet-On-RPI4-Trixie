@@ -208,7 +208,7 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, int32_t* C, int M, int N, int K) 
     int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
     float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
     float32_t* Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
-    *Scales = 1.0f;
+    *Scales = 2.0f;
     *LUT_Scales = 1.0f;
 
     for (int j = 0; j < N; j++) {                        
@@ -298,7 +298,7 @@ void matmul_lut_simd2(uint8_t* A, float32_t* B, int32_t* C, int M, int N, int K)
         lut_ctor(K, QLUT1, (float32_t*)(B + (j+1)* K), LUT_Scales);    
         lut_ctor(K, QLUT2, (float32_t*)(B + (j+2)* K), LUT_Scales);    
         lut_ctor(K, QLUT3, (float32_t*)(B + (j+3)* K), LUT_Scales);  
-        printf("LUTs constructed for rows %d-%d, scale=%.2f\n", j, j+3, *LUT_Scales);  
+        //printf("LUTs constructed for rows %d-%d, scale=%.2f\n", j, j+3, *LUT_Scales);  
         
         // Parallelize over row blocks
         #pragma omp parallel for num_threads(4)
