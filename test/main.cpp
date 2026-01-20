@@ -337,7 +337,7 @@ void matmul_lut_simd2(uint8_t* A_T, float32_t* B, int32_t* C, int M, int N, int 
                     int16x8_t vec_c3[2] = {vdupq_n_s16(0), vdupq_n_s16(0)};
 #pragma unroll
                     for (int k = kk; k < kk + BK; k++) {
-                        int8x16_t vec_a = vld1q_s8(A_T + k * M + i);
+                        uint8x16_t vec_a = vld1q_u8(A_T + k * M + i);
 
                         int8x16_t vec_c0_h = vqtbl1q_s8(vec_lut0_high[k - kk], vec_a);
                         int8x16_t vec_c0_l = vqtbl1q_s8(vec_lut0_low[k - kk], vec_a);
