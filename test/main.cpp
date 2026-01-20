@@ -472,8 +472,8 @@ int main() {
     // Allocate matrices
     float32_t* B = (float32_t*)aligned_malloc(N * K * sizeof(float32_t));
     float32_t* B_T = (float32_t*)aligned_malloc(N * K * sizeof(float32_t));
-    int8_t* A = (int8_t*)aligned_malloc(M * K / 2 * sizeof(int8_t));
-    int8_t* A_T = (int8_t*)aligned_malloc(M * K / 2 * sizeof(int8_t));
+    uint8_t* A = (uint8_t*)aligned_malloc(M * K / 2 * sizeof(uint8_t));
+    uint8_t* A_T = (uint8_t*)aligned_malloc(M * K / 2 * sizeof(uint8_t));
     uint8_t* A_packed = (uint8_t*)aligned_malloc(M * K / 4 * sizeof(uint8_t));
     uint8_t* A_packed_T = (uint8_t*)aligned_malloc(M * K / 4 * sizeof(uint8_t));
     int8_t* A_ = (int8_t*)aligned_malloc(M * K * sizeof(int8_t));
