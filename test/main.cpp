@@ -213,8 +213,7 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, int32_t* C, int M, int N, int K) 
 
     for (int j = 0; j < N; j++) {
         ggml_preprocessor(M, K, (void*)(B + j * K), (void*)LUT_Scales, (void*)QLUT);                  
-        //lut_ctor(K, QLUT, (float32_t*)(B + j* K), LUT_Scales);
-        printf("LUT constructed for row %d, scale=%.2f\n", j, *LUT_Scales);    
+        //printf("LUT constructed for row %d, scale=%.2f\n", j, *LUT_Scales);    
         
         // Parallelize over row blocks
         #pragma omp parallel for num_threads(4)
@@ -465,6 +464,25 @@ void matmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, int M, int 
     aligned_free(Scales);
 }
 
+void compare_matrices(int32_t* C_simd, int32_t* C_, int M, int N, float32_t threshold, const char* label) {
+    float32_t max_error = 0.0f;
+    int error_count = 0;
+    for (int i = 0; i < M * N; i++) {
+        float32_t error = fabs((float32_t)C_simd[i] - C_[i]);
+        if (error > max_error) {
+            max_error = error;
+        }
+        if ((error / (fabs((float32_t)C_simd[i]) + 1e-6)) > threshold) {  // Threshold for significant error
+            error_count++;
+            if (error_count <= 10) {  // Print first 10 errors
+                printf("  Mismatch at [%d]: kernel=%d, ref=%.1f, error=%.1f\n", 
+                       i, C_simd[i], C_[i], error);
+            }
+        }
+    }
+    printf("%s: max_error=%.1f, mismatches=%d/%d\n", label, max_error, error_count, M * N);
+}
+
 int main() {    
     printf("Allocating matrices...\n");
     
@@ -564,23 +582,8 @@ int main() {
     printf("Matmul_simd complete. Average time over %d runs: %lld ms\n", num_iterations, avg_simd_time);
 
     printf("\nComparing kernel output (C) with reference (C_)...\n");
-    float32_t max_error = 0.0f;
-    int error_count = 0;
-    for (int i = 0; i < M * N; i++) {
-        float32_t error = fabs((float32_t)C_simd[i] - C_[i]);
-        if (error > max_error) {
-            max_error = error;
-        }
-        if (error > 1e-3) {  // Threshold for significant error
-            error_count++;
-            if (error_count <= 10) {  // Print first 10 errors
-                printf("  Mismatch at [%d]: kernel=%d, ref=%.1f, error=%.1f\n", 
-                       i, C_simd[i], C_[i], error);
-            }
-        }
-    }
-    printf("Comparison complete: max_error=%.1f, mismatches=%d/%d\n", 
-           max_error, error_count, M * N);
+    compare_matrices(C_simd, C_, M, N, 1e-3, "Matmul_simd comparison");
+
            
     // Step 3: Run qGEMM with LUT + SIMD (100 runs for averaging)
     printf("\nStep 3: Running qGEMM_LUT SIMD2 (100 iterations for average)\n");
@@ -597,23 +600,8 @@ int main() {
     printf("Matmul_simd2 complete. Average time over %d runs: %lld ms\n", num_iterations, avg_simd_time2);
 
     printf("\nComparing kernel output (C) with reference (C_)...\n");
-    max_error = 0.0f;
-    error_count = 0;
-    for (int i = 0; i < M * N; i++) {
-        float32_t error = fabs((float32_t)C_simd[i] - C_[i]);
-        if (error > max_error) {
-            max_error = error;
-        }
-        if (error > 1e-2) {  // Threshold for significant error
-            error_count++;
-            if (error_count <= 10) {  // Print first 10 errors
-                printf("  Mismatch at [%d]: kernel=%d, ref=%.1f, error=%.2f\n", 
-                       i, C_simd[i], C_[i], error);
-            }
-        }
-    }
-    printf("Comparison complete: max_error=%.1f, mismatches=%d/%d\n", 
-           max_error, error_count, M * N);
+    compare_matrices(C_simd, C_, M, N, 1e-3, "Matmul_simd2 comparison");
+
            
     /*#pragma omp parallel num_threads(4)
     {
