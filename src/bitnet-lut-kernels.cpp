@@ -64,7 +64,7 @@ static void partial_max_reset(void* lut_scales_) {
     *lut_scales = 0.0;
 }
 
-static bool is_type_supported(enum ggml_type type) {
+bool is_type_supported(enum ggml_type type) {
     if (type == GGML_TYPE_Q4_0 ||
         type == GGML_TYPE_TL1) {
         return true;
