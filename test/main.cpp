@@ -49,15 +49,6 @@ static inline void interleave_vec_c_block(int16x4_t c0, int16x4_t c1, int16x4_t 
     out[3] = vmovl_s16(rows23.val[1]);
 }
 
-static inline void reconstruct_int16_pair(int8x16_t high, int8x16_t low, int16x8_t& out_lo, int16x8_t& out_hi) {
-    int16x8_t high_lo = vshlq_n_s16(vmovl_s8(vget_low_s8(high)), 8);
-    int16x8_t high_hi = vshlq_n_s16(vmovl_s8(vget_high_s8(high)), 8);
-    int16x8_t low_lo = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_low_s8(low))));
-    int16x8_t low_hi = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_high_s8(low))));
-    out_lo = vorrq_s16(high_lo, low_lo);
-    out_hi = vorrq_s16(high_hi, low_hi);
-}
-
 void matmul_naive(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
     for (int i = 0; i < M; i++) {
         for (int j = 0; j < N; j++) {
