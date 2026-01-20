@@ -274,7 +274,7 @@ void ggml_bitnet_transform_tensor(struct ggml_tensor * tensor) {
     const int lut_scales_size = 1;
     const int scales_size = 1;
 
-    GGML_ASSERT(k==2560 || k==6912);
+    GGML_ASSERT(k==2560 || k==6912 || k == 640);
     GGML_ASSERT(m==2560 || m==640);
 
     const int n_tile_num = m / BM;
