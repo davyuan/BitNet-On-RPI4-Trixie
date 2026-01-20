@@ -12,6 +12,8 @@ extern bool initialized;
 extern bitnet_tensor_extra * bitnet_tensor_extras;
 extern size_t bitnet_tensor_extras_index;
 
+bool is_type_supported(enum ggml_type type);
+
 // Inline helpers
 #ifdef __ARM_NEON
 inline void Transpose_8_8(
