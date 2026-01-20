@@ -203,7 +203,7 @@ void matmul_lut_naive2(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K)
    This version doesn't use SIMD optimizations either, but focus on one LUT table at once to avoid
    overhead of reconstructing LUTs in the same tile. 
 */
-void matmul_lut_simd(int8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K) {
+void matmul_lut_simd(uint8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K) {
     int KK = K / 2;
     int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
     float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
@@ -286,7 +286,7 @@ void matmul_lut_simd(int8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K)
    This version doesn't use SIMD optimizations either, but focus on one LUT table at once to avoid
    overhead of reconstructing LUTs in the same tile. 
 */
-void matmul_lut_simd2(int8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K) {
+void matmul_lut_simd2(uint8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K) {
     int KK = K / 2;
     int8_t* QLUT0 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));
     int8_t* QLUT1 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));
