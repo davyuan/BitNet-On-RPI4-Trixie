@@ -27,6 +27,12 @@ set(GGML_BITNET_X86_TL2    ${BITNET_X86_TL2})
 
 if (GGML_BITNET_ARM_TL1)
     add_compile_definitions(GGML_BITNET_ARM_TL1)
+    add_compile_options(
+        -march=armv8-a
+        -mcpu=cortex-a72
+        -mtune=cortex-a72
+        -ffast-math
+    )    
 endif()
 if (GGML_BITNET_X86_TL2)
     add_compile_definitions(GGML_BITNET_X86_TL2)
