@@ -28,7 +28,7 @@ static void aligned_free(void * ptr) {{
 
 #include <arm_neon.h>
 
-void per_tensor_quant(int k, void* lut_scales_, void* b_) {{
+static void per_tensor_quant(int k, void* lut_scales_, void* b_) {{
     bitnet_float_type* lut_scales = (bitnet_float_type*)lut_scales_;
     bitnet_float_type* b = (bitnet_float_type*)b_;
 #ifdef __ARM_NEON
@@ -57,7 +57,7 @@ void per_tensor_quant(int k, void* lut_scales_, void* b_) {{
 #endif
 }}
 
-void partial_max_reset(void* lut_scales_) {{
+static void partial_max_reset(void* lut_scales_) {{
     bitnet_float_type* lut_scales = (bitnet_float_type*)lut_scales_;
     *lut_scales = 0.0;
 }}
@@ -186,7 +186,7 @@ static bool is_type_supported(enum ggml_type type) {{
     }}
 }}
 
-void ggml_preprocessor(int M, int K, void* B, void* LUT_Scales, void* QLUT) {
+static void ggml_preprocessor(int M, int K, void* B, void* LUT_Scales, void* QLUT) {
   partial_max_reset((&(((bitnet_float_type*)LUT_Scales)[0])));
   per_tensor_quant(K, (&(((bitnet_float_type*)LUT_Scales)[0])), (&(((bitnet_float_type*)B)[0])));
   
