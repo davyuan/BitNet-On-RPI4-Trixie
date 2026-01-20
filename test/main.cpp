@@ -5,7 +5,7 @@
 #include <cmath>
 #include <omp.h>
 #include <arm_neon.h>
-#include <random.h>
+#include <random>
 #include "ggml-bitnet.h"
 #include "bitnet-lut-kernels.h"
 
