@@ -28,7 +28,7 @@ void transpose_matrix(float32_t* B, float32_t* B_T, int M, int N) {
 }
 
 // Transpose matrix A from (N x M) to A_T (M x N)
-void transpose_matrix(int8_t* A, int8_t* A_T, int M, int N) {
+void transpose_matrix(uint8_t* A, uint8_t* A_T, int M, int N) {
     for (int i = 0; i < M; i++) {
         for (int j = 0; j < N; j++) {
             A_T[i * N + j] = A[j * M + i];
