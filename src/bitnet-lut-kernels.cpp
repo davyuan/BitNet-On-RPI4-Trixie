@@ -48,6 +48,7 @@ static void per_tensor_quant(int k, void* lut_scales_, void* b_) {
     }
     float32_t scales = 127 / vmaxvq_f32(temp_max);
     *lut_scales = scales;
+    printf("Computed scale from NEON: %.6f\n", scales);
 #elif defined __AVX2__
     __m256 max_vec = _mm256_set1_ps(0.f);
     const __m256 vec_sign = _mm256_set1_ps(-0.0f);
@@ -70,6 +71,7 @@ static void per_tensor_quant(int k, void* lut_scales_, void* b_) {
     }
     *lut_scales = (max_val > 0) ? (127.0f / max_val) : 1.0f;
 #endif
+    printf("Computed scale: %.6f\n", *lut_scales);
 }
 
 static void partial_max_reset(void* lut_scales_) {
