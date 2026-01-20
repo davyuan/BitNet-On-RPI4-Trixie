@@ -452,7 +452,7 @@ void matmul_lut_micro_kernel(int8_t* A_T, float32_t* B, float32_t* C, int M, int
 
         const int range_per_thread_ii = ne01 / nth;
         for (int ii = ith * range_per_thread_ii; ii < (ith + 1) * range_per_thread_ii; ii += BM) {          
-            ggml_qgemm_lut( ne00, ne11, ne10, ii, j, A_T, 
+            ggml_qgemm_lut( ne00, ne11, ne10, ii, j, A_packed_T, 
                             QLUT, 
                             Scales, 
                             LUT_Scales, 
