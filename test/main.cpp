@@ -211,9 +211,10 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, int32_t* C, int M, int N, int K) 
     *Scales = 1.0f;
     *LUT_Scales = 2.0f;
 
-    for (int j = 0; j < N; j++) {                        
-        lut_ctor(K, QLUT, (float32_t*)(B + j* K), LUT_Scales);
-        //printf("LUT constructed for row %d, scale=%.2f\n", j, *LUT_Scales);    
+    for (int j = 0; j < N; j++) {
+        ggml_preprocessor(M, K, (void*)(B + j * K), (void*)LUT_Scales, (void*)QLUT);                  
+        //lut_ctor(K, QLUT, (float32_t*)(B + j* K), LUT_Scales);
+        printf("LUT constructed for row %d, scale=%.2f\n", j, *LUT_Scales);    
         
         // Parallelize over row blocks
         #pragma omp parallel for num_threads(4)
