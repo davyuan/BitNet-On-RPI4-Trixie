@@ -396,7 +396,7 @@ void matmul_lut_simd2(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int 
                     vst1q_f32(pC, vaddq_f32(vld1q_f32(pC), scaled_lo_3));
                     pC += N;
                     
-                    vec_out_hi_f32 = vcvtq_f32_s32(vec_out_hi[0]);
+                    float32x4_t vec_out_hi_f32 = vcvtq_f32_s32(vec_out_hi[0]);
                     float32x4_t scaled_hi_0 = vmulq_f32(vec_out_hi_f32, lut_scales_vec);
                     vst1q_f32(pC, vaddq_f32(vld1q_f32(pC), scaled_hi_0));
                     pC += N;
