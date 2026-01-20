@@ -513,7 +513,7 @@ void matmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, int M, int 
     aligned_free(Scales);
 }
 
-void compare_matrices(int32_t* C_simd, int32_t* C_, int M, int N, float32_t threshold, const char* label) {
+void compare_matrices(float32_t* C_simd, float32_t* C_, int M, int N, float32_t threshold, const char* label) {
     float32_t max_error = 0.0f;
     int error_count = 0;
     for (int i = 0; i < M * N; i++) {
@@ -524,7 +524,7 @@ void compare_matrices(int32_t* C_simd, int32_t* C_, int M, int N, float32_t thre
         if ((error / (fabs((float32_t)C_simd[i]) + 1e-6)) > threshold) {  // Threshold for significant error
             error_count++;
             if (error_count <= 10) {  // Print first 10 errors
-                printf("  Mismatch at [%d]: kernel=%d, ref=%.1f, error=%.1f\n", 
+                printf("  Mismatch at [%d]: kernel=%.1f, ref=%.1f, error=%.1f\n", 
                        i, C_simd[i], C_[i], error);
             }
         }
@@ -600,7 +600,7 @@ int main() {
     printf("\nStep 0: Computing reference matmul with A_ and B...\n");
     // C_[m,n] = sum_k A_[n,k] * B[m,k]
     auto naive_start = std::chrono::high_resolution_clock::now();
-    matmul_naive(A_, B, (int32_t*)C_, M, N, K);
+    matmul_naive(A_, B, C_, M, N, K);
     auto naive_end = std::chrono::high_resolution_clock::now();
     auto naive_duration = std::chrono::duration_cast<std::chrono::milliseconds>(naive_end - naive_start);
     
