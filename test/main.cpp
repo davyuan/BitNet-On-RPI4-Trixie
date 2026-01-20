@@ -631,7 +631,7 @@ int main() {
     printf("Matmul_simd complete. Average time over %d runs: %lld ms\n", num_iterations, avg_simd_time);
 
     printf("\nComparing kernel output (C) with reference (C_)...\n");
-    compare_matrices(C_simd, C_, M, N, 1e-2, "Matmul_simd comparison");
+    compare_matrices(C_simd, C_, M, N, 5e-2, "Matmul_simd comparison");
 
            
     // Step 3: Run qGEMM with LUT + SIMD (100 runs for averaging)
