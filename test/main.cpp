@@ -427,8 +427,7 @@ void matmul_lut_simd2(int8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K
    This version doesn't use SIMD optimizations either, but focus on one LUT table at once to avoid
    overhead of reconstructing LUTs in the same tile. 
 */
-#pragma omp parallel for num_threads(4)
-void matmul_lut_micro_kernel(int8_t* A_T, float32_t* B, float32_t* C, int M, int N, int K) {
+void matmul_lut_micro_kernel(int8_t* A_T, float32_t* B, float32_t* C, int M, int N, int K, int ith, int nth) {
     int ne00 = M;
     int ne01 = K;
     int ne10 = K;
@@ -438,10 +437,7 @@ void matmul_lut_micro_kernel(int8_t* A_T, float32_t* B, float32_t* C, int M, int
     float32_t* Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
     *Scales = 1.0f;
 
-    int ith = omp_get_thread_num();
-    int nth = omp_get_num_threads();
-
-    for(int j = 0; j < ne11; j++) {
+    for (int j = 0; j < ne11; j++) {
         // g = 4
         if (ith == 0) {
             // Transform tensor if not already transformed
@@ -454,8 +450,6 @@ void matmul_lut_micro_kernel(int8_t* A_T, float32_t* B, float32_t* C, int M, int
         }
 #pragma omp barrier
 
-        bitnet_float_type * act_output;
-
         const int range_per_thread_ii = ne01 / nth;
         for (int ii = ith * range_per_thread_ii; ii < (ith + 1) * range_per_thread_ii; ii += BM) {          
             ggml_qgemm_lut( ne00, ne11, ne10, ii, j, A_T, 
@@ -463,7 +457,8 @@ void matmul_lut_micro_kernel(int8_t* A_T, float32_t* B, float32_t* C, int M, int
                             Scales, 
                             LUT_Scales, 
                             C);
-        }        
+        }
+#pragma omp barrier                
     }
 
     aligned_free(QLUT);
@@ -573,6 +568,13 @@ int main() {
     }
     long long avg_simd_time2 = total_simd_time2 / num_iterations;
     printf("Matmul_simd2 complete. Average time over %d runs: %lld ms\n", num_iterations, avg_simd_time2);
+
+    /*#pragma omp parallel num_threads(4)
+    {
+        int ith = omp_get_thread_num();
+        int nth = omp_get_num_threads();
+        matmul_lut_micro_kernel(A_T, B, C, M, N, K, ith, nth);
+    }*/
 
     // Step 4: Compute reference result using normal matmul (A_ @ B.T -> C_)
     printf("\nStep 4: Computing reference matmul with A_ and B...\n");
