@@ -5,6 +5,7 @@
 #include <cmath>
 #include <omp.h>
 #include <arm_neon.h>
+#include <random.h>
 #include "ggml-bitnet.h"
 #include "bitnet-lut-kernels.h"
 
@@ -477,7 +478,6 @@ int main() {
     uint8_t* A_packed = (uint8_t*)aligned_malloc(M * K / 4 * sizeof(uint8_t));
     uint8_t* A_packed_T = (uint8_t*)aligned_malloc(M * K / 4 * sizeof(uint8_t));
     int8_t* A_ = (int8_t*)aligned_malloc(M * K * sizeof(int8_t));
-    uint8_t* A_packed = (uint8_t*)aligned_malloc(M * K / 4 * sizeof(uint8_t));
     int32_t* C = (int32_t*)aligned_malloc(M * N * sizeof(int32_t));
     int32_t* C_ = (int32_t*)aligned_malloc(M * N * sizeof(int32_t));
     int32_t* C_simd = (int32_t*)aligned_malloc(M * N * sizeof(int32_t));
