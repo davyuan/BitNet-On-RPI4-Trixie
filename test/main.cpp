@@ -4,7 +4,9 @@
 #include <chrono>
 #include <cmath>
 #include <omp.h>
-#include "./bitnet-lut-kernels.h"
+#include <arm_neon.h>
+#include "ggml-bitnet.h"
+#include "bitnet-lut-kernels.h"
 
 #define TILE_K 32
 #define TILE_N 16
@@ -20,73 +22,20 @@ const int M =2560;           // Weight rows (A rows)
 const int K = 2560;        // Shared dimension
 const int N = 160;         // Activation rows (B rows) = output size
 
-// Repack matrix A according to the tl1 layout pattern
-// BM, BY, bm, by are the tiling parameters
-// Input: weight_in of shape (M, K//2) flattened
-// Output: weight_out of shape (M*K//64, 16) flattened
-void process_tl1(const uint8_t* input_weight, uint8_t* output_weight, 
-                     int M, int K, int BM, int BK, int bm, int bk) {
-    // The Python code packs two 4-bit weights into one byte at the end.
-    // The input 'input_weight' is assumed to be M * (K/2) bytes.
-    
-    int out_idx = 0;
-
-    // We follow the hierarchical tiling: BM (Large M block) -> BY (Large K block)
-    for (int i_major = 0; i_major < M; i_major += BM) {
-        for (int j_major = 0; j_major < K; j_major += BK) {
-            
-            // bm (Sub-block M) -> by (Sub-block K)
-            for (int i_minor = 0; i_minor < BM; i_minor += bm) {
-                for (int j_minor = 0; j_minor < BK; j_minor += bk) {
-                    
-                    // Hardware Atoms: 16 rows (bm_inner) x 4 columns (by_inner)
-                    for (int i_atom = 0; i_atom < bm; i_atom += 16) {
-                        for (int j_atom = 0; j_atom < by; j_atom += 4) {
-                            
-                            // Inside the 16x4 Atom
-                            for (int r = 0; r < 16; ++r) {
-                                // Python logic: weight = weight_0 << 4 + weight_1
-                                // weight_0 comes from index 0, weight_1 from index 1 of the last dim
-                                // In the K dimension, index 0 and 1 are 2-bits apart in the packed byte.
-                                
-                                int row = i_major + i_minor + i_atom + r;
-                                int col_pair = (j_major + j_minor + j_atom) / 2;
-
-                                // Load the byte containing the 4-bit weights
-                                // In NumPy: weight = weight.reshape(..., 4 // 2, 16)
-                                uint8_t val = input_weight[row * (K / 2) + col_pair];
-                                uint8_t val_next = input_weight[row * (K / 2) + col_pair + 1];
-
-                                // Extract and shift as per the Python bit-packing
-                                // weight_0 = weight[:, :, 0] << 4
-                                // weight_1 = weight[:, :, 1]
-                                uint8_t w0 = (val & 0x0F) << 4;   // Assuming low nibble is weight_0
-                                uint8_t w1 = (val_next & 0x0F);    // Assuming low nibble is weight_1
-                                
-                                output_weight[out_idx++] = w0 | w1;
-                            }
-                        }
-                    }
-                }
-            }
+// Transpose matrix B from (N x M) to B_T (M x N)
+void transpose_matrix(float32_t* B, float32_t* B_T, int M, int N) {
+    for (int i = 0; i < M; i++) {
+            for (int j = 0; j < N; j++) {
+                B_T[i * N + j] = B[j * M + i];
         }
     }
 }
 
-// Transpose matrix B from (K x N) to B_T (N x K)
-void transpose_matrix(float32_t* B, float32_t* B_T, int N, int K) {
-    for (int i = 0; i < K; i++) {
+// Transpose matrix A from (N x M) to A_T (M x N)
+void transpose_matrix(int8_t* A, int8_t* A_T, int M, int N) {
+    for (int i = 0; i < M; i++) {
         for (int j = 0; j < N; j++) {
-            B_T[j * K + i] = B[i * N + j];
-        }
-    }
-}
-
-// Transpose matrix A from (M x K/2) to A_T (K/2 x M)
-void transpose_A_matrix(int8_t* A, int8_t* A_T, int M, int KK) {
-    for (int i = 0; i < KK; i++) {
-        for (int j = 0; j < M; j++) {
-            A_T[i * M + j] = A[j * KK + i];
+            A_T[i * N + j] = A[j * M + i];
         }
     }
 }
@@ -170,7 +119,7 @@ void matmul_lut_naive(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) 
             for (int kk = 0; kk < KK; kk += TILE_SIZE) {                
                 for (int i = ii; i < ii + TILE_SIZE; i++) {
                     for (int j = jj; j < jj + TILE_SIZE; j++) {                        
-                        lut_ctor<K_DIM>(QLUT, (float32_t*)(B + j* K), LUT_Scales);    
+                        lut_ctor(K, QLUT, (float32_t*)(B + j* K), LUT_Scales);    
                         
                         // Debug: Print QLUT after construction (first iteration only)
                         /*if (debug_count == 0) {
@@ -362,10 +311,10 @@ void matmul_lut_simd2(int8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K
     *LUT_Scales = 1.0f;
 
     for (int j = 0; j < N; j+=4) {                        
-        lut_ctor<K_DIM>(QLUT0, (float32_t*)(B + j* K), LUT_Scales);    
-        lut_ctor<K_DIM>(QLUT1, (float32_t*)(B + (j+1)* K), LUT_Scales);    
-        lut_ctor<K_DIM>(QLUT2, (float32_t*)(B + (j+2)* K), LUT_Scales);    
-        lut_ctor<K_DIM>(QLUT3, (float32_t*)(B + (j+3)* K), LUT_Scales);    
+        lut_ctor(K, QLUT0, (float32_t*)(B + j* K), LUT_Scales);    
+        lut_ctor(K, QLUT1, (float32_t*)(B + (j+1)* K), LUT_Scales);    
+        lut_ctor(K, QLUT2, (float32_t*)(B + (j+2)* K), LUT_Scales);    
+        lut_ctor(K, QLUT3, (float32_t*)(B + (j+3)* K), LUT_Scales);    
         
         // Parallelize over row blocks
         #pragma omp parallel for num_threads(4)
@@ -485,6 +434,57 @@ void matmul_lut_simd2(int8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K
     aligned_free(Scales);
 }
 
+/* A(K/2 x M), B(N x K)
+   QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
+        each K represents 2 activations in B. 
+   C(MxN)
+   This version doesn't use SIMD optimizations either, but focus on one LUT table at once to avoid
+   overhead of reconstructing LUTs in the same tile. 
+*/
+#pragma omp parallel for num_threads(4)
+void matmul_lut_micro_kernel(int8_t* A_T, float32_t* B, float32_t* C, int M, int N, int K) {
+    int ne00 = M;
+    int ne01 = K;
+    int ne10 = K;
+    int ne11 = N;
+    int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
+    float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
+    float32_t* Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
+    *Scales = 1.0f;
+
+    int ith = omp_get_thread_num();
+    int nth = omp_get_num_threads();
+
+    for(int j = 0; j < ne11; j++) {
+        // g = 4
+        if (ith == 0) {
+            // Transform tensor if not already transformed
+            // Although we have done this in file `llama.cpp`,
+            // we still need to do it here for non-model inference, e.g., test-backend-ops.cpp.
+            // It's better to do this in ggml-backend.c,
+            // but llama.cpp directly manipulates tensor.data for cbe in a lot of space.
+            //ggml_bitnet_transform_tensor(A_T);
+            ggml_preprocessor(ne00, ne10, B + (j * ne10), LUT_Scales, QLUT);
+        }
+#pragma omp barrier
+
+        bitnet_float_type * act_output;
+
+        const int range_per_thread_ii = ne01 / nth;
+        for (int ii = ith * range_per_thread_ii; ii < (ith + 1) * range_per_thread_ii; ii += BM) {          
+            ggml_qgemm_lut( ne00, ne11, ne10, ii, j, A_T, 
+                            QLUT, 
+                            Scales, 
+                            LUT_Scales, 
+                            C);
+        }        
+    }
+
+    aligned_free(QLUT);
+    aligned_free(LUT_Scales);
+    aligned_free(Scales);
+}
+
 int main() {    
     printf("Allocating matrices...\n");
     
@@ -493,6 +493,8 @@ int main() {
     float32_t* B_T = (float32_t*)aligned_malloc(N * K * sizeof(float32_t));
     int8_t* A = (int8_t*)aligned_malloc(M * K / 2 * sizeof(int8_t));
     int8_t* A_T = (int8_t*)aligned_malloc(M * K / 2 * sizeof(int8_t));
+    uint8_t* A_packed = (uint8_t*)aligned_malloc(M * K / 4 * sizeof(uint8_t));
+    uint8_t* A_packed_T = (uint8_t*)aligned_malloc(M * K / 4 * sizeof(uint8_t));
     int8_t* A_ = (int8_t*)aligned_malloc(M * K * sizeof(int8_t));
     uint8_t* A_packed = (uint8_t*)aligned_malloc(M * K / 4 * sizeof(uint8_t));
     int32_t* C = (int32_t*)aligned_malloc(M * N * sizeof(int32_t));
@@ -506,8 +508,11 @@ int main() {
 
     // Initialize with random values
     printf("Initializing test matrices...\n");
+    std::random_device rd; 
+    std::mt19937 gen(rd()); 
+    std::uniform_real_distribution<float> distr(-32.0f, 32.0f);    
     for (int i = 0; i < N * K; i++) {
-        B[i] = (float32_t)(rand() % 256);
+        B[i] = distr(gen);
     }
 
     transpose_matrix(B, B_T, N, K);
@@ -525,12 +530,18 @@ int main() {
             case 6: A_[i * 2 + 0] = 1; A_[i * 2 + 1] = -1; break;
             case 7: A_[i * 2 + 0] = 1; A_[i * 2 + 1] = 0; break;
             case 8: A_[i * 2 + 0] = 1; A_[i * 2 + 1] = 1; break;
-        }        
+        }
+        
+        if(i > 0 && i % 2 == 0) {
+            A_packed[i / 2 -1 ] = (uint8_t)((A[i-2] << 4) | (A[i - 1] & 0x0F));
+        }
     }
+    A_packed[M * K / 4 -1] = (uint8_t)((A[M * K / 2 - 2] << 4) | (A[M * K / 2 - 1] & 0x0F));
 
     // Transpose A for SIMD version
     int KK = K / 2;
-    transpose_A_matrix(A, A_T, M, KK);
+    transpose_matrix(A, A_T, M, KK);
+    transpose_matrix(A_packed, A_packed_T, M, KK / 4);
 
     // Repack A into tl1 layout
     printf("Repacking matrix A into tl1 layout...\n");
@@ -623,6 +634,7 @@ int main() {
     aligned_free(B);
     aligned_free(A);
     aligned_free(A_T);
+    aligned_free(A_packed_T);
     aligned_free(A_);
     aligned_free(C);
     aligned_free(A_packed);
