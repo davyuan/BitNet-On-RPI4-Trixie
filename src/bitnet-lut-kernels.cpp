@@ -2,6 +2,7 @@
 #include "bitnet-lut-kernels.h"
 #include "ggml-bitnet.h"
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <arm_neon.h>
 
