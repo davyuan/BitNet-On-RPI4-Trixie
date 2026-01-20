@@ -12,12 +12,7 @@
 #define TILE_N 16
 #define TILE_M 4
 #define TILE_SIZE 2
-#define K_DIM 2560
 
-const int BM = 128;
-const int BK = 64;
-const int bm = 32;
-const int by = (256/(bm));
 const int M =2560;           // Weight rows (A rows)
 const int K = 2560;        // Shared dimension
 const int N = 160;         // Activation rows (B rows) = output size
@@ -533,7 +528,7 @@ int main() {
         }
         
         if(i > 0 && i % 2 == 0) {
-            A_packed[i / 2 -1 ] = (uint8_t)((A[i-2] << 4) | (A[i - 1] & 0x0F));
+            A_packed[i / 2 -1] = (uint8_t)((A[i-2] << 4) | (A[i - 1] & 0x0F));
         }
     }
     A_packed[M * K / 4 -1] = (uint8_t)((A[M * K / 2 - 2] << 4) | (A[M * K / 2 - 1] & 0x0F));
