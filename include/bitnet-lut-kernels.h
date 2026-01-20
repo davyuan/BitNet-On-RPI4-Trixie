@@ -1,8 +1,8 @@
 #if defined(GGML_BITNET_ARM_TL1)
-#include "ggml-bitnet.h"
 #include <cstdio>
 #include <cstring>
 #include <arm_neon.h>
+#include "ggml-bitnet.h"
 
 #define GGML_BITNET_MAX_NODES 8192
 #define BM 128

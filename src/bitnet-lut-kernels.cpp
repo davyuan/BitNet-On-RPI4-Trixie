@@ -70,8 +70,8 @@ static void per_tensor_quant(int k, void* lut_scales_, void* b_) {
         if (abs_val > max_val) max_val = abs_val;
     }
     *lut_scales = (max_val > 0) ? (127.0f / max_val) : 1.0f;
-#endif
     printf("Computed scale: %.6f\n", *lut_scales);
+#endif
 }
 
 static void partial_max_reset(void* lut_scales_) {
