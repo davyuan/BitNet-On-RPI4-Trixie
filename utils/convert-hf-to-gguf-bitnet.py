@@ -521,18 +521,13 @@ class Model(ABC):
 
 # TL1
 
-def process_tl1(weight, BM, BY, bm, by, M, K):
+def process_tl1(weight, BM, BK, bm, bk, M, K):
     weight = weight.reshape((M, K // 2)).astype(np.uint8)
-    weight = weight.reshape((M // BM, BM, K // 2)).transpose(0, 2, 1)
-    weight = weight.reshape((M // BM, K // BY, BY // 2, BM)).transpose(0, 1, 3, 2)
-    weight = weight.reshape((M // BM, K // BY, BM // bm, bm, BY // 2)).transpose(0, 1, 2, 4, 3)
-    weight = weight.reshape((M // BM, K // BY, BM // bm, BY // by, by // 2, bm)).transpose(0, 1, 2, 3, 5, 4)
-    weight = weight.reshape((M // BM, K // BY, BM // bm, BY // by, bm // 16, 16, by // 2)).transpose(0, 1, 2, 3, 4, 6, 5)
-    weight = weight.reshape((M // BM, K // BY, BM // bm, BY // by, bm // 16, by // 4, 4 // 2, 16)).transpose(0, 1, 2, 3, 4, 5, 7, 6)
-    weight = weight.reshape((M * K // 16 // 4, 16, 4 // 2))
+    weight = weight.reshape((M, K // 4, 2))
     weight_0 = weight[:, :, 0] << 4
     weight_1 = weight[:, :, 1]
     weight = weight_0 + weight_1
+    weight = weight.transpose(1, 0)
     return weight
 
 def preprocess_weights_tl1(
@@ -551,26 +546,25 @@ def preprocess_weights_tl1(
 
     config.read('include/kernel_config.ini')
     BM = -1
-    BY = -1
+    BK = -1
     bm = -1
-    by = -1
+    bk = -1
 
     for kernel in config.sections():
         if int(config.get(kernel, 'm')) == M and int(config.get(kernel, 'k')) == K:
             BM = int(config.get(kernel, 'bm'))
-            BY = int(config.get(kernel, 'bk'))
+            BK = int(config.get(kernel, 'bk'))
             bm = int(config.get(kernel, 'bmm'))
-            by = 256 // bm
+            bk = 256 // bm
             break   
 
     # If no matching kernel config found, use sensible defaults (matching TL1 dims used in BitNet)
     if BM == -1:
-        BM = 64
-        BY = 256
+        BM = 128
+        BK = 64
         bm = 32
-        by = BY // bm
-        logger.warning(f"No kernel config for M={M}, K={K}. Using defaults: BM={BM}, BY={BY}, bm={bm}, by={by}")
-
+        bk = 256 // bm
+        logger.warning(f"No kernel config for M={M}, K={K}. Using defaults: BM={BM}, BK={BK}, bm={bm}, bk={bk}")
     weight = np.reshape(weight, (weight_num // 2, 2))
     hi_weight = np.multiply(np.split(weight, 2, axis=1)[0], 3)
     lo_weight = np.split(weight, 2, axis=1)[1]
@@ -580,7 +574,7 @@ def preprocess_weights_tl1(
     weight = weight + 4
     weight = np.reshape(weight, (M, K // 2)).astype(np.uint8)
 
-    weight = process_tl1(weight, BM, BY, bm, by, M, K)
+    weight = process_tl1(weight, BM, BK, bm, bk, M, K)
 
     return weight
 
