@@ -13,7 +13,7 @@ bool initialized = false;
 bitnet_tensor_extra * bitnet_tensor_extras = nullptr;
 size_t bitnet_tensor_extras_index = 0;
 
-static void * aligned_malloc(size_t size) {
+void * aligned_malloc(size_t size) {
 #if defined(_WIN32)
     return _aligned_malloc(size, 64);
 #else
@@ -23,7 +23,7 @@ static void * aligned_malloc(size_t size) {
 #endif
 }
 
-static void aligned_free(void * ptr) {
+void aligned_free(void * ptr) {
 #if defined(_WIN32)
     _aligned_free(ptr);
 #else
