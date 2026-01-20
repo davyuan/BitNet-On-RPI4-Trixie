@@ -186,7 +186,7 @@ static bool is_type_supported(enum ggml_type type) {{
     }}
 }}
 
-static void ggml_preprocessor(int M, int K, void* B, void* LUT_Scales, void* QLUT) {
+void ggml_preprocessor(int M, int K, void* B, void* LUT_Scales, void* QLUT) {
   partial_max_reset((&(((bitnet_float_type*)LUT_Scales)[0])));
   per_tensor_quant(K, (&(((bitnet_float_type*)LUT_Scales)[0])), (&(((bitnet_float_type*)B)[0])));
   
