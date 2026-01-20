@@ -269,8 +269,8 @@ void ggml_bitnet_transform_tensor(struct ggml_tensor * tensor) {
         return;
     }
 
-    int k = tensor->ne[0];
-    int m = tensor->ne[1];
+    int m = tensor->ne[0];
+    int k = tensor->ne[1];
     const int lut_scales_size = 1;
     const int scales_size = 1;
 
