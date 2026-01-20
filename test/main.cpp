@@ -474,7 +474,7 @@ void matmul_lut_simd2(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int 
    This version doesn't use SIMD optimizations either, but focus on one LUT table at once to avoid
    overhead of reconstructing LUTs in the same tile. 
 */
-void matmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int K, int ith, int nth) {
+void matmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int K) {
     int ne00 = M;
     int ne01 = K;
     int ne10 = K;
@@ -484,28 +484,34 @@ void matmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, int M, int 
     float32_t* Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
     *Scales = 1.0f;
 
-    for (int j = 0; j < ne11; j++) {
-        // g = 4
-        if (ith == 0) {
-            // Transform tensor if not already transformed
-            // Although we have done this in file `llama.cpp`,
-            // we still need to do it here for non-model inference, e.g., test-backend-ops.cpp.
-            // It's better to do this in ggml-backend.c,
-            // but llama.cpp directly manipulates tensor.data for cbe in a lot of space.
-            //ggml_bitnet_transform_tensor(A_T);
-            ggml_preprocessor(ne00, ne10, B + (j * ne10), LUT_Scales, QLUT);
-        }
+    #pragma omp parallel num_threads(4)
+    {    
+        int ith = omp_get_thread_num();
+        int nth = omp_get_num_threads();
+    
+        for (int j = 0; j < ne11; j++) {
+            if (ith == 0) {
+                // Transform tensor if not already transformed
+                // Although we have done this in file `llama.cpp`,
+                // we still need to do it here for non-model inference, e.g., test-backend-ops.cpp.
+                // It's better to do this in ggml-backend.c,
+                // but llama.cpp directly manipulates tensor.data for cbe in a lot of space.
+                //ggml_bitnet_transform_tensor(A_T);
+                ggml_preprocessor(ne00, ne10, B + (j * ne10), LUT_Scales, QLUT);
+            }
 #pragma omp barrier
 
-        const int range_per_thread_ii = ne01 / nth;
-        for (int ii = ith * range_per_thread_ii; ii < (ith + 1) * range_per_thread_ii; ii += BM) {          
-            ggml_qgemm_lut( ne00, ne11, ne10, ii, j, A, 
-                            QLUT, 
-                            Scales, 
-                            LUT_Scales, 
-                            C);
-        }
+            const int range_per_thread_ii = ne01 / nth;
+            for (int ii = ith * range_per_thread_ii; ii < (ith + 1) * range_per_thread_ii; ii += BM) {          
+                ggml_qgemm_lut( ne00, ne11, ne10, ii, j, A, 
+                                QLUT, 
+                                Scales, 
+                                LUT_Scales, 
+                                C);
+            }
+
 #pragma omp barrier                
+        }
     }
 
     aligned_free(QLUT);
@@ -651,24 +657,35 @@ int main() {
     printf("\nComparing kernel output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-2, "Matmul_simd2 comparison");
 
-           
-    /*#pragma omp parallel num_threads(4)
-    {
-        int ith = omp_get_thread_num();
-        int nth = omp_get_num_threads();
-        matmul_lut_micro_kernel(A_T, B, C, M, N, K, ith, nth);
-    }*/
+    // Step 3: Run qGEMM with micro kernel (100 runs for averaging)
+    printf("\nStep 3: Running qGEMM_LUT microkernel (100 iterations for average)\n");
+    long long total_microkernel_time = 0;
+    for (int iter = 0; iter < num_iterations; iter++) {
+        memset(C_simd, 0, M * N * sizeof(float32_t));
+        auto microkernel_start = std::chrono::high_resolution_clock::now();           
+        matmul_lut_micro_kernel(A_packed_T, B_T, C, M, N, K);
+        auto microkernel_end = std::chrono::high_resolution_clock::now();
+        auto microkernel_duration = std::chrono::duration_cast<std::chrono::milliseconds>(microkernel_end - microkernel_start);
+        total_microkernel_time += microkernel_duration.count();
+    }
+    long long avg_microkernel_time = total_microkernel_time / num_iterations;
+    printf("Matmul_microkernel complete. Average time over %d runs: %lld ms\n", num_iterations, avg_microkernel_time);
+    printf("\nComparing kernel output (C) with reference (C_)...\n");
+    compare_matrices(C_simd, C_, M, N, 1e-2, "Matmul_microkernel comparison");
 
     // Print performance comparison
     //double speedup_naive2 = (double)naive_duration.count() / (double)lut_duration.count();
     double speedup_simd = (double)naive_duration.count() / (double)avg_simd_time;
     double speedup_simd2 = (double)naive_duration.count() / (double)avg_simd_time2;
+    double speedup_microkernel = (double)naive_duration.count() / (double)avg_microkernel_time;
     printf("\n=== PERFORMANCE COMPARISON ===\n");
     printf("matmul naive:   %lld ms\n", naive_duration.count());
     printf("LUT matmul SIMD (avg):   %lld ms\n", avg_simd_time);
     printf("Speedup (naive / SIMD): %.2fx\n\n", speedup_simd);
     printf("LUT matmul SIMD2 (avg):   %lld ms\n", avg_simd_time2);
     printf("Speedup (naive / SIMD2): %.2fx\n\n", speedup_simd2);
+    printf("LUT matmul microkernel (avg):   %lld ms\n", avg_microkernel_time);
+    printf("Speedup (naive / microkernel): %.2fx\n\n", speedup_microkernel);
     
     // Cleanup
     aligned_free(C_);
