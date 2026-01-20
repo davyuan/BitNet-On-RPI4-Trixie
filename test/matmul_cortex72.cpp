@@ -34,59 +34,6 @@ static void aligned_free(void * ptr) {
 #endif
 }
 
-// Repack matrix A according to the tl1 layout pattern
-// BM, BY, bm, by are the tiling parameters
-// Input: weight_in of shape (M, K//2) flattened
-// Output: weight_out of shape (M*K//64, 16) flattened
-void process_tl1(const uint8_t* input_weight, uint8_t* output_weight, 
-                     int M, int K, int BM, int BY, int bm, int by) {
-    // The Python code packs two 4-bit weights into one byte at the end.
-    // The input 'input_weight' is assumed to be M * (K/2) bytes.
-    
-    int out_idx = 0;
-
-    // We follow the hierarchical tiling: BM (Large M block) -> BY (Large K block)
-    for (int i_major = 0; i_major < M; i_major += BM) {
-        for (int j_major = 0; j_major < K; j_major += BY) {
-            
-            // bm (Sub-block M) -> by (Sub-block K)
-            for (int i_minor = 0; i_minor < BM; i_minor += bm) {
-                for (int j_minor = 0; j_minor < BY; j_minor += by) {
-                    
-                    // Hardware Atoms: 16 rows (bm_inner) x 4 columns (by_inner)
-                    for (int i_atom = 0; i_atom < bm; i_atom += 16) {
-                        for (int j_atom = 0; j_atom < by; j_atom += 4) {
-                            
-                            // Inside the 16x4 Atom
-                            for (int r = 0; r < 16; ++r) {
-                                // Python logic: weight = weight_0 << 4 + weight_1
-                                // weight_0 comes from index 0, weight_1 from index 1 of the last dim
-                                // In the K dimension, index 0 and 1 are 2-bits apart in the packed byte.
-                                
-                                int row = i_major + i_minor + i_atom + r;
-                                int col_pair = (j_major + j_minor + j_atom) / 2;
-
-                                // Load the byte containing the 4-bit weights
-                                // In NumPy: weight = weight.reshape(..., 4 // 2, 16)
-                                uint8_t val = input_weight[row * (K / 2) + col_pair];
-                                uint8_t val_next = input_weight[row * (K / 2) + col_pair + 1];
-
-                                // Extract and shift as per the Python bit-packing
-                                // weight_0 = weight[:, :, 0] << 4
-                                // weight_1 = weight[:, :, 1]
-                                uint8_t w0 = (val & 0x0F) << 4;   // Assuming low nibble is weight_0
-                                uint8_t w1 = (val_next & 0x0F);    // Assuming low nibble is weight_1
-                                
-                                output_weight[out_idx++] = w0 | w1;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
 void matmul_tiled_simd(int8_t* A, int8_t* B, int32_t* C, int M, int N, int K) {
     #pragma omp parallel for num_threads(4)
     for (int i = 0; i < M; i += TILE_M) {
@@ -199,7 +146,6 @@ void matmul_int8(int8_t* A, int8_t* B, int32_t* C, int M, int N, int K) {
 int main(){
     uint8_t* A = (uint8_t*)aligned_malloc(M * K / 2 * sizeof(uint8_t));
     int8_t* A_ = (int8_t*)aligned_malloc(M * K * sizeof(int8_t));
-    uint8_t* A_packed = (uint8_t*)aligned_malloc(M * K / 4 * sizeof(uint8_t));
     int8_t* B = (int8_t*)aligned_malloc(K * N * sizeof(int8_t));
     int32_t* C = (int32_t*)aligned_malloc(M * N * sizeof(int32_t));
     int32_t* C_ = (int32_t*)aligned_malloc(M * N * sizeof(int32_t)); // Reference result
