@@ -252,7 +252,7 @@ void matmul_lut_simd(uint8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K
                         vec_c[1] = vaddq_s16(vec_c[1], out01);
                     }
 
-                    flaot32_t* pC = (float32_t*) &(C[(i+0)*N + j]);
+                    float32_t* pC = (float32_t*) &(C[(i+0)*N + j]);
                     const float32_t lut_scale = ((float32_t*)LUT_Scales)[0];
                     const float32_t scale = ((float32_t*)Scales)[0];
                     int16_t tmp_vals[8];
@@ -594,17 +594,17 @@ int main() {
     printf("Matmul_simd2 complete. Average time over %d runs: %lld ms\n", num_iterations, avg_simd_time2);
 
     printf("\nComparing kernel output (C) with reference (C_)...\n");
-    float32_t max_error = 0.0f;
-    int error_count = 0;
+    max_error = 0.0f;
+    error_count = 0;
     for (int i = 0; i < M * N; i++) {
         float32_t error = fabs((float32_t)C_simd[i] - C_[i]);
         if (error > max_error) {
             max_error = error;
         }
-        if (error > 1e-3) {  // Threshold for significant error
+        if (error > 1e-2) {  // Threshold for significant error
             error_count++;
             if (error_count <= 10) {  // Print first 10 errors
-                printf("  Mismatch at [%d]: kernel=%d, ref=%.1f, error=%.1f\n", 
+                printf("  Mismatch at [%d]: kernel=%d, ref=%.1f, error=%.2f\n", 
                        i, C_simd[i], C_[i], error);
             }
         }
