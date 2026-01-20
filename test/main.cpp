@@ -208,8 +208,8 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, int32_t* C, int M, int N, int K) 
     int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
     float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
     float32_t* Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
-    *Scales = 2.0f;
-    *LUT_Scales = 1.0f;
+    *Scales = 1.0f;
+    *LUT_Scales = 2.0f;
 
     for (int j = 0; j < N; j++) {                        
         lut_ctor(K, QLUT, (float32_t*)(B + j* K), LUT_Scales);
