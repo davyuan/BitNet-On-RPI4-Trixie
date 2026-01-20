@@ -427,7 +427,7 @@ void matmul_lut_simd2(int8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K
    This version doesn't use SIMD optimizations either, but focus on one LUT table at once to avoid
    overhead of reconstructing LUTs in the same tile. 
 */
-void matmul_lut_micro_kernel(int8_t* A_T, float32_t* B, float32_t* C, int M, int N, int K, int ith, int nth) {
+void matmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int K, int ith, int nth) {
     int ne00 = M;
     int ne01 = K;
     int ne10 = K;
@@ -452,7 +452,7 @@ void matmul_lut_micro_kernel(int8_t* A_T, float32_t* B, float32_t* C, int M, int
 
         const int range_per_thread_ii = ne01 / nth;
         for (int ii = ith * range_per_thread_ii; ii < (ith + 1) * range_per_thread_ii; ii += BM) {          
-            ggml_qgemm_lut( ne00, ne11, ne10, ii, j, A_packed_T, 
+            ggml_qgemm_lut( ne00, ne11, ne10, ii, j, A, 
                             QLUT, 
                             Scales, 
                             LUT_Scales, 
