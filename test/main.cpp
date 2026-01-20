@@ -233,8 +233,8 @@ void matmul_lut_simd(uint8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K
                     int16x8_t vec_c[2] = {vdupq_n_s16(0), vdupq_n_s16(0)};
 #pragma unroll
                     for (int k = kk; k < kk + BK; k++) {
-                        // Load 16 activations from same k, different rows (from transposed A)
-                        int8x16_t vec_a0 = vld1q_s8(A_T + k * M + i);
+                        // Load 16 weights from same k, different rows (from transposed A)
+                        uint8x16_t vec_a0 = vld1q_u8(A_T + k * M + i);
                         
                         // Lookup on high and low tables (same LUT table for all 16 indices)
                         int8x16_t vec_c0_h = vqtbl1q_s8(vec_lut_high[k - kk], vec_a0);
