@@ -186,7 +186,7 @@ static bool is_type_supported(enum ggml_type type) {{
     }}
 }}
 
-void ggml_preprocessor(int M, int K, void* B, void* LUT_Scales, void* QLUT) {
+inline void ggml_preprocessor(int M, int K, void* B, void* LUT_Scales, void* QLUT) {
   partial_max_reset((&(((bitnet_float_type*)LUT_Scales)[0])));
   per_tensor_quant(K, (&(((bitnet_float_type*)LUT_Scales)[0])), (&(((bitnet_float_type*)B)[0])));
   
@@ -202,7 +202,7 @@ inline void reconstruct_int16_pair(int8x16_t high, int8x16_t low, int16x8_t& out
     out_hi = vorrq_s16(high_hi, low_hi);
 }
 
-void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT, void* Scales, void* LUT_Scales, float32_t* C) {
+inline void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT, void* Scales, void* LUT_Scales, float32_t* C) {
     const uint8x16_t vec_mask = vdupq_n_u8(0x0f);
     const int KK = K/2;
 
@@ -264,7 +264,7 @@ void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT,
     }
 }
 
-void ggml_bitnet_transform_tensor(struct ggml_tensor * tensor) {
+inline void ggml_bitnet_transform_tensor(struct ggml_tensor * tensor) {
     if (!(is_type_supported(tensor->type) && tensor->backend == GGML_BACKEND_TYPE_CPU && tensor->extra == nullptr)) {
         return;
     }
