@@ -50,12 +50,12 @@ static inline void interleave_vec_c_block(int16x4_t c0, int16x4_t c1, int16x4_t 
     out[3] = vmovl_s16(rows23.val[1]);
 }
 
-void matmul_naive(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
+void matmul_naive(int8_t* A, float32_t* B, float32_t* C, int M, int N, int K) {
     for (int i = 0; i < M; i++) {
         for (int j = 0; j < N; j++) {
-            int32_t sum = 0;
+            float32_t sum = 0;
             for (int k = 0; k < K; k++) {
-                sum += (int32_t)A[i*K + k] * (int32_t)B[k*N + j];
+                sum += (float32_t)A[i*K + k] * (float32_t)B[k*N + j];
             }
             C[i*N + j] = sum;
         }
@@ -203,7 +203,7 @@ void matmul_lut_naive2(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K)
    This version doesn't use SIMD optimizations either, but focus on one LUT table at once to avoid
    overhead of reconstructing LUTs in the same tile. 
 */
-void matmul_lut_simd(uint8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
+void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int K) {
     int KK = K / 2;
     int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
     float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
@@ -495,13 +495,13 @@ int main() {
     uint8_t* A_packed_T = (uint8_t*)aligned_malloc(M * K / 4 * sizeof(uint8_t));
     int8_t* A_ = (int8_t*)aligned_malloc(M * K * sizeof(int8_t));
     int32_t* C = (int32_t*)aligned_malloc(M * N * sizeof(int32_t));
-    int32_t* C_ = (int32_t*)aligned_malloc(M * N * sizeof(int32_t));
-    int32_t* C_simd = (int32_t*)aligned_malloc(M * N * sizeof(int32_t));
+    float32_t* C_ = (float32_t*)aligned_malloc(M * N * sizeof(float32_t));
+    float32_t* C_simd = (float32_t*)aligned_malloc(M * N * sizeof(float32_t));
     
     // Allocate reference output matrix C_
-    memset(C_, 0, M * N * sizeof(int32_t));
+    memset(C_, 0, M * N * sizeof(float32_t));
     memset(C, 0, M * N * sizeof(int32_t));
-    memset(C_simd, 0, M * N * sizeof(int32_t));
+    memset(C_simd, 0, M * N * sizeof(float32_t));
 
     // Initialize with random values
     printf("Initializing test matrices...\n");
