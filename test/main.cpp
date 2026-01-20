@@ -521,8 +521,8 @@ int main() {
 
     // Transpose A for SIMD version
     int KK = K / 2;
-    transpose_matrix(A, A_T, M, KK);
-    transpose_matrix(A_packed, A_packed_T, M, KK / 4);
+    transpose_matrix(A, A_T, KK, M);
+    transpose_matrix(A_packed, A_packed_T, KK /2, M);
 
     // Repack A into tl1 layout
     printf("Repacking matrix A into tl1 layout...\n");
