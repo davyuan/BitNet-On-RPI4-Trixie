@@ -203,7 +203,7 @@ void matmul_lut_naive2(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K)
    This version doesn't use SIMD optimizations either, but focus on one LUT table at once to avoid
    overhead of reconstructing LUTs in the same tile. 
 */
-void matmul_lut_simd(uint8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K) {
+void matmul_lut_simd(uint8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
     int KK = K / 2;
     int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
     float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
@@ -212,7 +212,8 @@ void matmul_lut_simd(uint8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K
     *LUT_Scales = 1.0f;
 
     for (int j = 0; j < N; j++) {                        
-        lut_ctor(K, QLUT, (float32_t*)(B + j* K), LUT_Scales);    
+        lut_ctor(K, QLUT, (float32_t*)(B + j* K), LUT_Scales);
+        printf("LUT constructed for row %d, scale=%.2f\n", j, *LUT_Scales);    
         
         // Parallelize over row blocks
         #pragma omp parallel for num_threads(4)
@@ -234,7 +235,7 @@ void matmul_lut_simd(uint8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K
 #pragma unroll
                     for (int k = kk; k < kk + BK; k++) {
                         // Load 16 weights from same k, different rows (from transposed A)
-                        uint8x16_t vec_a0 = vld1q_u8(A_T + k * M + i);
+                        uint8x16_t vec_a0 = vld1q_u8(A + k * M + i);
                         
                         // Lookup on high and low tables (same LUT table for all 16 indices)
                         int8x16_t vec_c0_h = vqtbl1q_s8(vec_lut_high[k - kk], vec_a0);
@@ -281,7 +282,7 @@ void matmul_lut_simd(uint8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K
    This version doesn't use SIMD optimizations either, but focus on one LUT table at once to avoid
    overhead of reconstructing LUTs in the same tile. 
 */
-void matmul_lut_simd2(uint8_t* A_T, float32_t* B, int32_t* C, int M, int N, int K) {
+void matmul_lut_simd2(uint8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
     int KK = K / 2;
     int8_t* QLUT0 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));
     int8_t* QLUT1 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));
@@ -296,7 +297,8 @@ void matmul_lut_simd2(uint8_t* A_T, float32_t* B, int32_t* C, int M, int N, int 
         lut_ctor(K, QLUT0, (float32_t*)(B + j* K), LUT_Scales);    
         lut_ctor(K, QLUT1, (float32_t*)(B + (j+1)* K), LUT_Scales);    
         lut_ctor(K, QLUT2, (float32_t*)(B + (j+2)* K), LUT_Scales);    
-        lut_ctor(K, QLUT3, (float32_t*)(B + (j+3)* K), LUT_Scales);    
+        lut_ctor(K, QLUT3, (float32_t*)(B + (j+3)* K), LUT_Scales);  
+        printf("LUTs constructed for rows %d-%d, scale=%.2f\n", j, j+3, *LUT_Scales);  
         
         // Parallelize over row blocks
         #pragma omp parallel for num_threads(4)
@@ -332,7 +334,7 @@ void matmul_lut_simd2(uint8_t* A_T, float32_t* B, int32_t* C, int M, int N, int 
                     int16x8_t vec_c3[2] = {vdupq_n_s16(0), vdupq_n_s16(0)};
 #pragma unroll
                     for (int k = kk; k < kk + BK; k++) {
-                        uint8x16_t vec_a = vld1q_u8(A_T + k * M + i);
+                        uint8x16_t vec_a = vld1q_u8(A + k * M + i);
 
                         int8x16_t vec_c0_h = vqtbl1q_s8(vec_lut0_high[k - kk], vec_a);
                         int8x16_t vec_c0_l = vqtbl1q_s8(vec_lut0_low[k - kk], vec_a);
