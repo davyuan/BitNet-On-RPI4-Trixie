@@ -282,22 +282,23 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int K
    This version doesn't use SIMD optimizations either, but focus on one LUT table at once to avoid
    overhead of reconstructing LUTs in the same tile. 
 */
-void matmul_lut_simd2(uint8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
+void matmul_lut_simd2(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int K) {
     int KK = K / 2;
     int8_t* QLUT0 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));
     int8_t* QLUT1 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));
     int8_t* QLUT2 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));
     int8_t* QLUT3 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
-    float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
+    float32_t* LUT_Scales = (float32_t*)aligned_malloc( 4 * sizeof(float32_t));
     float32_t* Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
     *Scales = 1.0f;
-    *LUT_Scales = 1.0f;
 
-    for (int j = 0; j < N; j+=4) {                        
-        lut_ctor(K, QLUT0, (float32_t*)(B + j* K), LUT_Scales);    
-        lut_ctor(K, QLUT1, (float32_t*)(B + (j+1)* K), LUT_Scales);    
-        lut_ctor(K, QLUT2, (float32_t*)(B + (j+2)* K), LUT_Scales);    
-        lut_ctor(K, QLUT3, (float32_t*)(B + (j+3)* K), LUT_Scales);  
+    for (int j = 0; j < N; j+=4) {                      
+        gggml_preprocessor(M, K, (void*)(B + j * K), (void*)(&(LUT_Scales[0])), (void*)QLUT0);                  
+        gggml_preprocessor(M, K, (void*)(B + (j+1) * K), (void*)(&(LUT_Scales[1])), (void*)QLUT1);                  
+        gggml_preprocessor(M, K, (void*)(B + (j+2) * K), (void*)(&(LUT_Scales[2])), (void*)QLUT2);                  
+        gggml_preprocessor(M, K, (void*)(B + (j+3) * K), (void*)(&(LUT_Scales[3])), (void*)QLUT3);  
+        float32x4_t lut_scales_vec = vld1q_f32(LUT_Scales);  // Load all 4 LUT scales
+
         //printf("LUTs constructed for rows %d-%d, scale=%.2f\n", j, j+3, *LUT_Scales);  
         
         // Parallelize over row blocks
@@ -372,39 +373,87 @@ void matmul_lut_simd2(uint8_t* A, float32_t* B, int32_t* C, int M, int N, int K)
                     interleave_vec_c_block(vget_low_s16(vec_c0[1]), vget_low_s16(vec_c1[1]), vget_low_s16(vec_c2[1]), vget_low_s16(vec_c3[1]), vec_out_lo2);
                     interleave_vec_c_block(vget_high_s16(vec_c0[1]), vget_high_s16(vec_c1[1]), vget_high_s16(vec_c2[1]), vget_high_s16(vec_c3[1]), vec_out_hi2);
                     
-                    
+                    //convert int32 to float32 and scale
                     int32_t* pC = &C[(i+0)*N + j];
-                    vst1q_s32(pC, vaddq_s32(vld1q_s32(pC), vec_out_lo[0]));
+                    
+                    float32x4_t vec_out_lo_f32 = vcvtq_f32_s32(vec_out_lo[0]);
+                    float32x4_t scaled_lo_0 = vmulq_f32(vec_out_lo_f32, lut_scales_vec);
+                    vst1q_f32((float32_t*)pC, vaddq_f32(vld1q_f32((float32_t*)pC), scaled_lo_0));
                     pC += N;
-                    vst1q_s32(pC, vaddq_s32(vld1q_s32(pC), vec_out_lo[1]));
+                    
+                    vec_out_lo_f32 = vcvtq_f32_s32(vec_out_lo[1]);
+                    float32x4_t scaled_lo_1 = vmulq_f32(vec_out_lo_f32, lut_scales_vec);
+                    vst1q_f32((float32_t*)pC, vaddq_f32(vld1q_f32((float32_t*)pC), scaled_lo_1));
                     pC += N;
-                    vst1q_s32(pC, vaddq_s32(vld1q_s32(pC), vec_out_lo[2]));
+                    
+                    vec_out_lo_f32 = vcvtq_f32_s32(vec_out_lo[2]);
+                    float32x4_t scaled_lo_2 = vmulq_f32(vec_out_lo_f32, lut_scales_vec);
+                    vst1q_f32((float32_t*)pC, vaddq_f32(vld1q_f32((float32_t*)pC), scaled_lo_2));
                     pC += N;
-                    vst1q_s32(pC, vaddq_s32(vld1q_s32(pC), vec_out_lo[3]));
+                    
+                    vec_out_lo_f32 = vcvtq_f32_s32(vec_out_lo[3]);
+                    float32x4_t scaled_lo_3 = vmulq_f32(vec_out_lo_f32, lut_scales_vec);
+                    vst1q_f32((float32_t*)pC, vaddq_f32(vld1q_f32((float32_t*)pC), scaled_lo_3));
                     pC += N;
-                    vst1q_s32(pC, vaddq_s32(vld1q_s32(pC), vec_out_hi[0]));
+                    
+                    vec_out_hi_f32 = vcvtq_f32_s32(vec_out_hi[0]);
+                    float32x4_t scaled_hi_0 = vmulq_f32(vec_out_hi_f32, lut_scales_vec);
+                    vst1q_f32((float32_t*)pC, vaddq_f32(vld1q_f32((float32_t*)pC), scaled_hi_0));
                     pC += N;
-                    vst1q_s32(pC, vaddq_s32(vld1q_s32(pC), vec_out_hi[1]));
+                    
+                    vec_out_hi_f32 = vcvtq_f32_s32(vec_out_hi[1]);
+                    float32x4_t scaled_hi_1 = vmulq_f32(vec_out_hi_f32, lut_scales_vec);
+                    vst1q_f32((float32_t*)pC, vaddq_f32(vld1q_f32((float32_t*)pC), scaled_hi_1));
                     pC += N;
-                    vst1q_s32(pC, vaddq_s32(vld1q_s32(pC), vec_out_hi[2]));
+                    
+                    vec_out_hi_f32 = vcvtq_f32_s32(vec_out_hi[2]);
+                    float32x4_t scaled_hi_2 = vmulq_f32(vec_out_hi_f32, lut_scales_vec);
+                    vst1q_f32((float32_t*)pC, vaddq_f32(vld1q_f32((float32_t*)pC), scaled_hi_2));
                     pC += N;
-                    vst1q_s32(pC, vaddq_s32(vld1q_s32(pC), vec_out_hi[3]));
+                    
+                    vec_out_hi_f32 = vcvtq_f32_s32(vec_out_hi[3]);
+                    float32x4_t scaled_hi_3 = vmulq_f32(vec_out_hi_f32, lut_scales_vec);
+                    vst1q_f32((float32_t*)pC, vaddq_f32(vld1q_f32((float32_t*)pC), scaled_hi_3));
                     pC += N;
-                    vst1q_s32(pC, vaddq_s32(vld1q_s32(pC), vec_out_lo2[0]));
+                    
+                    vec_out_lo_f32 = vcvtq_f32_s32(vec_out_lo2[0]);
+                    float32x4_t scaled_lo2_0 = vmulq_f32(vec_out_lo_f32, lut_scales_vec);
+                    vst1q_f32((float32_t*)pC, vaddq_f32(vld1q_f32((float32_t*)pC), scaled_lo2_0));
                     pC += N;
-                    vst1q_s32(pC, vaddq_s32(vld1q_s32(pC), vec_out_lo2[1]));
+                    
+                    vec_out_lo_f32 = vcvtq_f32_s32(vec_out_lo2[1]);
+                    float32x4_t scaled_lo2_1 = vmulq_f32(vec_out_lo_f32, lut_scales_vec);
+                    vst1q_f32((float32_t*)pC, vaddq_f32(vld1q_f32((float32_t*)pC), scaled_lo2_1));
                     pC += N;
-                    vst1q_s32(pC, vaddq_s32(vld1q_s32(pC), vec_out_lo2[2]));
+                    
+                    vec_out_lo_f32 = vcvtq_f32_s32(vec_out_lo2[2]);
+                    float32x4_t scaled_lo2_2 = vmulq_f32(vec_out_lo_f32, lut_scales_vec);
+                    vst1q_f32((float32_t*)pC, vaddq_f32(vld1q_f32((float32_t*)pC), scaled_lo2_2));
                     pC += N;
-                    vst1q_s32(pC, vaddq_s32(vld1q_s32(pC), vec_out_lo2[3]));
+                    
+                    vec_out_lo_f32 = vcvtq_f32_s32(vec_out_lo2[3]);
+                    float32x4_t scaled_lo2_3 = vmulq_f32(vec_out_lo_f32, lut_scales_vec);
+                    vst1q_f32((float32_t*)pC, vaddq_f32(vld1q_f32((float32_t*)pC), scaled_lo2_3));
                     pC += N;
-                    vst1q_s32(pC, vaddq_s32(vld1q_s32(pC), vec_out_hi2[0]));
+                    
+                    vec_out_hi_f32 = vcvtq_f32_s32(vec_out_hi2[0]);
+                    float32x4_t scaled_hi2_0 = vmulq_f32(vec_out_hi_f32, lut_scales_vec);
+                    vst1q_f32((float32_t*)pC, vaddq_f32(vld1q_f32((float32_t*)pC), scaled_hi2_0));
                     pC += N;
-                    vst1q_s32(pC, vaddq_s32(vld1q_s32(pC), vec_out_hi2[1]));
+                    
+                    vec_out_hi_f32 = vcvtq_f32_s32(vec_out_hi2[1]);
+                    float32x4_t scaled_hi2_1 = vmulq_f32(vec_out_hi_f32, lut_scales_vec);
+                    vst1q_f32((float32_t*)pC, vaddq_f32(vld1q_f32((float32_t*)pC), scaled_hi2_1));
                     pC += N;
-                    vst1q_s32(pC, vaddq_s32(vld1q_s32(pC), vec_out_hi2[2]));
+                    
+                    vec_out_hi_f32 = vcvtq_f32_s32(vec_out_hi2[2]);
+                    float32x4_t scaled_hi2_2 = vmulq_f32(vec_out_hi_f32, lut_scales_vec);
+                    vst1q_f32((float32_t*)pC, vaddq_f32(vld1q_f32((float32_t*)pC), scaled_hi2_2));
                     pC += N;
-                    vst1q_s32(pC, vaddq_s32(vld1q_s32(pC), vec_out_hi2[3]));
+                    
+                    vec_out_hi_f32 = vcvtq_f32_s32(vec_out_hi2[3]);
+                    float32x4_t scaled_hi2_3 = vmulq_f32(vec_out_hi_f32, lut_scales_vec);
+                    vst1q_f32((float32_t*)pC, vaddq_f32(vld1q_f32((float32_t*)pC), scaled_hi2_3));
                 }
             }
         }
