@@ -699,7 +699,7 @@ int main() {
     const int num_iterations = 10;
     /*long long total_simd_time = 0;
     for (int iter = 0; iter < num_iterations; iter++) {
-        memset(C_simd, 0, M * N * sizeof(int32_t));
+        memset(C_simd, 0, M * N * sizeof(float32_t));
         auto lut_simd_start = std::chrono::high_resolution_clock::now();
         matmul_lut_simd(A_T, B_T, C_simd, M, N, K);
         auto lut_simd_end = std::chrono::high_resolution_clock::now();
@@ -736,7 +736,7 @@ int main() {
     for (int iter = 0; iter < num_iterations; iter++) {
         memset(C_simd, 0, M * N * sizeof(float32_t));
         auto microkernel_start = std::chrono::high_resolution_clock::now();           
-        matmul_lut_packed(A_packed_T, B_T, C_simd, M, N, K);
+        //matmul_lut_packed(A_packed_T, B_T, C_simd, M, N, K);
         auto microkernel_end = std::chrono::high_resolution_clock::now();
         auto microkernel_duration = std::chrono::duration_cast<std::chrono::milliseconds>(microkernel_end - microkernel_start);
         total_microkernel_time += microkernel_duration.count();
