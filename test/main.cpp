@@ -520,7 +520,7 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int
                     int16x8_t vec_c[4] = {vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0)};
 #pragma unroll
                     for (int k = kk; k < kk + BK; k++) {
-                        uint8x16_t vec_a = vld1q_u8(A + k * M / 2 + i);
+                        uint8x16_t vec_a = vld1q_u8(A + k * M / 2 + i/2);
                         uint8x16_t vec_a_top = vshrq_n_u8(vec_a, 4);
                         uint8x16_t vec_a_bot = vandq_u8(vec_a, vec_mask);
                         uint8x16x2_t vec_a_unpacked = vzipq_u8(vec_a_top, vec_a_bot);
