@@ -236,6 +236,18 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int K
                         // Load 16 weights from same k, different rows (from transposed A)
                         uint8x16_t vec_a0 = vld1q_u8(A + k * M + i);
                         
+                        // Debug: print what we load
+                        if (j == 0 && k == kk && i == ii) {
+                            uint8_t a0_arr[16];
+                            vst1q_u8(a0_arr, vec_a0);
+#pragma omp critical
+                            {
+                                printf("DEBUG simd   [ii=%d, i=%d, k=%d]: vec_a0  =[", ii, i, k);
+                                for (int d = 0; d < 16; d++) printf("%2d ", (int)a0_arr[d]);
+                                printf("]\n");
+                            }
+                        }
+                        
                         // Lookup on high and low tables (same LUT table for all 16 indices)
                         int8x16_t vec_c0_h = vqtbl1q_s8(vec_lut_high[k - kk], vec_a0);
                         int8x16_t vec_c0_l = vqtbl1q_s8(vec_lut_low[k - kk], vec_a0);
@@ -519,13 +531,16 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int
                             vst1q_u8(top_arr, vec_a_top);
                             vst1q_u8(val0_arr, vec_a_unpacked.val[0]);
                             vst1q_u8(val1_arr, vec_a_unpacked.val[1]);
-                            printf("DEBUG packed [ii=%d, i=%d, k=%d]: vec_a_top=[", ii, i, k);
-                            for (int d = 0; d < 16; d++) printf("%2d ", (int)top_arr[d]);
-                            printf("] val[0]=[");
-                            for (int d = 0; d < 16; d++) printf("%2d ", (int)val0_arr[d]);
-                            printf("] val[1]=[");
-                            for (int d = 0; d < 16; d++) printf("%2d ", (int)val1_arr[d]);
-                            printf("]\n");
+#pragma omp critical
+                            {
+                                printf("DEBUG packed [ii=%d, i=%d, k=%d]: vec_a_top=[", ii, i, k);
+                                for (int d = 0; d < 16; d++) printf("%2d ", (int)top_arr[d]);
+                                printf("] val[0]=[");
+                                for (int d = 0; d < 16; d++) printf("%2d ", (int)val0_arr[d]);
+                                printf("] val[1]=[");
+                                for (int d = 0; d < 16; d++) printf("%2d ", (int)val1_arr[d]);
+                                printf("]\n");
+                            }
                         }
 
                         // Lookup on high and low tables (same LUT table for all 16 indices)
