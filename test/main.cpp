@@ -215,7 +215,7 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int K
         //printf("LUT constructed for row %d, scale=%.2f\n", j, *LUT_Scales);    
         
         // Parallelize over row blocks
-        #pragma omp parallel for num_threads(4)
+        #pragma omp parallel for num_threads(1)
         for (int ii = 0; ii < M; ii += BM) {          
             for (int kk = 0; kk < KK; kk += BK) {
                 int8x16_t vec_lut_high[BK];
@@ -502,7 +502,7 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int
         ggml_preprocessor(M, K, (void*)(B + j * K), (void*)LUT_Scales, (void*)QLUT);                  
         
         // Parallelize over row blocks
-        #pragma omp parallel for num_threads(4)
+        #pragma omp parallel for num_threads(1)
         for (int ii = 0; ii < M; ii += BM) {          
             for (int kk = 0; kk < KK; kk += BK) {
                 int8x16_t vec_lut_high[BK];
