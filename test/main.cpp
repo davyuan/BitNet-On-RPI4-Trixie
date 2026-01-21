@@ -677,7 +677,7 @@ int main() {
     transpose_matrix(A, A_T, KK, M);
     transpose_matrix(A_packed, A_packed_T, KK /2, M);
   
-    /*// Debug: Print first 16 rows of A, A_packed, and A_packed_T
+    // Debug: Print first 16 rows of A, A_packed, and A_packed_T
     printf("\n=== DEBUG: First 16 rows of A (uint8_t, 16 elements each) ===\n");
     for (int i = 0; i < 16; i++) {
         printf("A[%2d]: ", i);
@@ -706,7 +706,7 @@ int main() {
     }
     
     // Debug: Print first 16 rows of B and B_T
-    printf("\n=== DEBUG: First 16 rows of B (float32_t, 16 elements each) ===\n");
+    /*printf("\n=== DEBUG: First 16 rows of B (float32_t, 16 elements each) ===\n");
     for (int i = 0; i < 16; i++) {
         printf("B[%2d]: ", i);
         for (int j = 0; j < 16; j++) {
