@@ -272,7 +272,7 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int K
                             float32_t val = (tmp_vals[lane] / lut_scale) * scale;
 #pragma omp critical
                             {
-                                if (debug_count_simd < 16 && j == 0) {
+                                if (debug_count_simd < 32 && j == 0) {
                                     printf("matmul_lut_simd: write[%2d] = tmp_vals[%d]=%d / lut_scale=%.2f * scale=%.2f = %.1f\n",
                                            debug_count_simd, lane, tmp_vals[lane], lut_scale, scale, val);
                                     debug_count_simd++;
@@ -556,7 +556,7 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int
                             float32_t val = (tmp_vals[lane] / lut_scale) * scale;
 #pragma omp critical
                             {
-                                if (debug_count_packed < 16 && j == 0) {
+                                if (debug_count_packed < 32 && j == 0) {
                                     printf("matmul_lut_packed: write[%2d] = tmp_vals[%d]=%d / lut_scale=%.2f * scale=%.2f = %.1f\n",
                                            debug_count_packed, lane, tmp_vals[lane], lut_scale, scale, val);
                                     debug_count_packed++;
