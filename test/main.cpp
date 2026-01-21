@@ -549,6 +549,20 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int
                         vec_c[0] = vaddq_s16(vec_c[0], out0);
                         vec_c[1] = vaddq_s16(vec_c[1], out1);
 
+                        // Debug: Print first LUT output
+                        if (i == ii && k == kk && ii == 0 && j == 0) {
+                            printf("DEBUG: First LUT lookup results (val[0]):\n");
+                            int16_t out0_vals[8], out1_vals[8];
+                            vst1q_s16(out0_vals, out0);
+                            vst1q_s16(out1_vals, out1);
+                            printf("  out0: ");
+                            for (int x = 0; x < 8; x++) printf("%6d ", out0_vals[x]);
+                            printf("\n");
+                            printf("  out1: ");
+                            for (int x = 0; x < 8; x++) printf("%6d ", out1_vals[x]);
+                            printf("\n");
+                        }
+
                         // Lookup on high and low tables (same LUT table for all 16 indices)
                         int8x16_t vec_l1_h = vqtbl1q_s8(vec_lut_high[k - kk], vec_a_unpacked.val[1]);
                         int8x16_t vec_l1_l = vqtbl1q_s8(vec_lut_low[k - kk], vec_a_unpacked.val[1]);
@@ -563,6 +577,12 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int
                     const float32_t lut_scale = ((float32_t*)LUT_Scales)[0];
                     const float32_t scale = ((float32_t*)Scales)[0];
                     int16_t tmp_vals[8];
+                    
+                    // Debug: Print first output write location in matmul_lut_packed
+                    if (ii == 0 && kk == 0 && i == ii && j == 0) {
+                        printf("DEBUG (matmul_lut_packed): First output write at pC = %p, index=(%d,%d), lut_scale=%.2f\n", 
+                               pC, i, j, lut_scale);
+                    }
 #pragma unroll
                     for (int block = 0; block < 4; ++block) {
                         vst1q_s16(tmp_vals, vec_c[block]);
