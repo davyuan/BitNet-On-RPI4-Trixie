@@ -104,8 +104,8 @@ void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT,
         // LUT layout per index: [16 high_bytes] [16 low_bytes] = 32 bytes
 #pragma unroll
         for (int k = 0; k < BK; k++) {
-            vec_lut_high[k] = vld1q_s8(QLUT + (kk + k) * 32);      // Load high bytes
-            vec_lut_low[k] = vld1q_s8(QLUT + (kk + k) * 32 + 16);   // Load low bytes
+            vec_lut_high[k] = vld1q_s8(LUT + (kk + k) * 32);      // Load high bytes
+            vec_lut_low[k] = vld1q_s8(LUT + (kk + k) * 32 + 16);   // Load low bytes
         }
         
 #pragma unroll
