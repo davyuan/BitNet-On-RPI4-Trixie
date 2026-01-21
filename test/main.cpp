@@ -237,7 +237,7 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int K
                         uint8x16_t vec_a0 = vld1q_u8(A + k * M + i);
                         
                         // Debug: print what we load
-                        if (j == 0 && k == kk && i == ii) {
+                        /*if (j == 0 && k == kk && i == ii) {
                             uint8_t a0_arr[16];
                             vst1q_u8(a0_arr, vec_a0);
 #pragma omp critical
@@ -246,7 +246,7 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int K
                                 for (int d = 0; d < 16; d++) printf("%2d ", (int)a0_arr[d]);
                                 printf("]\n");
                             }
-                        }
+                        }*/
                         
                         // Lookup on high and low tables (same LUT table for all 16 indices)
                         int8x16_t vec_c0_h = vqtbl1q_s8(vec_lut_high[k - kk], vec_a0);
@@ -271,13 +271,13 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int K
                         for (int lane = 0; lane < 8; ++lane, pC += N) {
                             float32_t val = (tmp_vals[lane] / lut_scale) * scale;
 #pragma omp critical
-                            /*{
+                            {
                                 if (debug_count_simd < 16 && j == 0) {
                                     printf("matmul_lut_simd: write[%2d] = tmp_vals[%d]=%d / lut_scale=%.2f * scale=%.2f = %.1f\n",
                                            debug_count_simd, lane, tmp_vals[lane], lut_scale, scale, val);
                                     debug_count_simd++;
                                 }
-                            }*/
+                            }
                             (*pC) += val;
                         }
                     }
@@ -548,28 +548,7 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int
                     const float32_t lut_scale = ((float32_t*)LUT_Scales)[0];
                     const float32_t scale = ((float32_t*)Scales)[0];
                     int16_t tmp_vals[8];
-                    static int debug_count_packed = 0;
-                    
-                    // Debug: print vec_c blocks
-                    if (j == 0 && i == ii) {
-                        int16_t c0_arr[8], c1_arr[8], c2_arr[8], c3_arr[8];
-                        vst1q_s16(c0_arr, vec_c[0]);
-                        vst1q_s16(c1_arr, vec_c[1]);
-                        vst1q_s16(c2_arr, vec_c[2]);
-                        vst1q_s16(c3_arr, vec_c[3]);
-#pragma omp critical
-                        {
-                            printf("DEBUG packed vec_c[0]=[");
-                            for (int d = 0; d < 8; d++) printf("%d ", c0_arr[d]);
-                            printf("] vec_c[1]=[");
-                            for (int d = 0; d < 8; d++) printf("%d ", c1_arr[d]);
-                            printf("] vec_c[2]=[");
-                            for (int d = 0; d < 8; d++) printf("%d ", c2_arr[d]);
-                            printf("] vec_c[3]=[");
-                            for (int d = 0; d < 8; d++) printf("%d ", c3_arr[d]);
-                            printf("]\n");
-                        }
-                    }
+                    static int debug_count_packed = 0;                    
 #pragma unroll
                     for (int block = 0; block < 4; ++block) {
                         vst1q_s16(tmp_vals, vec_c[block]);
