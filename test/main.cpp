@@ -594,12 +594,22 @@ void compare_matrices(float32_t* C_simd, float32_t* C_, int M, int N, float32_t 
     float32_t max_error = 0.0f;
     int error_count = 0;
     int nan_count = 0;
+    int inf_count = 0;
     for (int i = 0; i < M * N; i++) {
         // Check for NaN in C_simd
         if (std::isnan(C_simd[i])) {
             nan_count++;
             if (nan_count <= 5) {  // Print first 5 NaN locations
                 printf("  NaN at [%d] in C_simd\n", i);
+            }
+            continue;
+        }
+        
+        // Check for Inf in C_simd
+        if (std::isinf(C_simd[i])) {
+            inf_count++;
+            if (inf_count <= 5) {  // Print first 5 Inf locations
+                printf("  Inf at [%d] in C_simd: %.1e\n", i, C_simd[i]);
             }
             continue;
         }
@@ -616,7 +626,7 @@ void compare_matrices(float32_t* C_simd, float32_t* C_, int M, int N, float32_t 
             }
         }
     }
-    printf("%s: max_error=%.1f, mismatches=%d/%d, NaNs=%d/%d\n", label, max_error, error_count, M * N, nan_count, M * N);
+    printf("%s: max_error=%.1f, mismatches=%d/%d, NaNs=%d, Infs=%d\n", label, max_error, error_count, M * N, nan_count, inf_count);
 }
 
 /* After packing A_packed_T will be (K/2 x M /2)
