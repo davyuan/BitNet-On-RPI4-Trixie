@@ -593,7 +593,17 @@ void matmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, int M, int 
 void compare_matrices(float32_t* C_simd, float32_t* C_, int M, int N, float32_t threshold, const char* label) {
     float32_t max_error = 0.0f;
     int error_count = 0;
+    int nan_count = 0;
     for (int i = 0; i < M * N; i++) {
+        // Check for NaN in C_simd
+        if (isnan(C_simd[i])) {
+            nan_count++;
+            if (nan_count <= 5) {  // Print first 5 NaN locations
+                printf("  NaN at [%d] in C_simd\n", i);
+            }
+            continue;
+        }
+        
         float32_t error = fabs(C_simd[i] - C_[i]);
         if (error > max_error) {
             max_error = error;
@@ -606,7 +616,7 @@ void compare_matrices(float32_t* C_simd, float32_t* C_, int M, int N, float32_t 
             }
         }
     }
-    printf("%s: max_error=%.1f, mismatches=%d/%d\n", label, max_error, error_count, M * N);
+    printf("%s: max_error=%.1f, mismatches=%d/%d, NaNs=%d/%d\n", label, max_error, error_count, M * N, nan_count, M * N);
 }
 
 /* After packing A_packed_T will be (K/2 x M /2)
