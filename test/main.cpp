@@ -669,7 +669,7 @@ int main() {
 
     // Transpose A for SIMD version
     int KK = K / 2;
-    //transpose_matrix(A, A_T, KK, M);
+    transpose_matrix(A, A_T, KK, M);
     transpose_matrix(A_packed, A_packed_T, KK /2, M);
   
     /*// Debug: Print first 16 rows of A, A_packed, and A_packed_T
