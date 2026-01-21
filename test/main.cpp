@@ -481,7 +481,6 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int
 
     for (int j = 0; j < N; j++) {
         ggml_preprocessor(M, K, (void*)(B + j * K), (void*)LUT_Scales, (void*)QLUT);                  
-        //printf("LUT constructed for row %d, scale=%.2f\n", j, *LUT_Scales);    
         
         // Parallelize over row blocks
         #pragma omp parallel for num_threads(4)
@@ -506,6 +505,40 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int
                         uint8x16_t vec_a_top = vshrq_n_u8(vec_a, 4);
                         uint8x16_t vec_a_bot = vandq_u8(vec_a, vec_mask);
                         uint8x16x2_t vec_a_unpacked = vzipq_u8(vec_a_top, vec_a_bot);
+
+                        // Debug: Print unpacking for first iteration
+                        if (i == ii && k == kk && ii == 0 && j == 0) {
+                            printf("DEBUG: First k iteration unpacking:\n");
+                            printf("  Packed bytes: ");
+                            uint8_t packed_vals[16];
+                            vst1q_u8(packed_vals, vec_a);
+                            for (int x = 0; x < 16; x++) printf("%02x ", packed_vals[x]);
+                            printf("\n");
+                            
+                            printf("  High nibbles: ");
+                            uint8_t high_vals[16];
+                            vst1q_u8(high_vals, vec_a_top);
+                            for (int x = 0; x < 16; x++) printf("%x ", high_vals[x]);
+                            printf("\n");
+                            
+                            printf("  Low nibbles: ");
+                            uint8_t low_vals[16];
+                            vst1q_u8(low_vals, vec_a_bot);
+                            for (int x = 0; x < 16; x++) printf("%x ", low_vals[x]);
+                            printf("\n");
+                            
+                            printf("  After vzip val[0]: ");
+                            uint8_t zip_vals0[16];
+                            vst1q_u8(zip_vals0, vec_a_unpacked.val[0]);
+                            for (int x = 0; x < 16; x++) printf("%x ", zip_vals0[x]);
+                            printf("\n");
+                            
+                            printf("  After vzip val[1]: ");
+                            uint8_t zip_vals1[16];
+                            vst1q_u8(zip_vals1, vec_a_unpacked.val[1]);
+                            for (int x = 0; x < 16; x++) printf("%x ", zip_vals1[x]);
+                            printf("\n");
+                        }
 
                         // Lookup on high and low tables (same LUT table for all 16 indices)
                         int8x16_t vec_l0_h = vqtbl1q_s8(vec_lut_high[k - kk], vec_a_unpacked.val[0]);
