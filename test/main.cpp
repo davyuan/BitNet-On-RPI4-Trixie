@@ -22,7 +22,7 @@ const int N = 160;         // Activation rows (B rows) = output size
 void transpose_matrix(float32_t* B, float32_t* B_T, int M, int N) {
     for (int i = 0; i < M; i++) {
             for (int j = 0; j < N; j++) {
-                B_T[i * N + j] = B[j * M + i];
+                B_T[j * M + i] = B[i * N + j];
         }
     }
 }
