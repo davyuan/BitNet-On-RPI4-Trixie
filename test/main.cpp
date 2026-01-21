@@ -726,7 +726,7 @@ int main() {
             printf("%8.1f ", B_T[i * K + j]);
         }
         printf("\n");
-    }*/
+    }
 
     printf("Running LUT construction and inference...\n");
     printf("Matrix dimensions:  A(2560x2560), B(2560x640), C(2560x160)\n");
@@ -851,7 +851,7 @@ int main() {
     printf("Speedup (naive / SIMD): %.2fx\n\n", speedup_simd);
     //printf("LUT matmul SIMD2 (avg):   %lld ms\n", avg_simd_time2);
     //printf("Speedup (naive / SIMD2): %.2fx\n\n", speedup_simd2);
-    printf("LUT matmul microkernel (avg):   %ld ms\n", avg_microkernel_time);
+    printf("LUT matmul microkernel (avg):   %lld ms\n", avg_microkernel_time);
     printf("Speedup (naive / microkernel): %.2fx\n\n", speedup_microkernel);
     
     // Cleanup
