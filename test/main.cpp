@@ -512,6 +512,17 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int
                         uint8x16_t vec_a_top = vshrq_n_u8(vec_a, 4);
                         uint8x16_t vec_a_bot = vandq_u8(vec_a, vec_mask);
                         uint8x16x2_t vec_a_unpacked = vzipq_u8(vec_a_top, vec_a_bot);
+                        
+                        // Debug first unpack when j==0, k==kk
+                        if (j == 0 && k == kk && i == ii) {
+                            printf("DEBUG packed [ii=%d, i=%d, k=%d]: vec_a_top=[", ii, i, k);
+                            for (int d = 0; d < 16; d++) printf("%2d ", vgetq_lane_u8(vec_a_top, d));
+                            printf("] val[0]=[");
+                            for (int d = 0; d < 16; d++) printf("%2d ", vgetq_lane_u8(vec_a_unpacked.val[0], d));
+                            printf("] val[1]=[");
+                            for (int d = 0; d < 16; d++) printf("%2d ", vgetq_lane_u8(vec_a_unpacked.val[1], d));
+                            printf("]\n");
+                        }
 
                         // Lookup on high and low tables (same LUT table for all 16 indices)
                         int8x16_t vec_l0_h = vqtbl1q_s8(vec_lut_high[k - kk], vec_a_unpacked.val[0]);
