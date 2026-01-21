@@ -563,6 +563,27 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int
                     const float32_t scale = ((float32_t*)Scales)[0];
                     int16_t tmp_vals[8];
                     static int debug_count_packed = 0;
+                    
+                    // Debug: print vec_c blocks
+                    if (j == 0 && i == ii) {
+                        int16_t c0_arr[8], c1_arr[8], c2_arr[8], c3_arr[8];
+                        vst1q_s16(c0_arr, vec_c[0]);
+                        vst1q_s16(c1_arr, vec_c[1]);
+                        vst1q_s16(c2_arr, vec_c[2]);
+                        vst1q_s16(c3_arr, vec_c[3]);
+#pragma omp critical
+                        {
+                            printf("DEBUG packed vec_c[0]=[");
+                            for (int d = 0; d < 8; d++) printf("%d ", c0_arr[d]);
+                            printf("] vec_c[1]=[");
+                            for (int d = 0; d < 8; d++) printf("%d ", c1_arr[d]);
+                            printf("] vec_c[2]=[");
+                            for (int d = 0; d < 8; d++) printf("%d ", c2_arr[d]);
+                            printf("] vec_c[3]=[");
+                            for (int d = 0; d < 8; d++) printf("%d ", c3_arr[d]);
+                            printf("]\n");
+                        }
+                    }
 #pragma unroll
                     for (int block = 0; block < 4; ++block) {
                         vst1q_s16(tmp_vals, vec_c[block]);
