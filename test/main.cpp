@@ -596,7 +596,7 @@ void compare_matrices(float32_t* C_simd, float32_t* C_, int M, int N, float32_t 
     int nan_count = 0;
     for (int i = 0; i < M * N; i++) {
         // Check for NaN in C_simd
-        if (isnan(C_simd[i])) {
+        if (std::isnan(C_simd[i])) {
             nan_count++;
             if (nan_count <= 5) {  // Print first 5 NaN locations
                 printf("  NaN at [%d] in C_simd\n", i);
