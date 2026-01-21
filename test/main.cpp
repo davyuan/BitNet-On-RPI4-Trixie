@@ -672,6 +672,34 @@ int main() {
     //transpose_matrix(A, A_T, KK, M);
     transpose_matrix(A_packed, A_packed_T, KK /2, M);
   
+    // Debug: Print first 16 rows of A, A_packed, and A_packed_T
+    printf("\n=== DEBUG: First 16 rows of A (uint8_t, 16 elements each) ===\n");
+    for (int i = 0; i < 16; i++) {
+        printf("A[%2d]: ", i);
+        for (int j = 0; j < 16; j++) {
+            printf("%2u ", (unsigned)A[i * K/2 + j]);
+        }
+        printf("\n");
+    }
+
+    printf("\n=== DEBUG: First 16 rows of A_packed (uint8_t, 16 elements each) ===\n");
+    for (int i = 0; i < 16; i++) {
+        printf("A_packed[%2d]: ", i);
+        for (int j = 0; j < 16; j++) {
+            printf("%02x ", (unsigned)A_packed[i * K/4 + j]);
+        }
+        printf("\n");
+    }
+
+    printf("\n=== DEBUG: First 16 rows of A_packed_T (uint8_t, 16 elements each) ===\n");
+    for (int i = 0; i < 16; i++) {
+        printf("A_packed_T[%2d]: ", i);
+        for (int j = 0; j < 16; j++) {
+            printf("%02x ", (unsigned)A_packed_T[i * M + j]);
+        }
+        printf("\n");
+    }
+  
     printf("Running LUT construction and inference...\n");
     printf("Matrix dimensions:  A(2560x2560), B(2560x640), C(2560x160)\n");
 
