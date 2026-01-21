@@ -595,6 +595,7 @@ void compare_matrices(float32_t* C_simd, float32_t* C_, int M, int N, float32_t 
     int error_count = 0;
     int nan_count = 0;
     int inf_count = 0;
+    int bad_ref_count = 0;
     for (int i = 0; i < M * N; i++) {
         // Check for NaN in C_simd
         if (std::isnan(C_simd[i])) {
@@ -614,7 +615,26 @@ void compare_matrices(float32_t* C_simd, float32_t* C_, int M, int N, float32_t 
             continue;
         }
         
+        // Check for NaN or Inf in reference
+        if (std::isnan(C_[i]) || std::isinf(C_[i])) {
+            bad_ref_count++;
+            if (bad_ref_count <= 5) {
+                printf("  Bad ref at [%d]: %.1e\n", i, C_[i]);
+            }
+            continue;
+        }
+        
         float32_t error = fabs(C_simd[i] - C_[i]);
+        
+        // Check if error calculation itself produced inf
+        if (std::isinf(error)) {
+            inf_count++;
+            if (inf_count <= 5) {
+                printf("  Error=Inf at [%d]: kernel=%.1e, ref=%.1e\n", i, C_simd[i], C_[i]);
+            }
+            continue;
+        }
+        
         if (error > max_error) {
             max_error = error;
         }
@@ -626,7 +646,7 @@ void compare_matrices(float32_t* C_simd, float32_t* C_, int M, int N, float32_t 
             }
         }
     }
-    printf("%s: max_error=%.1f, mismatches=%d/%d, NaNs=%d, Infs=%d\n", label, max_error, error_count, M * N, nan_count, inf_count);
+    printf("%s: max_error=%.1f, mismatches=%d/%d, NaNs=%d, Infs=%d, BadRef=%d\n", label, max_error, error_count, M * N, nan_count, inf_count, bad_ref_count);
 }
 
 /* After packing A_packed_T will be (K/2 x M /2)
