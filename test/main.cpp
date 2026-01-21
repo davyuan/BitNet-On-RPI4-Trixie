@@ -14,7 +14,7 @@
 #define TILE_M 4
 #define TILE_SIZE 2
 
-const int M = 640;           // Weight rows (A rows)
+const int M = 2560;           // Weight rows (A rows)
 const int K = 2560;        // Shared dimension
 const int N = 160;         // Activation rows (B rows) = output size
 
@@ -212,10 +212,9 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int K
 
     for (int j = 0; j < N; j++) {
         ggml_preprocessor(M, K, (void*)(B + j * K), (void*)LUT_Scales, (void*)QLUT);                  
-        //printf("LUT constructed for row %d, scale=%.2f\n", j, *LUT_Scales);    
-        
+       
         // Parallelize over row blocks
-        #pragma omp parallel for num_threads(1)
+        #pragma omp parallel for num_threads(4)
         for (int ii = 0; ii < M; ii += BM) {          
             for (int kk = 0; kk < KK; kk += BK) {
                 int8x16_t vec_lut_high[BK];
@@ -235,18 +234,6 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int K
                     for (int k = kk; k < kk + BK; k++) {
                         // Load 16 weights from same k, different rows (from transposed A)
                         uint8x16_t vec_a0 = vld1q_u8(A + k * M + i);
-                        
-                        // Debug: print what we load
-                        /*if (j == 0 && k == kk && i == ii) {
-                            uint8_t a0_arr[16];
-                            vst1q_u8(a0_arr, vec_a0);
-#pragma omp critical
-                            {
-                                printf("DEBUG simd   [ii=%d, i=%d, k=%d]: vec_a0  =[", ii, i, k);
-                                for (int d = 0; d < 16; d++) printf("%2d ", (int)a0_arr[d]);
-                                printf("]\n");
-                            }
-                        }*/
                         
                         // Lookup on high and low tables (same LUT table for all 16 indices)
                         int8x16_t vec_c0_h = vqtbl1q_s8(vec_lut_high[k - kk], vec_a0);
@@ -270,14 +257,6 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int K
                         vst1q_s16(tmp_vals, vec_c[block]);
                         for (int lane = 0; lane < 8; ++lane, pC += N) {
                             float32_t val = (tmp_vals[lane] / lut_scale) * scale;
-#pragma omp critical
-                            {
-                                if (debug_count_simd < 64 && j == 0) {
-                                    printf("matmul_lut_simd: write[%2d] = tmp_vals[%d]=%d / lut_scale=%.2f * scale=%.2f = %.1f\n",
-                                           debug_count_simd, lane, tmp_vals[lane], lut_scale, scale, val);
-                                    debug_count_simd++;
-                                }
-                            }
                             (*pC) += val;
                         }
                     }
@@ -502,7 +481,7 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int
         ggml_preprocessor(M, K, (void*)(B + j * K), (void*)LUT_Scales, (void*)QLUT);                  
         
         // Parallelize over row blocks
-        #pragma omp parallel for num_threads(1)
+        #pragma omp parallel for num_threads(4)
         for (int ii = 0; ii < M; ii += BM) {          
             for (int kk = 0; kk < KK; kk += BK) {
                 int8x16_t vec_lut_high[BK];
@@ -554,14 +533,6 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int
                         vst1q_s16(tmp_vals, vec_c[block]);
                         for (int lane = 0; lane < 8; ++lane, pC += N) {
                             float32_t val = (tmp_vals[lane] / lut_scale) * scale;
-#pragma omp critical
-                            {
-                                if (debug_count_packed < 64 && j == 0) {
-                                    printf("matmul_lut_packed: write[%2d] = tmp_vals[%d]=%d / lut_scale=%.2f * scale=%.2f = %.1f\n",
-                                           debug_count_packed, lane, tmp_vals[lane], lut_scale, scale, val);
-                                    debug_count_packed++;
-                                }
-                            }
                             (*pC) += val;
                         }
                     }
@@ -709,7 +680,7 @@ int main() {
     init_As(A, A_, A_T, A_packed_T, M, K);
   
     // Debug: Print first 16 rows of A, A_packed, and A_packed_T
-    printf("\n=== DEBUG: First 16 rows of A (uint8_t, 16 elements each) ===\n");
+    /*printf("\n=== DEBUG: First 16 rows of A (uint8_t, 16 elements each) ===\n");
     for (int i = 0; i < 16; i++) {
         printf("A[%2d]: ", i);
         for (int j = 0; j < 16; j++) {
@@ -744,7 +715,7 @@ int main() {
             printf("%8.1f ", B_T[i * K + j]);
         }
         printf("\n");
-    }
+    }*/
 
     printf("Running LUT construction and inference...\n");
     printf("Matrix dimensions:  A(2560x2560), B(2560x640), C(2560x160)\n");
