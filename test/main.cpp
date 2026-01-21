@@ -622,17 +622,17 @@ int main() {
     float32_t* B = (float32_t*)aligned_malloc(N * K * sizeof(float32_t));
     float32_t* B_T = (float32_t*)aligned_malloc(N * K * sizeof(float32_t));
     uint8_t* A = (uint8_t*)aligned_malloc(M * K / 2 * sizeof(uint8_t));
-    uint8_t* A_T = (uint8_t*)aligned_malloc(M * K / 2 * sizeof(uint8_t));
+    //uint8_t* A_T = (uint8_t*)aligned_malloc(M * K / 2 * sizeof(uint8_t));
     uint8_t* A_packed = (uint8_t*)aligned_malloc(M * K / 4 * sizeof(uint8_t));
     uint8_t* A_packed_T = (uint8_t*)aligned_malloc(M * K / 4 * sizeof(uint8_t));
     int8_t* A_ = (int8_t*)aligned_malloc(M * K * sizeof(int8_t));
-    int32_t* C = (int32_t*)aligned_malloc(M * N * sizeof(int32_t));
+    //int32_t* C = (int32_t*)aligned_malloc(M * N * sizeof(int32_t));
     float32_t* C_ = (float32_t*)aligned_malloc(M * N * sizeof(float32_t));
     float32_t* C_simd = (float32_t*)aligned_malloc(M * N * sizeof(float32_t));
     
     // Allocate reference output matrix C_
     memset(C_, 0, M * N * sizeof(float32_t));
-    memset(C, 0, M * N * sizeof(int32_t));
+    //memset(C, 0, M * N * sizeof(int32_t));
     memset(C_simd, 0, M * N * sizeof(float32_t));
 
     // Initialize with random values
@@ -669,7 +669,7 @@ int main() {
 
     // Transpose A for SIMD version
     int KK = K / 2;
-    transpose_matrix(A, A_T, KK, M);
+    //transpose_matrix(A, A_T, KK, M);
     transpose_matrix(A_packed, A_packed_T, KK /2, M);
 
     // Repack A into tl1 layout
@@ -699,7 +699,7 @@ int main() {
     printf("Matmul_naive2 complete. Time: %lld ms\n", lut_duration.count());*/
     
     // Step 2: Run qGEMM with LUT + SIMD (100 runs for averaging)
-    printf("\nStep 2: Running qGEMM_LUT SIMD (100 iterations for average)\n");
+    /*printf("\nStep 2: Running qGEMM_LUT SIMD (100 iterations for average)\n");
     long long total_simd_time = 0;
     const int num_iterations = 10;
     for (int iter = 0; iter < num_iterations; iter++) {
@@ -714,7 +714,7 @@ int main() {
     printf("Matmul_simd complete. Average time over %d runs: %lld ms\n", num_iterations, avg_simd_time);
 
     printf("\nComparing kernel output (C) with reference (C_)...\n");
-    compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_simd comparison");
+    compare_matrices(C_simd, C_, M, N, 1e-2, "Matmul_simd comparison");
 
            
     // Step 3: Run qGEMM with LUT + SIMD (100 runs for averaging)
@@ -732,7 +732,7 @@ int main() {
     printf("Matmul_simd2 complete. Average time over %d runs: %lld ms\n", num_iterations, avg_simd_time2);
 
     printf("\nComparing kernel output (C) with reference (C_)...\n");
-    compare_matrices(C_simd, C_, M, N, 1e-2, "Matmul_simd2 comparison");
+    compare_matrices(C_simd, C_, M, N, 1e-2, "Matmul_simd2 comparison");*/
 
     // Step 3: Run qGEMM with micro kernel (100 runs for averaging)
     printf("\nStep 3: Running qGEMM_LUT microkernel (100 iterations for average)\n");
@@ -752,15 +752,15 @@ int main() {
 
     // Print performance comparison
     //double speedup_naive2 = (double)naive_duration.count() / (double)lut_duration.count();
-    double speedup_simd = (double)naive_duration.count() / (double)avg_simd_time;
-    double speedup_simd2 = (double)naive_duration.count() / (double)avg_simd_time2;
+    //double speedup_simd = (double)naive_duration.count() / (double)avg_simd_time;
+    //double speedup_simd2 = (double)naive_duration.count() / (double)avg_simd_time2;
     double speedup_microkernel = (double)naive_duration.count() / (double)avg_microkernel_time;
     printf("\n=== PERFORMANCE COMPARISON ===\n");
     printf("matmul naive:   %lld ms\n", naive_duration.count());
-    printf("LUT matmul SIMD (avg):   %lld ms\n", avg_simd_time);
-    printf("Speedup (naive / SIMD): %.2fx\n\n", speedup_simd);
-    printf("LUT matmul SIMD2 (avg):   %lld ms\n", avg_simd_time2);
-    printf("Speedup (naive / SIMD2): %.2fx\n\n", speedup_simd2);
+    //printf("LUT matmul SIMD (avg):   %lld ms\n", avg_simd_time);
+    //printf("Speedup (naive / SIMD): %.2fx\n\n", speedup_simd);
+    //printf("LUT matmul SIMD2 (avg):   %lld ms\n", avg_simd_time2);
+    //printf("Speedup (naive / SIMD2): %.2fx\n\n", speedup_simd2);
     printf("LUT matmul microkernel (avg):   %lld ms\n", avg_microkernel_time);
     printf("Speedup (naive / microkernel): %.2fx\n\n", speedup_microkernel);
     
@@ -768,10 +768,10 @@ int main() {
     aligned_free(C_);
     aligned_free(B);
     aligned_free(A);
-    aligned_free(A_T);
+    //aligned_free(A_T);
     aligned_free(A_packed_T);
     aligned_free(A_);
-    aligned_free(C);
+    //aligned_free(C);
     aligned_free(A_packed);
     aligned_free(B_T);
     aligned_free(C_simd);
