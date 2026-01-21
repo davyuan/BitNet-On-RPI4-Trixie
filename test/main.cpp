@@ -699,7 +699,26 @@ int main() {
         }
         printf("\n");
     }*/
-  
+    
+    // Debug: Print first 16 rows of B and B_T
+    printf("\n=== DEBUG: First 16 rows of B (float32_t, 16 elements each) ===\n");
+    for (int i = 0; i < 16; i++) {
+        printf("B[%2d]: ", i);
+        for (int j = 0; j < 16; j++) {
+            printf("%8.1f ", B[i * K + j]);
+        }
+        printf("\n");
+    }
+
+    printf("\n=== DEBUG: First 16 rows of B_T (float32_t, 16 elements each) ===\n");
+    for (int i = 0; i < 16; i++) {
+        printf("B_T[%2d]: ", i);
+        for (int j = 0; j < 16; j++) {
+            printf("%8.1f ", B_T[i * N + j]);
+        }
+        printf("\n");
+    }
+
     printf("Running LUT construction and inference...\n");
     printf("Matrix dimensions:  A(2560x2560), B(2560x640), C(2560x160)\n");
 
