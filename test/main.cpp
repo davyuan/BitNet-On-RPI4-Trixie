@@ -491,17 +491,11 @@ void matmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, int M, int 
     
         for (int j = 0; j < ne11; j++) {
             if (ith == 0) {
-                // Transform tensor if not already transformed
-                // Although we have done this in file `llama.cpp`,
-                // we still need to do it here for non-model inference, e.g., test-backend-ops.cpp.
-                // It's better to do this in ggml-backend.c,
-                // but llama.cpp directly manipulates tensor.data for cbe in a lot of space.
-                //ggml_bitnet_transform_tensor(A_T);
                 ggml_preprocessor(ne00, ne10, B + (j * ne10), LUT_Scales, QLUT);
             }
 #pragma omp barrier
 
-            const int range_per_thread_ii = ne01 / nth;
+            const int range_per_thread_ii = ne00 / nth;
             for (int ii = ith * range_per_thread_ii; ii < (ith + 1) * range_per_thread_ii; ii += BM) {          
                 ggml_qgemm_lut( ne00, ne11, ne10, ii, j, A, 
                                 QLUT, 
@@ -509,8 +503,6 @@ void matmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, int M, int 
                                 LUT_Scales, 
                                 C);
             }
-
-#pragma omp barrier                
         }
     }
 

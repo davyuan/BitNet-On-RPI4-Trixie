@@ -95,7 +95,7 @@ void ggml_preprocessor(int M, int K, void* B, void* LUT_Scales, void* QLUT) {
 
 void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT, void* Scales, void* LUT_Scales, float32_t* C) {
     const uint8x16_t vec_mask = vdupq_n_u8(0x0f);
-    const int KK = K/2;
+    const int KK = K/4;
 
     for (int kk = 0; kk < KK; kk += BK) {
         int8x16_t vec_lut_high[BK];
