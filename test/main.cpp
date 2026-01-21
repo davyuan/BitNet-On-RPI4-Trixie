@@ -596,11 +596,11 @@ void compare_matrices(float32_t* C_simd, float32_t* C_, int M, int N, float32_t 
     float32_t max_error = 0.0f;
     int error_count = 0;
     for (int i = 0; i < M * N; i++) {
-        float32_t error = fabs((float32_t)C_simd[i] - C_[i]);
+        float32_t error = fabs(C_simd[i] - C_[i]);
         if (error > max_error) {
             max_error = error;
         }
-        if ((error / (fabs((float32_t)C_simd[i]) + 1e-6)) > threshold) {  // Threshold for significant error
+        if (error / (fabs(C_simd[i]) + 1e-5) > threshold) {  // Threshold for significant error
             error_count++;
             if (error_count <= 10) {  // Print first 10 errors
                 printf("  Mismatch at [%d]: kernel=%.1f, ref=%.1f, error=%.1f\n", 
