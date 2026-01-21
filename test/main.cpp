@@ -678,7 +678,7 @@ int main() {
     transpose_matrix(A_packed, A_packed_T, KK /2, M);
   
     // Debug: Print first 16 rows of A, A_packed, and A_packed_T
-    printf("\n=== DEBUG: First 16 rows of A (uint8_t, 16 elements each) ===\n");
+    /*printf("\n=== DEBUG: First 16 rows of A (uint8_t, 16 elements each) ===\n");
     for (int i = 0; i < 16; i++) {
         printf("A[%2d]: ", i);
         for (int j = 0; j < 16; j++) {
@@ -706,7 +706,7 @@ int main() {
     }
     
     // Debug: Print first 16 rows of B and B_T
-    /*printf("\n=== DEBUG: First 16 rows of B (float32_t, 16 elements each) ===\n");
+    printf("\n=== DEBUG: First 16 rows of B (float32_t, 16 elements each) ===\n");
     for (int i = 0; i < 16; i++) {
         printf("B[%2d]: ", i);
         for (int j = 0; j < 16; j++) {
@@ -735,7 +735,7 @@ int main() {
     auto naive_end = std::chrono::high_resolution_clock::now();
     auto naive_duration = std::chrono::duration_cast<std::chrono::milliseconds>(naive_end - naive_start);
     
-    printf("Reference matmul complete. Time: %lld ms\n", naive_duration.count());
+    printf("Reference matmul complete. Time: %ld ms\n", naive_duration.count());
     
     // Step 1: Run qGEMM with LUT
     /*printf("\nStep 1: Running qGEMM_LUT (32x64 kernel)\n");
@@ -748,7 +748,26 @@ int main() {
     
     //Step 2: Run qGEMM with LUT + SIMD (100 runs for averaging)
     printf("\nStep 2: Running qGEMM_LUT SIMD (100 iterations for average)\n");
-    const int num_iterations = 10;
+    
+    printf("\n=== DEBUG: First 16 rows of A_T (uint8_t, 16 elements each) ===\n");
+    for (int i = 0; i < 16; i++) {
+        printf("A_T[%2d]: ", i);
+        for (int j = 0; j < 16; j++) {
+            printf("%2u ", (unsigned)A_T[i * M + j]);
+        }
+        printf("\n");
+    }
+
+    printf("\n=== DEBUG: First 16 rows of B_T (float32_t, 16 elements each) ===\n");
+    for (int i = 0; i < 16; i++) {
+        printf("B_T[%2d]: ", i);
+        for (int j = 0; j < 16; j++) {
+            printf("%8.1f ", B_T[i * K + j]);
+        }
+        printf("\n");
+    }
+    
+    const int num_iterations = 1;
     long long total_simd_time = 0;
     for (int iter = 0; iter < num_iterations; iter++) {
         memset(C_simd, 0, M * N * sizeof(float32_t));
@@ -784,6 +803,25 @@ int main() {
 
     // Step 3: Run qGEMM with micro kernel (100 runs for averaging)
     printf("\nStep 3: Running qGEMM_LUT microkernel (100 iterations for average)\n");
+    
+    printf("\n=== DEBUG: First 16 rows of A_packed_T (uint8_t, 16 elements each) ===\n");
+    for (int i = 0; i < 16; i++) {
+        printf("A_packed_T[%2d]: ", i);
+        for (int j = 0; j < 16; j++) {
+            printf("%02x ", (unsigned)A_packed_T[i * M + j]);
+        }
+        printf("\n");
+    }
+
+    printf("\n=== DEBUG: First 16 rows of B_T (float32_t, 16 elements each) ===\n");
+    for (int i = 0; i < 16; i++) {
+        printf("B_T[%2d]: ", i);
+        for (int j = 0; j < 16; j++) {
+            printf("%8.1f ", B_T[i * K + j]);
+        }
+        printf("\n");
+    }
+    
     long long total_microkernel_time = 0;
     for (int iter = 0; iter < num_iterations; iter++) {
         memset(C_simd, 0, M * N * sizeof(float32_t));
@@ -804,12 +842,12 @@ int main() {
     //double speedup_simd2 = (double)naive_duration.count() / (double)avg_simd_time2;
     double speedup_microkernel = (double)naive_duration.count() / (double)avg_microkernel_time;
     printf("\n=== PERFORMANCE COMPARISON ===\n");
-    printf("matmul naive:   %lld ms\n", naive_duration.count());
+    printf("matmul naive:   %ld ms\n", naive_duration.count());
     //printf("LUT matmul SIMD (avg):   %lld ms\n", avg_simd_time);
     printf("Speedup (naive / SIMD): %.2fx\n\n", speedup_simd);
     //printf("LUT matmul SIMD2 (avg):   %lld ms\n", avg_simd_time2);
     //printf("Speedup (naive / SIMD2): %.2fx\n\n", speedup_simd2);
-    printf("LUT matmul microkernel (avg):   %lld ms\n", avg_microkernel_time);
+    printf("LUT matmul microkernel (avg):   %ld ms\n", avg_microkernel_time);
     printf("Speedup (naive / microkernel): %.2fx\n\n", speedup_microkernel);
     
     // Cleanup
