@@ -704,7 +704,7 @@ int main() {
     for (int i = 0; i < 16; i++) {
         printf("A_packed_T[%2d]: ", i);
         for (int j = 0; j < 16; j++) {
-            printf("%02x ", (unsigned)A_packed_T[i * M + j]);
+            printf("%02x ", (unsigned)A_packed_T[i * M / 2 + j]);
         }
         printf("\n");
     }
@@ -812,7 +812,7 @@ int main() {
     for (int i = 0; i < 16; i++) {
         printf("A_packed_T[%2d]: ", i);
         for (int j = 0; j < 16; j++) {
-            printf("%02x ", (unsigned)A_packed_T[i * M + j]);
+            printf("%02x ", (unsigned)A_packed_T[i * M / 2 + j]);
         }
         printf("\n");
     }
