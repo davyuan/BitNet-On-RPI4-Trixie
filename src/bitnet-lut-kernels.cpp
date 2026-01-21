@@ -94,8 +94,8 @@ void ggml_preprocessor(int M, int K, void* B, void* LUT_Scales, void* QLUT) {
 }
 
 void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT, void* Scales, void* LUT_Scales, float32_t* C) {
+    int KK = K / 2;
     const uint8x16_t vec_mask = vdupq_n_u8(0x0f);
-    const int KK = K/4;
 
     for (int kk = 0; kk < KK; kk += BK) {
         int8x16_t vec_lut_high[BK];
@@ -104,17 +104,17 @@ void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT,
         // LUT layout per index: [16 high_bytes] [16 low_bytes] = 32 bytes
 #pragma unroll
         for (int k = 0; k < BK; k++) {
-            vec_lut_high[k] = vld1q_s8(LUT + (kk + k) * 32);      // Load high bytes
-            vec_lut_low[k] = vld1q_s8(LUT + (kk + k) * 32 + 16);   // Load low bytes
+            vec_lut_high[k] = vld1q_s8(QLUT + (kk + k) * 32);      // Load high bytes
+            vec_lut_low[k] = vld1q_s8(QLUT + (kk + k) * 32 + 16);   // Load low bytes
         }
         
 #pragma unroll
         for (int i = ii; i < ii + BM; i += 32) {
             int16x8_t vec_c[4] = {vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0)};
+            int i_div2 = i / 2;  // Compute once instead of BK times per iteration
 #pragma unroll
             for (int k = kk; k < kk + BK; k++) {
-                // Load 16 activations from same k, different rows (from transposed A)
-                uint8x16_t vec_a = vld1q_u8(A + k * M + i);
+                uint8x16_t vec_a = vld1q_u8(A + k * M / 2 + i_div2);
                 uint8x16_t vec_a_top = vshrq_n_u8(vec_a, 4);
                 uint8x16_t vec_a_bot = vandq_u8(vec_a, vec_mask);
                 uint8x16x2_t vec_a_unpacked = vzipq_u8(vec_a_top, vec_a_bot);
@@ -138,11 +138,10 @@ void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT,
                 vec_c[3] = vaddq_s16(vec_c[3], out3); 
             }
 
-            // Extract and store results
-            bitnet_float_type* pC = (bitnet_float_type*) &(C[(i+0)*N + j]);
-            const float32_t lut_scale = ((bitnet_float_type*)LUT_Scales)[0];
-            const float32_t scale = ((bitnet_float_type*)Scales)[0];
-            int16_t tmp_vals[8];
+            float32_t* pC = (float32_t*) &(C[(i+0)*N + j]);
+            const float32_t lut_scale = ((float32_t*)LUT_Scales)[0];
+            const float32_t scale = ((float32_t*)Scales)[0];
+            int16_t tmp_vals[8];                
 #pragma unroll
             for (int block = 0; block < 4; ++block) {
                 vst1q_s16(tmp_vals, vec_c[block]);

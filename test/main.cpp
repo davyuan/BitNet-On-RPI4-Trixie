@@ -497,9 +497,10 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int
 #pragma unroll
                 for (int i = ii; i < ii + BM; i += 32) {
                     int16x8_t vec_c[4] = {vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0)};
+                    int i_div2 = i / 2;  // Compute once instead of BK times per iteration
 #pragma unroll
                     for (int k = kk; k < kk + BK; k++) {
-                        uint8x16_t vec_a = vld1q_u8(A + k * M / 2 + i/2);
+                        uint8x16_t vec_a = vld1q_u8(A + k * M / 2 + i_div2);
                         uint8x16_t vec_a_top = vshrq_n_u8(vec_a, 4);
                         uint8x16_t vec_a_bot = vandq_u8(vec_a, vec_mask);
                         uint8x16x2_t vec_a_unpacked = vzipq_u8(vec_a_top, vec_a_bot);
@@ -526,8 +527,7 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int
                     float32_t* pC = (float32_t*) &(C[(i+0)*N + j]);
                     const float32_t lut_scale = ((float32_t*)LUT_Scales)[0];
                     const float32_t scale = ((float32_t*)Scales)[0];
-                    int16_t tmp_vals[8];
-                    static int debug_count_packed = 0;                    
+                    int16_t tmp_vals[8];                
 #pragma unroll
                     for (int block = 0; block < 4; ++block) {
                         vst1q_s16(tmp_vals, vec_c[block]);
@@ -783,7 +783,7 @@ int main() {
     for (int iter = 0; iter < num_iterations; iter++) {
         memset(C_simd, 0, M * N * sizeof(float32_t));
         auto microkernel_start = std::chrono::high_resolution_clock::now();           
-        matmul_lut_packed(A_packed_T, B_T, C_simd, M, N, K);
+        matmul_lut_micro_kernel(A_packed_T, B_T, C_simd, M, N, K);
         auto microkernel_end = std::chrono::high_resolution_clock::now();
         auto microkernel_duration = std::chrono::duration_cast<std::chrono::milliseconds>(microkernel_end - microkernel_start);
         total_microkernel_time += microkernel_duration.count();
