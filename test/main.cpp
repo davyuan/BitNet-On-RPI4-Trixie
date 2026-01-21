@@ -477,6 +477,7 @@ void matmul_lut_simd2(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int 
 void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int K) {
     int KK = K / 4;
     int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
+    const uint8x16_t vec_mask = vdupq_n_u8(0x0f);
     float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
     float32_t* Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
     *Scales = 1.0f;
