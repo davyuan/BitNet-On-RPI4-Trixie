@@ -592,6 +592,7 @@ void matmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, int M, int 
 
 void compare_matrices(float32_t* C_simd, float32_t* C_, int M, int N, float32_t threshold, const char* label) {
     float32_t max_error = 0.0f;
+    int max_error_idx = -1;
     int error_count = 0;
     int nan_count = 0;
     int inf_count = 0;
@@ -637,6 +638,7 @@ void compare_matrices(float32_t* C_simd, float32_t* C_, int M, int N, float32_t 
         
         if (error > max_error) {
             max_error = error;
+            max_error_idx = i;
         }
         if (error / (fabs(C_simd[i]) + 1e-5) > threshold) {  // Threshold for significant error
             error_count++;
@@ -646,7 +648,11 @@ void compare_matrices(float32_t* C_simd, float32_t* C_, int M, int N, float32_t 
             }
         }
     }
-    printf("%s: max_error=%.1f, mismatches=%d/%d, NaNs=%d, Infs=%d, BadRef=%d\n", label, max_error, error_count, M * N, nan_count, inf_count, bad_ref_count);
+    printf("%s: max_error=%.1f at idx=%d (kernel=%.1e, ref=%.1e), mismatches=%d/%d, NaNs=%d, Infs=%d, BadRef=%d\n", 
+           label, max_error, max_error_idx, 
+           max_error_idx >= 0 ? C_simd[max_error_idx] : 0.0f,
+           max_error_idx >= 0 ? C_[max_error_idx] : 0.0f,
+           error_count, M * N, nan_count, inf_count, bad_ref_count);
 }
 
 /* After packing A_packed_T will be (K/2 x M /2)
