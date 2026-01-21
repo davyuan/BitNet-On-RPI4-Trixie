@@ -258,10 +258,13 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int K
                         vst1q_s16(tmp_vals, vec_c[block]);
                         for (int lane = 0; lane < 8; ++lane, pC += N) {
                             float32_t val = (tmp_vals[lane] / lut_scale) * scale;
-                            if (debug_count_simd < 16 && j == 0) {
-                                printf("matmul_lut_simd: write[%2d] = tmp_vals[%d]=%d / lut_scale=%.2f * scale=%.2f = %.1f\n",
-                                       debug_count_simd, lane, tmp_vals[lane], lut_scale, scale, val);
-                                debug_count_simd++;
+#pragma omp critical
+                            {
+                                if (debug_count_simd < 16 && j == 0) {
+                                    printf("matmul_lut_simd: write[%2d] = tmp_vals[%d]=%d / lut_scale=%.2f * scale=%.2f = %.1f\n",
+                                           debug_count_simd, lane, tmp_vals[lane], lut_scale, scale, val);
+                                    debug_count_simd++;
+                                }
                             }
                             (*pC) += val;
                         }
@@ -539,10 +542,13 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int
                         vst1q_s16(tmp_vals, vec_c[block]);
                         for (int lane = 0; lane < 8; ++lane, pC += N) {
                             float32_t val = (tmp_vals[lane] / lut_scale) * scale;
-                            if (debug_count_packed < 16 && j == 0) {
-                                printf("matmul_lut_packed: write[%2d] = tmp_vals[%d]=%d / lut_scale=%.2f * scale=%.2f = %.1f\n",
-                                       debug_count_packed, lane, tmp_vals[lane], lut_scale, scale, val);
-                                debug_count_packed++;
+#pragma omp critical
+                            {
+                                if (debug_count_packed < 16 && j == 0) {
+                                    printf("matmul_lut_packed: write[%2d] = tmp_vals[%d]=%d / lut_scale=%.2f * scale=%.2f = %.1f\n",
+                                           debug_count_packed, lane, tmp_vals[lane], lut_scale, scale, val);
+                                    debug_count_packed++;
+                                }
                             }
                             (*pC) += val;
                         }
