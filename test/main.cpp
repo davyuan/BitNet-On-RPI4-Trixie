@@ -639,7 +639,7 @@ int main() {
     printf("Initializing test matrices...\n");
     std::random_device rd; 
     std::mt19937 gen(rd()); 
-    std::uniform_real_distribution<float> distr(-32.0f, 32.0f);    
+    std::uniform_real_distribution<float> distr(-128.0f, 127.0f);    
     for (int i = 0; i < N * K; i++) {
         B[i] = distr(gen);
     }
@@ -672,7 +672,7 @@ int main() {
     //transpose_matrix(A, A_T, KK, M);
     transpose_matrix(A_packed, A_packed_T, KK /2, M);
   
-    // Debug: Print first 16 rows of A, A_packed, and A_packed_T
+    /*// Debug: Print first 16 rows of A, A_packed, and A_packed_T
     printf("\n=== DEBUG: First 16 rows of A (uint8_t, 16 elements each) ===\n");
     for (int i = 0; i < 16; i++) {
         printf("A[%2d]: ", i);
@@ -698,7 +698,7 @@ int main() {
             printf("%02x ", (unsigned)A_packed_T[i * M + j]);
         }
         printf("\n");
-    }
+    }*/
   
     printf("Running LUT construction and inference...\n");
     printf("Matrix dimensions:  A(2560x2560), B(2560x640), C(2560x160)\n");
