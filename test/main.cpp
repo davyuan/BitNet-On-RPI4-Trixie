@@ -671,11 +671,7 @@ int main() {
     int KK = K / 2;
     //transpose_matrix(A, A_T, KK, M);
     transpose_matrix(A_packed, A_packed_T, KK /2, M);
-
-    // Repack A into tl1 layout
-    printf("Repacking matrix A into tl1 layout...\n");
-    //process_tl1(A, A_packed, M, K, BM, BY, bm, by);
-    
+  
     printf("Running LUT construction and inference...\n");
     printf("Matrix dimensions:  A(2560x2560), B(2560x640), C(2560x160)\n");
 
