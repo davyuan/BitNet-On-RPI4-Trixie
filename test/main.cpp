@@ -739,10 +739,10 @@ int main() {
     
     printf("Matmul_naive2 complete. Time: %lld ms\n", lut_duration.count());*/
     
-    //Step 2: Run qGEMM with LUT + SIMD (100 runs for averaging)
-    printf("\nStep 2: Running qGEMM_LUT SIMD (100 iterations for average)\n");
+    //Step 2: Run qGEMM with LUT + SIMD (50 runs for averaging)
+    printf("\nStep 2: Running qGEMM_LUT SIMD (50 iterations for average)\n");
         
-    const int num_iterations = 1;
+    const int num_iterations = 50;
     long long total_simd_time = 0;
     for (int iter = 0; iter < num_iterations; iter++) {
         memset(C_simd, 0, M * N * sizeof(float32_t));
@@ -759,8 +759,8 @@ int main() {
     compare_matrices(C_simd, C_, M, N, 1e-2, "Matmul_simd comparison");
 
            
-    // Step 3: Run qGEMM with LUT + SIMD (100 runs for averaging)
-    /*printf("\nStep 3: Running qGEMM_LUT SIMD2 (100 iterations for average)\n");
+    // Step 3: Run qGEMM with LUT + SIMD (50 runs for averaging)
+    /*printf("\nStep 3: Running qGEMM_LUT SIMD2 (50 iterations for average)\n");
     long long total_simd_time2 = 0;
     for (int iter = 0; iter < num_iterations; iter++) {
         memset(C_simd, 0, M * N * sizeof(float32_t));
@@ -776,8 +776,8 @@ int main() {
     printf("\nComparing kernel output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-2, "Matmul_simd2 comparison");*/
 
-    // Step 3: Run qGEMM with micro kernel (100 runs for averaging)
-    printf("\nStep 3: Running qGEMM_LUT microkernel (100 iterations for average)\n");
+    // Step 3: Run qGEMM with micro kernel (50 runs for averaging)
+    printf("\nStep 3: Running qGEMM_LUT microkernel (50 iterations for average)\n");
     
     long long total_microkernel_time = 0;
     for (int iter = 0; iter < num_iterations; iter++) {
