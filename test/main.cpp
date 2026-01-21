@@ -242,12 +242,8 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int K
                         int8x16_t vec_c0_l = vqtbl1q_s8(vec_lut_low[k - kk], vec_a0);
                                                
                         // Reconstruct int16 from high/low bytes: (high << 8) | low
-                        int16x8_t v0h_lo_16 = vshlq_n_s16(vmovl_s8(vget_low_s8(vec_c0_h)), 8);
-                        int16x8_t v0h_hi_16 = vshlq_n_s16(vmovl_s8(vget_high_s8(vec_c0_h)), 8);  
-                        int16x8_t v0l_lo_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_low_s8(vec_c0_l))));
-                        int16x8_t v0l_hi_16 = vreinterpretq_s16_u16(vmovl_u8(vreinterpret_u8_s8(vget_high_s8(vec_c0_l))));
-                        int16x8_t out00 = vorrq_s16(v0h_lo_16, v0l_lo_16);
-                        int16x8_t out01 = vorrq_s16(v0h_hi_16, v0l_hi_16);
+                        int16x8_t out00, out01;
+                        reconstruct_int16_pair(vec_c0_h, vec_c0_l, out00, out01);
                         
                         vec_c[0] = vaddq_s16(vec_c[0], out00);
                         vec_c[1] = vaddq_s16(vec_c[1], out01);
@@ -698,7 +694,7 @@ int main() {
             printf("%02x ", (unsigned)A_packed_T[i * M + j]);
         }
         printf("\n");
-    }*/
+    }
     
     // Debug: Print first 16 rows of B and B_T
     printf("\n=== DEBUG: First 16 rows of B (float32_t, 16 elements each) ===\n");
@@ -717,7 +713,7 @@ int main() {
             printf("%8.1f ", B_T[i * K + j]);
         }
         printf("\n");
-    }
+    }*/
 
     printf("Running LUT construction and inference...\n");
     printf("Matrix dimensions:  A(2560x2560), B(2560x640), C(2560x160)\n");
