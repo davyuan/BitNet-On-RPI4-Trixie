@@ -699,9 +699,9 @@ int main() {
     printf("Matmul_naive2 complete. Time: %lld ms\n", lut_duration.count());*/
     
     // Step 2: Run qGEMM with LUT + SIMD (100 runs for averaging)
-    /*printf("\nStep 2: Running qGEMM_LUT SIMD (100 iterations for average)\n");
-    long long total_simd_time = 0;
+    //printf("\nStep 2: Running qGEMM_LUT SIMD (100 iterations for average)\n");
     const int num_iterations = 10;
+    /*long long total_simd_time = 0;
     for (int iter = 0; iter < num_iterations; iter++) {
         memset(C_simd, 0, M * N * sizeof(int32_t));
         auto lut_simd_start = std::chrono::high_resolution_clock::now();
