@@ -525,20 +525,13 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int
                         uint8x16_t vec_a_bot = vandq_u8(vec_a, vec_mask);
                         uint8x16x2_t vec_a_unpacked = vzipq_u8(vec_a_top, vec_a_bot);
                         
-                        // Debug first unpack when j==0, k==kk
                         if (j == 0 && k == kk && i == ii) {
-                            uint8_t a_arr[16], top_arr[16], val0_arr[16], val1_arr[16];
-                            vst1q_u8(a_arr, vec_a);
-                            vst1q_u8(top_arr, vec_a_top);
+                            uint8_t val0_arr[16], val1_arr[16];
                             vst1q_u8(val0_arr, vec_a_unpacked.val[0]);
                             vst1q_u8(val1_arr, vec_a_unpacked.val[1]);
 #pragma omp critical
                             {
-                                printf("DEBUG packed [ii=%d, i=%d, k=%d]: vec_a   =[", ii, i, k);
-                                for (int d = 0; d < 16; d++) printf("%02x ", (int)a_arr[d]);
-                                printf("]\n                                       vec_a_top=[");
-                                for (int d = 0; d < 16; d++) printf("%2d ", (int)top_arr[d]);
-                                printf("] val[0]=[");
+                                printf("DEBUG packed val[0]=[");
                                 for (int d = 0; d < 16; d++) printf("%2d ", (int)val0_arr[d]);
                                 printf("] val[1]=[");
                                 for (int d = 0; d < 16; d++) printf("%2d ", (int)val1_arr[d]);
