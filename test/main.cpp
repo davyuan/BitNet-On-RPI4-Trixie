@@ -646,11 +646,11 @@ void init_As(uint8_t* A, int8_t* A_, uint8_t* A_T, uint8_t* A_packed_T, int M, i
     int KK = K / 2;
     transpose_matrix(A, A_T, KK, M);
     // Pack A into 4-bit format
-    for (int i = 0; i < M; i++) {
-        for (int j = 0; j < KK; j+=2) {
-            uint8_t high_nibble = (A_T[i * KK + j] & 0x0F) << 4;
-            uint8_t low_nibble = (A_T[i * KK + j + 1] & 0x0F);
-            A_packed_T[i * (M / 2) + j] = high_nibble | low_nibble;
+    for (int i = 0; i < KK; i++) {
+        for (int j = 0; j < M; j+=2) {
+            uint8_t high_nibble = (A_T[i * M + j] & 0x0F) << 4;
+            uint8_t low_nibble = (A_T[i * M + j + 1] & 0x0F);
+            A_packed_T[i * (M / 2) + j/2] = high_nibble | low_nibble;
         }
     }
 }
