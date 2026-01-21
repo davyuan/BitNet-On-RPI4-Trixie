@@ -620,37 +620,12 @@ void compare_matrices(float32_t* C_simd, float32_t* C_, int M, int N, float32_t 
     printf("%s: max_error=%.1f, mismatches=%d/%d\n", label, max_error, error_count, M * N);
 }
 
-int main() {    
-    printf("Allocating matrices...\n");
-    
-    // Allocate matrices
-    float32_t* B = (float32_t*)aligned_malloc(N * K * sizeof(float32_t));
-    float32_t* B_T = (float32_t*)aligned_malloc(N * K * sizeof(float32_t));
-    uint8_t* A = (uint8_t*)aligned_malloc(M * K / 2 * sizeof(uint8_t));
-    uint8_t* A_T = (uint8_t*)aligned_malloc(M * K / 2 * sizeof(uint8_t));
-    uint8_t* A_packed = (uint8_t*)aligned_malloc(M * K / 4 * sizeof(uint8_t));
-    uint8_t* A_packed_T = (uint8_t*)aligned_malloc(M * K / 4 * sizeof(uint8_t));
-    int8_t* A_ = (int8_t*)aligned_malloc(M * K * sizeof(int8_t));
-    //int32_t* C = (int32_t*)aligned_malloc(M * N * sizeof(int32_t));
-    float32_t* C_ = (float32_t*)aligned_malloc(M * N * sizeof(float32_t));
-    float32_t* C_simd = (float32_t*)aligned_malloc(M * N * sizeof(float32_t));
-    
-    // Allocate reference output matrix C_
-    memset(C_, 0, M * N * sizeof(float32_t));
-    //memset(C, 0, M * N * sizeof(int32_t));
-    memset(C_simd, 0, M * N * sizeof(float32_t));
-
-    // Initialize with random values
-    printf("Initializing test matrices...\n");
-    std::random_device rd; 
-    std::mt19937 gen(rd()); 
-    std::uniform_real_distribution<float> distr(-1024.0f, 1024.0f);    
-    for (int i = 0; i < N * K; i++) {
-        B[i] = distr(gen);
-    }
-
-    transpose_matrix(B, B_T, N, K);
-
+/* After packing A_packed_T will be (K/2 x M /2)
+    A_ will be (M x K)
+    A will be (M x K/2) 4-bit representation
+    A_T will be (K/2 x M)
+*/
+void init_As(uint8_t* A, int8_t* A_, uint8_t* A_T, uint8_t* A_packed_T, int M, int K) {
     for (int i = 0; i < M * K / 2; i++) {
         A[i] = rand() % 9;
 
@@ -665,33 +640,62 @@ int main() {
             case 7: A_[i * 2 + 0] = 1; A_[i * 2 + 1] = 0; break;
             case 8: A_[i * 2 + 0] = 1; A_[i * 2 + 1] = 1; break;
         }
-        
-        if(i > 0 && i % 2 == 0) {
-            A_packed[i / 2 -1] = (uint8_t)((A[i-2] << 4) | (A[i - 1] & 0x0F));
-        }
     }
-    A_packed[M * K / 4 -1] = (uint8_t)((A[M * K / 2 - 2] << 4) | (A[M * K / 2 - 1] & 0x0F));
 
     // Transpose A for SIMD version
     int KK = K / 2;
     transpose_matrix(A, A_T, KK, M);
-    transpose_matrix(A_packed, A_packed_T, KK /2, M);
+    // Pack A into 4-bit format
+    for (int i = 0; i < M; i++) {
+        for (int j = 0; j < KK; j+=2) {
+            uint8_t high_nibble = (A_T[i * KK + j] & 0x0F) << 4;
+            uint8_t low_nibble = (A_T[i * KK + j + 1] & 0x0F);
+            A_packed_T[i * (M / 2) + j] = high_nibble | low_nibble;
+        }
+    }
+}
+
+void init_Bs(float32_t* B, float32_t* B_T, int N, int K) {
+    // Initialize with random values
+    printf("Initializing test matrices...\n");
+    std::random_device rd; 
+    std::mt19937 gen(rd()); 
+    std::uniform_real_distribution<float> distr(-1024.0f, 1024.0f);    
+    for (int i = 0; i < N * K; i++) {
+        B[i] = distr(gen);
+    }
+
+    transpose_matrix(B, B_T, N, K);
+}
+
+int main() {    
+    printf("Allocating matrices...\n");
+    
+    // Allocate matrices
+    float32_t* B = (float32_t*)aligned_malloc(N * K * sizeof(float32_t));
+    float32_t* B_T = (float32_t*)aligned_malloc(N * K * sizeof(float32_t));
+    uint8_t* A = (uint8_t*)aligned_malloc(M * K / 2 * sizeof(uint8_t));
+    uint8_t* A_T = (uint8_t*)aligned_malloc(M * K / 2 * sizeof(uint8_t));
+    uint8_t* A_packed_T = (uint8_t*)aligned_malloc(M * K / 4 * sizeof(uint8_t));
+    int8_t* A_ = (int8_t*)aligned_malloc(M * K * sizeof(int8_t));
+    //int32_t* C = (int32_t*)aligned_malloc(M * N * sizeof(int32_t));
+    float32_t* C_ = (float32_t*)aligned_malloc(M * N * sizeof(float32_t));
+    float32_t* C_simd = (float32_t*)aligned_malloc(M * N * sizeof(float32_t));
+    
+    // Allocate reference output matrix C_
+    memset(C_, 0, M * N * sizeof(float32_t));
+    //memset(C, 0, M * N * sizeof(int32_t));
+    memset(C_simd, 0, M * N * sizeof(float32_t));
+
+    init_Bs(B, B_T, N, K);
+    init_As(A, A_, A_T, A_packed_T, M, K);
   
     // Debug: Print first 16 rows of A, A_packed, and A_packed_T
-    /*printf("\n=== DEBUG: First 16 rows of A (uint8_t, 16 elements each) ===\n");
+    printf("\n=== DEBUG: First 16 rows of A (uint8_t, 16 elements each) ===\n");
     for (int i = 0; i < 16; i++) {
         printf("A[%2d]: ", i);
         for (int j = 0; j < 16; j++) {
             printf("%2u ", (unsigned)A[i * K/2 + j]);
-        }
-        printf("\n");
-    }
-
-    printf("\n=== DEBUG: First 16 rows of A_packed (uint8_t, 16 elements each) ===\n");
-    for (int i = 0; i < 16; i++) {
-        printf("A_packed[%2d]: ", i);
-        for (int j = 0; j < 16; j++) {
-            printf("%02x ", (unsigned)A_packed[i * K/4 + j]);
         }
         printf("\n");
     }
@@ -858,7 +862,6 @@ int main() {
     aligned_free(A_packed_T);
     aligned_free(A_);
     //aligned_free(C);
-    aligned_free(A_packed);
     aligned_free(B_T);
     aligned_free(C_simd);
     
