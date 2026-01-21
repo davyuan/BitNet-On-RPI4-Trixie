@@ -468,7 +468,7 @@ void matmul_lut_simd2(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int 
     aligned_free(Scales);
 }
 
-/* A(K/4 x M), B(N x K)
+/* A(K/2 x M/2), B(N x K)
    QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
         each K represents 2 activations in B. 
    C(MxN)
@@ -476,7 +476,7 @@ void matmul_lut_simd2(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int 
    overhead of reconstructing LUTs in the same tile. 
 */
 void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int K) {
-    int KK = K / 4;
+    int KK = K / 2;
     int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
     const uint8x16_t vec_mask = vdupq_n_u8(0x0f);
     float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
@@ -488,7 +488,7 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int
         
         // Parallelize over row blocks
         #pragma omp parallel for num_threads(4)
-        for (int ii = 0; ii < M; ii += BM) {          
+        for (int ii = 0; ii < M / 2; ii += BM) {          
             for (int kk = 0; kk < KK; kk += BK) {
                 int8x16_t vec_lut_high[BK];
                 int8x16_t vec_lut_low[BK];
@@ -752,25 +752,7 @@ int main() {
     
     //Step 2: Run qGEMM with LUT + SIMD (100 runs for averaging)
     printf("\nStep 2: Running qGEMM_LUT SIMD (100 iterations for average)\n");
-    
-    printf("\n=== DEBUG: First 16 rows of A_T (uint8_t, 16 elements each) ===\n");
-    for (int i = 0; i < 16; i++) {
-        printf("A_T[%2d]: ", i);
-        for (int j = 0; j < 16; j++) {
-            printf("%2u ", (unsigned)A_T[i * M + j]);
-        }
-        printf("\n");
-    }
-
-    printf("\n=== DEBUG: First 16 rows of B_T (float32_t, 16 elements each) ===\n");
-    for (int i = 0; i < 16; i++) {
-        printf("B_T[%2d]: ", i);
-        for (int j = 0; j < 16; j++) {
-            printf("%8.1f ", B_T[i * K + j]);
-        }
-        printf("\n");
-    }
-    
+        
     const int num_iterations = 1;
     long long total_simd_time = 0;
     for (int iter = 0; iter < num_iterations; iter++) {
@@ -807,24 +789,6 @@ int main() {
 
     // Step 3: Run qGEMM with micro kernel (100 runs for averaging)
     printf("\nStep 3: Running qGEMM_LUT microkernel (100 iterations for average)\n");
-    
-    printf("\n=== DEBUG: First 16 rows of A_packed_T (uint8_t, 16 elements each) ===\n");
-    for (int i = 0; i < 16; i++) {
-        printf("A_packed_T[%2d]: ", i);
-        for (int j = 0; j < 16; j++) {
-            printf("%02x ", (unsigned)A_packed_T[i * M / 2 + j]);
-        }
-        printf("\n");
-    }
-
-    printf("\n=== DEBUG: First 16 rows of B_T (float32_t, 16 elements each) ===\n");
-    for (int i = 0; i < 16; i++) {
-        printf("B_T[%2d]: ", i);
-        for (int j = 0; j < 16; j++) {
-            printf("%8.1f ", B_T[i * K + j]);
-        }
-        printf("\n");
-    }
     
     long long total_microkernel_time = 0;
     for (int iter = 0; iter < num_iterations; iter++) {
