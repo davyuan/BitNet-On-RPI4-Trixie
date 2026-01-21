@@ -502,7 +502,7 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int
                 }
                 
 #pragma unroll
-                for (int i = ii; i < ii + BM; i += 16) {
+                for (int i = ii; i < ii + BM; i += 32) {
                     int16x8_t vec_c[4] = {vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0)};
 #pragma unroll
                     for (int k = kk; k < kk + BK; k++) {
@@ -736,7 +736,7 @@ int main() {
     for (int iter = 0; iter < num_iterations; iter++) {
         memset(C_simd, 0, M * N * sizeof(float32_t));
         auto microkernel_start = std::chrono::high_resolution_clock::now();           
-        //matmul_lut_packed(A_packed_T, B_T, C_simd, M, N, K);
+        matmul_lut_packed(A_packed_T, B_T, C_simd, M, N, K);
         auto microkernel_end = std::chrono::high_resolution_clock::now();
         auto microkernel_duration = std::chrono::duration_cast<std::chrono::milliseconds>(microkernel_end - microkernel_start);
         total_microkernel_time += microkernel_duration.count();
