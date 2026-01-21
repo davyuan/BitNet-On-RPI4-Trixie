@@ -209,7 +209,6 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int K
     float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
     float32_t* Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
     *Scales = 1.0f;
-    *LUT_Scales = 2.0f;
 
     for (int j = 0; j < N; j++) {
         ggml_preprocessor(M, K, (void*)(B + j * K), (void*)LUT_Scales, (void*)QLUT);                  
@@ -253,11 +252,17 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int K
                     const float32_t lut_scale = ((float32_t*)LUT_Scales)[0];
                     const float32_t scale = ((float32_t*)Scales)[0];
                     int16_t tmp_vals[8];
+                    static int debug_count_simd = 0;
 #pragma unroll
                     for (int block = 0; block < 2; ++block) {
                         vst1q_s16(tmp_vals, vec_c[block]);
                         for (int lane = 0; lane < 8; ++lane, pC += N) {
                             float32_t val = (tmp_vals[lane] / lut_scale) * scale;
+                            if (debug_count_simd < 16 && j == 0) {
+                                printf("matmul_lut_simd: write[%2d] = tmp_vals[%d]=%d / lut_scale=%.2f * scale=%.2f = %.1f\n",
+                                       debug_count_simd, lane, tmp_vals[lane], lut_scale, scale, val);
+                                debug_count_simd++;
+                            }
                             (*pC) += val;
                         }
                     }
@@ -477,7 +482,6 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int
     float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
     float32_t* Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
     *Scales = 1.0f;
-    *LUT_Scales = 2.0f;
 
     for (int j = 0; j < N; j++) {
         ggml_preprocessor(M, K, (void*)(B + j * K), (void*)LUT_Scales, (void*)QLUT);                  
@@ -506,40 +510,6 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int
                         uint8x16_t vec_a_bot = vandq_u8(vec_a, vec_mask);
                         uint8x16x2_t vec_a_unpacked = vzipq_u8(vec_a_top, vec_a_bot);
 
-                        // Debug: Print unpacking for first iteration
-                        if (i == ii && k == kk && ii == 0 && j == 0) {
-                            printf("DEBUG: First k iteration unpacking:\n");
-                            printf("  Packed bytes: ");
-                            uint8_t packed_vals[16];
-                            vst1q_u8(packed_vals, vec_a);
-                            for (int x = 0; x < 16; x++) printf("%02x ", packed_vals[x]);
-                            printf("\n");
-                            
-                            printf("  High nibbles: ");
-                            uint8_t high_vals[16];
-                            vst1q_u8(high_vals, vec_a_top);
-                            for (int x = 0; x < 16; x++) printf("%x ", high_vals[x]);
-                            printf("\n");
-                            
-                            printf("  Low nibbles: ");
-                            uint8_t low_vals[16];
-                            vst1q_u8(low_vals, vec_a_bot);
-                            for (int x = 0; x < 16; x++) printf("%x ", low_vals[x]);
-                            printf("\n");
-                            
-                            printf("  After vzip val[0]: ");
-                            uint8_t zip_vals0[16];
-                            vst1q_u8(zip_vals0, vec_a_unpacked.val[0]);
-                            for (int x = 0; x < 16; x++) printf("%x ", zip_vals0[x]);
-                            printf("\n");
-                            
-                            printf("  After vzip val[1]: ");
-                            uint8_t zip_vals1[16];
-                            vst1q_u8(zip_vals1, vec_a_unpacked.val[1]);
-                            for (int x = 0; x < 16; x++) printf("%x ", zip_vals1[x]);
-                            printf("\n");
-                        }
-
                         // Lookup on high and low tables (same LUT table for all 16 indices)
                         int8x16_t vec_l0_h = vqtbl1q_s8(vec_lut_high[k - kk], vec_a_unpacked.val[0]);
                         int8x16_t vec_l0_l = vqtbl1q_s8(vec_lut_low[k - kk], vec_a_unpacked.val[0]);
@@ -548,20 +518,6 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int
                         reconstruct_int16_pair(vec_l0_h, vec_l0_l, out0, out1);    
                         vec_c[0] = vaddq_s16(vec_c[0], out0);
                         vec_c[1] = vaddq_s16(vec_c[1], out1);
-
-                        // Debug: Print first LUT output
-                        if (i == ii && k == kk && ii == 0 && j == 0) {
-                            printf("DEBUG: First LUT lookup results (val[0]):\n");
-                            int16_t out0_vals[8], out1_vals[8];
-                            vst1q_s16(out0_vals, out0);
-                            vst1q_s16(out1_vals, out1);
-                            printf("  out0: ");
-                            for (int x = 0; x < 8; x++) printf("%6d ", out0_vals[x]);
-                            printf("\n");
-                            printf("  out1: ");
-                            for (int x = 0; x < 8; x++) printf("%6d ", out1_vals[x]);
-                            printf("\n");
-                        }
 
                         // Lookup on high and low tables (same LUT table for all 16 indices)
                         int8x16_t vec_l1_h = vqtbl1q_s8(vec_lut_high[k - kk], vec_a_unpacked.val[1]);
@@ -577,17 +533,17 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int
                     const float32_t lut_scale = ((float32_t*)LUT_Scales)[0];
                     const float32_t scale = ((float32_t*)Scales)[0];
                     int16_t tmp_vals[8];
-                    
-                    // Debug: Print first output write location in matmul_lut_packed
-                    if (ii == 0 && kk == 0 && i == ii && j == 0) {
-                        printf("DEBUG (matmul_lut_packed): First output write at pC = %p, index=(%d,%d), lut_scale=%.2f\n", 
-                               pC, i, j, lut_scale);
-                    }
+                    static int debug_count_packed = 0;
 #pragma unroll
                     for (int block = 0; block < 4; ++block) {
                         vst1q_s16(tmp_vals, vec_c[block]);
                         for (int lane = 0; lane < 8; ++lane, pC += N) {
                             float32_t val = (tmp_vals[lane] / lut_scale) * scale;
+                            if (debug_count_packed < 16 && j == 0) {
+                                printf("matmul_lut_packed: write[%2d] = tmp_vals[%d]=%d / lut_scale=%.2f * scale=%.2f = %.1f\n",
+                                       debug_count_packed, lane, tmp_vals[lane], lut_scale, scale, val);
+                                debug_count_packed++;
+                            }
                             (*pC) += val;
                         }
                     }
