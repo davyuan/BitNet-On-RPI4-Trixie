@@ -523,11 +523,11 @@ class Model(ABC):
 
 def process_tl1(weight, BM, BK, bm, bk, M, K):
     weight = weight.reshape((M, K // 2)).astype(np.uint8)
-    weight = weight.reshape((M, K // 4, 2))
+    weight = weight.transpose(1, 0)  # K/2, M
+    weight = weight.reshape((K // 2, M // 2, 2))
     weight_0 = weight[:, :, 0] << 4
     weight_1 = weight[:, :, 1]
     weight = weight_0 + weight_1
-    weight = weight.transpose(1, 0)
     return weight
 
 def preprocess_weights_tl1(

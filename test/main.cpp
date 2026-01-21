@@ -527,7 +527,12 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int
                     float32_t* pC = (float32_t*) &(C[(i+0)*N + j]);
                     const float32_t lut_scale = ((float32_t*)LUT_Scales)[0];
                     const float32_t scale = ((float32_t*)Scales)[0];
-                    int16_t tmp_vals[8];                
+                    int16_t tmp_vals[8];
+                    
+                    // Debug: check for zero or very small scale
+                    if (lut_scale == 0.0f || std::isnan(lut_scale) || std::isinf(lut_scale)) {
+                        printf("WARNING: lut_scale is invalid at j=%d: %.1e\n", j, lut_scale);
+                    }
 #pragma unroll
                     for (int block = 0; block < 4; ++block) {
                         vst1q_s16(tmp_vals, vec_c[block]);
