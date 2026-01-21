@@ -271,13 +271,13 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int K
                         for (int lane = 0; lane < 8; ++lane, pC += N) {
                             float32_t val = (tmp_vals[lane] / lut_scale) * scale;
 #pragma omp critical
-                            {
+                            /*{
                                 if (debug_count_simd < 16 && j == 0) {
                                     printf("matmul_lut_simd: write[%2d] = tmp_vals[%d]=%d / lut_scale=%.2f * scale=%.2f = %.1f\n",
                                            debug_count_simd, lane, tmp_vals[lane], lut_scale, scale, val);
                                     debug_count_simd++;
                                 }
-                            }
+                            }*/
                             (*pC) += val;
                         }
                     }
@@ -524,20 +524,6 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int
                         uint8x16_t vec_a_top = vshrq_n_u8(vec_a, 4);
                         uint8x16_t vec_a_bot = vandq_u8(vec_a, vec_mask);
                         uint8x16x2_t vec_a_unpacked = vzipq_u8(vec_a_top, vec_a_bot);
-                        
-                        if (j == 0 && k == kk && i == ii) {
-                            uint8_t val0_arr[16], val1_arr[16];
-                            vst1q_u8(val0_arr, vec_a_unpacked.val[0]);
-                            vst1q_u8(val1_arr, vec_a_unpacked.val[1]);
-#pragma omp critical
-                            {
-                                printf("DEBUG packed val[0]=[");
-                                for (int d = 0; d < 16; d++) printf("%2d ", (int)val0_arr[d]);
-                                printf("] val[1]=[");
-                                for (int d = 0; d < 16; d++) printf("%2d ", (int)val1_arr[d]);
-                                printf("]\n");
-                            }
-                        }
 
                         // Lookup on high and low tables (same LUT table for all 16 indices)
                         int8x16_t vec_l0_h = vqtbl1q_s8(vec_lut_high[k - kk], vec_a_unpacked.val[0]);
