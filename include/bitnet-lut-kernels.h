@@ -6,7 +6,7 @@
 
 #define GGML_BITNET_MAX_NODES 8192
 #define BM 128
-#define BK 64
+#define BK 128
 
 extern bool initialized;
 extern bitnet_tensor_extra * bitnet_tensor_extras;
