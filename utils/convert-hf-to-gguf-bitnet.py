@@ -981,8 +981,8 @@ class BitnetModel(Model):
         try:
             # Try the parent implementation first
             return super().get_vocab_base_pre(tokenizer)
-        except NotImplementedError:
-            # If the hash doesn't match, detect based on tokenizer config
+        except (NotImplementedError, AttributeError):
+            # If the hash doesn't match or method doesn't exist, detect based on tokenizer config
             logger.warning("BPE pre-tokenizer hash not recognized, attempting to auto-detect...")
             
             # Check tokenizer config for hints
