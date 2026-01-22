@@ -1017,6 +1017,36 @@ class LlamaModel(Model):
 class BitnetModel(Model):
     model_arch = gguf.MODEL_ARCH.BITNET
 
+    def get_vocab_base_pre(self, tokenizer) -> str:
+        """Override to handle non-standard tokenizers gracefully"""
+        try:
+            # Try the parent implementation first
+            return super().get_vocab_base_pre(tokenizer)
+        except NotImplementedError:
+            # If the hash doesn't match, detect based on tokenizer config
+            logger.warning("BPE pre-tokenizer hash not recognized, attempting to auto-detect...")
+            
+            # Check tokenizer config for hints
+            tokenizer_config_path = self.dir_model / 'tokenizer_config.json'
+            if tokenizer_config_path.is_file():
+                try:
+                    with open(tokenizer_config_path, "r", encoding="utf-8") as f:
+                        tokenizer_config = json.load(f)
+                    
+                    # Detect based on model type in config
+                    if any(key in str(tokenizer_config).lower() for key in ["llama", "meta-llama"]):
+                        logger.info("Detected Llama-based tokenizer, using llama-bpe")
+                        return "llama-bpe"
+                    elif any(key in str(tokenizer_config).lower() for key in ["mistral"]):
+                        logger.info("Detected Mistral-based tokenizer, using default BPE")
+                        return "gpt-2"
+                except (json.JSONDecodeError, IOError):
+                    pass
+            
+            # Default fallback
+            logger.warning("Defaulting to llama-bpe for BitNet model")
+            return "llama-bpe"
+
     def set_vocab(self):
         # Auto-detect tokenizer type from tokenizer.json structure
         tokenizer_json_path = self.dir_model / 'tokenizer.json'
@@ -1059,7 +1089,7 @@ class BitnetModel(Model):
                         with open(tokenizer_config_path, "r", encoding="utf-8") as f:
                             tokenizer_config = json.load(f)
                         # If it's Llama-based, use the HF vocab handler which is more robust
-                        if any(key in str(tokenizer_config).lower() for key in ["llama", "mistral"]):
+                        if any(key in str(tokenizer_config).lower() for key in ["llama", "mistral", "meta-llama"]):
                             logger.info("Detected Llama/Mistral HF tokenizer - using HF vocab handler")
                             is_llama_hf = True
                             is_bpe = False  # Don't use gpt2 path
