@@ -1018,7 +1018,55 @@ class BitnetModel(Model):
     model_arch = gguf.MODEL_ARCH.BITNET
 
     def set_vocab(self):
-        self._set_vocab_sentencepiece()
+        # Auto-detect tokenizer type from tokenizer.json structure
+        tokenizer_json_path = self.dir_model / 'tokenizer.json'
+        tokenizer_model_path = self.dir_model / 'tokenizer.model'
+        vocab_json_path = self.dir_model / 'vocab.json'
+        merges_txt_path = self.dir_model / 'merges.txt'
+        
+        is_bpe = False
+        
+        # First check for explicit BPE files
+        if vocab_json_path.is_file() and merges_txt_path.is_file():
+            logger.info("Detected BPE tokenizer (vocab.json + merges.txt)")
+            is_bpe = True
+        
+        # Check tokenizer.json structure to detect BPE
+        elif tokenizer_json_path.is_file():
+            try:
+                with open(tokenizer_json_path, "r", encoding="utf-8") as f:
+                    tokenizer_json = json.load(f)
+                
+                # BPE tokenizers have "model" field with "type": "BPE" or similar
+                # They also have "pre_tokenizers" and "post_processors"
+                if "model" in tokenizer_json:
+                    model_config = tokenizer_json["model"]
+                    if isinstance(model_config, dict) and model_config.get("type") in ("BPE", "WordPiece"):
+                        logger.info(f"Detected {model_config.get('type')} tokenizer from tokenizer.json")
+                        is_bpe = True
+                
+                # Additional heuristic: BPE models have merges, SentencePiece doesn't
+                if not is_bpe and "model" in tokenizer_json:
+                    model_config = tokenizer_json["model"]
+                    if isinstance(model_config, dict) and "merges" in model_config:
+                        logger.info("Detected BPE tokenizer (merges field found in tokenizer.json)")
+                        is_bpe = True
+                        
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Could not parse tokenizer.json: {e}")
+        
+        # Use detected or default tokenizer type
+        if is_bpe:
+            logger.info("Using BPE tokenizer (GGUF type: gpt2)")
+            self._set_vocab_gpt2()
+        elif tokenizer_model_path.is_file() or tokenizer_json_path.is_file():
+            logger.info("Using SentencePiece tokenizer (GGUF type: llama)")
+            self._set_vocab_sentencepiece()
+        else:
+            logger.warning("No tokenizer files detected, defaulting to SentencePiece")
+            self._set_vocab_sentencepiece()
+        
+        
         
     def set_gguf_parameters(self):
         super().set_gguf_parameters()
