@@ -1017,6 +1017,40 @@ class LlamaModel(Model):
 class BitnetModel(Model):
     model_arch = gguf.MODEL_ARCH.BITNET
 
+    def get_vocab_base(self) -> tuple[list[str], list[int], str]:
+        """Override to fix Mistral/Llama tokenizer regex issues"""
+        tokens: list[str] = []
+        toktypes: list[int] = []
+
+        from transformers import AutoTokenizer
+        # Use fix_mistral_regex=True to handle non-standard tokenizers
+        tokenizer = AutoTokenizer.from_pretrained(self.dir_model, fix_mistral_regex=True)
+        vocab_size = self.hparams.get("vocab_size", len(tokenizer.vocab))
+        assert max(tokenizer.vocab.values()) < vocab_size
+
+        tokpre = self.get_vocab_base_pre(tokenizer)
+
+        reverse_vocab = {id_: encoded_tok for encoded_tok, id_ in tokenizer.vocab.items()}
+        added_vocab = tokenizer.get_added_vocab()
+
+        for i in range(vocab_size):
+            if i not in reverse_vocab:
+                tokens.append(f"[PAD{i}]")
+                toktypes.append(gguf.TokenType.USER_DEFINED)
+            elif reverse_vocab[i] in added_vocab:
+                # We need to manually encode and decode the added tokens in case special characters
+                # used for `\n` / `\t` have been manually added in the added tokens
+                encoded_decoded_token = tokenizer.decode(tokenizer.encode(reverse_vocab[i]))
+                tokens.append(encoded_decoded_token)
+                if tokenizer.added_tokens_decoder[i].special:
+                    toktypes.append(gguf.TokenType.CONTROL)
+                else:
+                    toktypes.append(gguf.TokenType.USER_DEFINED)
+            else:
+                tokens.append(reverse_vocab[i])
+                toktypes.append(gguf.TokenType.NORMAL)
+        return tokens, toktypes, tokpre
+
     def get_vocab_base_pre(self, tokenizer) -> str:
         """Override to handle non-standard tokenizers gracefully"""
         try:
