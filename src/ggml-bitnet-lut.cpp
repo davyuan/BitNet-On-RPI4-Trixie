@@ -60,9 +60,7 @@ bool ggml_bitnet_can_mul_mat(const struct ggml_tensor * src0, const struct ggml_
         src1->type == GGML_TYPE_F32 &&
         dst->type == GGML_TYPE_F32 &&
         src0->backend == GGML_BACKEND_TYPE_CPU) {
-        if (src1->ne[1] <= 1) {
-            return true;
-        }
+        return true;
     }
     return false;
 }
