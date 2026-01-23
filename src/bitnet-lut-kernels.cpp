@@ -96,12 +96,11 @@ void ggml_preprocessor(int M, int K, void* B, void* LUT_Scales, void* QLUT) {
 void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT, void* Scales, void* LUT_Scales, float32_t* C) {
     int KK = K / 2;
     const uint8x16_t vec_mask = vdupq_n_u8(0x0f);
-    
-    // Pre-allocate LUT arrays outside loops to reduce stack pressure
-    int8x16_t* vec_lut_high = (int8x16_t*)aligned_malloc(BK * sizeof(int8x16_t));
-    int8x16_t* vec_lut_low = (int8x16_t*)aligned_malloc(BK * sizeof(int8x16_t));
 
-    for (int kk = 0; kk < KK; kk += BK) {        
+    for (int kk = 0; kk < KK; kk += BK) {
+        int8x16_t vec_lut_high[BK];
+        int8x16_t vec_lut_low[BK];
+        
         // LUT layout per index: [16 high_bytes] [16 low_bytes] = 32 bytes
 #pragma unroll
         for (int k = 0; k < BK; k++) {
@@ -153,10 +152,6 @@ void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT,
             }
         }
     }
-    
-    // Cleanup heap allocations
-    aligned_free(vec_lut_high);
-    aligned_free(vec_lut_low);
 }
 
 void ggml_vec_dot_tl1(int n, float * s, size_t bs, const void * vx, size_t bx, const void * vy, size_t by, int nrc)

@@ -582,6 +582,7 @@ void matmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, int M, int 
                                 LUT_Scales, 
                                 C);
             }
+#pragma omp barrier
         }
     }
 
