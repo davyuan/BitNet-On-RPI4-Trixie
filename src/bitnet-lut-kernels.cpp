@@ -46,8 +46,8 @@ static void per_tensor_quant(int k, void* lut_scales_, void* b_) {
       float32x4_t abssum = vabsq_f32(vec_bs);
       temp_max = vmaxq_f32(abssum, temp_max);
     }
-    float32_t scales = 127 / vmaxvq_f32(temp_max);
-    *lut_scales = scales;
+    float32_t max_val = vmaxvq_f32(temp_max);
+    *lut_scales = (max_val > 0) ? (127.0f / max_val) : 1.0f;
 #elif defined __AVX2__
     __m256 max_vec = _mm256_set1_ps(0.f);
     const __m256 vec_sign = _mm256_set1_ps(-0.0f);
@@ -59,8 +59,8 @@ static void per_tensor_quant(int k, void* lut_scales_, void* b_) {
     __m128 max1 = _mm_max_ps(_mm256_extractf128_ps(max_vec, 1), _mm256_castps256_ps128(max_vec));
     max1 = _mm_max_ps(max1, _mm_movehl_ps(max1, max1));
     max1 = _mm_max_ss(max1, _mm_movehdup_ps(max1));
-    float scales = 127 / _mm_cvtss_f32(max1);
-    *lut_scales = scales;
+    float max_val = _mm_cvtss_f32(max1);
+    *lut_scales = (max_val > 0) ? (127.0f / max_val) : 1.0f;
 #else
     // Fallback: scalar implementation
     float max_val = 0.0f;
