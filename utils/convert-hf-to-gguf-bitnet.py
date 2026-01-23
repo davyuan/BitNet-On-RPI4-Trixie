@@ -197,6 +197,9 @@ class Model(ABC):
             self.gguf_writer.add_tensor(new_name, data)
 
     def write(self):
+        chat_template = "{% set loop_messages = messages %}{% for message in loop_messages %}{% set content = message['role'] | capitalize + ': '+ message['content'] | trim + '<|eot_id|>' %}{{ content }}{% endfor %}{% if add_generation_prompt %}{{ 'Assistant: ' }}{% endif %}"
+        self.gguf_writer.add_chat_template("default", chat_template)
+
         self.write_tensors()
         self.gguf_writer.write_header_to_file()
         self.gguf_writer.write_kv_data_to_file()
@@ -286,7 +289,6 @@ class Model(ABC):
                 tokens.append(reverse_vocab[i])
                 toktypes.append(gguf.TokenType.NORMAL)
         return tokens, toktypes, tokpre
-
 
     def _set_vocab_gpt2(self) -> None:
         tokens, toktypes, tokpre = self.get_vocab_base()
