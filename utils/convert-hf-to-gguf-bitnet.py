@@ -441,8 +441,6 @@ class Model(ABC):
         self.gguf_writer.add_token_list(tokens)
         self.gguf_writer.add_token_scores(scores)
         self.gguf_writer.add_token_types(toktypes)
-        tokenizer = AutoTokenizer.from_pretrained(self.dir_model)
-        self.gguf_writer.add_string("tokenizer.chat_template", tokenizer.chat_template)        
 
         special_vocab = gguf.SpecialVocab(self.dir_model, n_vocab=len(tokens))
         special_vocab.add_to_gguf(self.gguf_writer)
@@ -1109,8 +1107,7 @@ class BitnetModel(Model):
         self.gguf_writer.add_token_list(tokens)
         self.gguf_writer.add_token_types(toktypes)
 
-        # For BitNet, explicitly set the correct special tokens
-        # Don't let SpecialVocab auto-detect as it picks the wrong tokens
+        # For BitNet, manually add merges and special tokens without auto-detection
         special_vocab = gguf.SpecialVocab(self.dir_model, load_merges=True)
         
         # Manually set BitNet special tokens
@@ -1119,7 +1116,18 @@ class BitnetModel(Model):
         special_vocab._set_special_token("eot", 128009)    # <|eot_id|>
         special_vocab._set_special_token("pad", 128001)    # <|end_of_text|> (padding)
         
-        special_vocab.add_to_gguf(self.gguf_writer)
+        # Manually add only the merges and chat_template, don't let add_to_gguf auto-detect tokens
+        if special_vocab.merges:
+            self.gguf_writer.add_string("tokenizer.ggml.merges", "\n".join(special_vocab.merges))
+        
+        if hasattr(special_vocab, 'chat_template') and special_vocab.chat_template:
+            self.gguf_writer.add_string("tokenizer.chat_template", special_vocab.chat_template)
+        
+        # Add the special token IDs that we explicitly set
+        self.gguf_writer.add_uint32("tokenizer.ggml.bos_token_id", 128000)
+        self.gguf_writer.add_uint32("tokenizer.ggml.eos_token_id", 128001)
+        self.gguf_writer.add_uint32("tokenizer.ggml.eot_token_id", 128009)
+        self.gguf_writer.add_uint32("tokenizer.ggml.pad_token_id", 128001)
         
         
         
