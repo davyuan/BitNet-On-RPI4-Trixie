@@ -1118,7 +1118,8 @@ class BitnetModel(Model):
         
         # Manually add only the merges and chat_template, don't let add_to_gguf auto-detect tokens
         if special_vocab.merges:
-            self.gguf_writer.add_string("tokenizer.ggml.merges", "\n".join(special_vocab.merges))
+            # Merges must be added as an array of strings, not as a single string
+            self.gguf_writer.add_array("tokenizer.ggml.merges", special_vocab.merges)
         
         if hasattr(special_vocab, 'chat_template') and special_vocab.chat_template:
             self.gguf_writer.add_string("tokenizer.chat_template", special_vocab.chat_template)
