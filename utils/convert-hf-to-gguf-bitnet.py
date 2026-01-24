@@ -1147,9 +1147,18 @@ class BitnetModel(Model):
         if special_vocab.merges:
             # Merges must be added as an array of strings, not as a single string
             self.gguf_writer.add_array("tokenizer.ggml.merges", special_vocab.merges)
-        
-        self.gguf_writer.add_string("tokenizer.chat_template", 
-            "{% for message in messages %}{% if loop.index0 == 0 and message['role'] == 'system' %}{{ '<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n' + message['content'] + '<|eot_id|>' }}{% else %}{{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n' + message['content'] + '<|eot_id|>' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ '<|start_header_id|>assistant<|end_header_id|>\n\n' }}{% endif %}")
+            custom_template = (
+                "{{ bos_token }}"
+                "{% for message in messages %}"
+                "{% set role = message['role'] | capitalize %}"
+                "{% set content = message['content'] | trim %}"
+                "{{ role + ': ' + content + '<|eot_id|>\n' }}"
+                "{% endfor %}"
+                "{% if add_generation_prompt %}"
+                "{{ 'Assistant: ' }}"
+                "{% endif %}"
+            )        
+        self.gguf_writer.add_string("tokenizer.chat_template", custom_template)
         #if hasattr(special_vocab, 'chat_template') and special_vocab.chat_template:
         #    self.gguf_writer.add_string("tokenizer.chat_template", special_vocab.chat_template)
         
