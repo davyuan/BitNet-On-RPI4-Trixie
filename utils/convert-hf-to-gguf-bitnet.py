@@ -294,6 +294,8 @@ class Model(ABC):
         self.gguf_writer.add_tokenizer_pre(tokpre)
         self.gguf_writer.add_token_list(tokens)
         self.gguf_writer.add_token_types(toktypes)
+        tokenizer = AutoTokenizer.from_pretrained(self.dir_model)
+        self.gguf_writer.add_string("tokenizer.chat_template", tokenizer.chat_template)        
 
         special_vocab = gguf.SpecialVocab(self.dir_model, load_merges=True)
         special_vocab.add_to_gguf(self.gguf_writer)
