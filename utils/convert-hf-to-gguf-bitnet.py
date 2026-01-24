@@ -1014,36 +1014,37 @@ class BitnetModel(Model):
         tokenizer_model_path = self.dir_model / 'tokenizer.model'
         vocab_json_path = self.dir_model / 'vocab.json'
         merges_txt_path = self.dir_model / 'merges.txt'
+        tokenizer_config_path = self.dir_model / 'tokenizer_config.json'
         
         is_bpe = False
         is_llama_hf = False
         
-        # First check for explicit BPE files
-        if vocab_json_path.is_file() and merges_txt_path.is_file():
-            logger.info("Detected BPE tokenizer (vocab.json + merges.txt)")
-            is_bpe = True
-        
-        # Check tokenizer.json structure to detect BPE or Llama HF
-        elif tokenizer_json_path.is_file():
+        # FIRST: Check if this is a Llama-style HF tokenizer (check tokenizer_config.json)
+        # This takes priority over BPE detection since Llama HF can also have merges
+        if tokenizer_config_path.is_file():
             try:
-                with open(tokenizer_json_path, "r", encoding="utf-8") as f:
-                    tokenizer_json = json.load(f)
-                
-                # Check if this is a Llama-style HF tokenizer FIRST (check tokenizer_config.json)
-                tokenizer_config_path = self.dir_model / 'tokenizer_config.json'
-                if tokenizer_config_path.is_file():
-                    try:
-                        with open(tokenizer_config_path, "r", encoding="utf-8") as f:
-                            tokenizer_config = json.load(f)
-                        # If it's Llama-based, use the HF vocab handler which is more robust
-                        if any(key in str(tokenizer_config).lower() for key in ["llama", "mistral", "meta-llama"]):
-                            logger.info("Detected Llama/Mistral HF tokenizer - using HF vocab handler")
-                            is_llama_hf = True
-                    except (json.JSONDecodeError, IOError):
-                        pass
-                
-                # Only check for BPE if NOT already detected as Llama HF
-                if not is_llama_hf:
+                with open(tokenizer_config_path, "r", encoding="utf-8") as f:
+                    tokenizer_config = json.load(f)
+                # If it's Llama-based, use the HF vocab handler which is more robust
+                if any(key in str(tokenizer_config).lower() for key in ["llama", "mistral", "meta-llama"]):
+                    logger.info("Detected Llama/Mistral HF tokenizer - using HF vocab handler")
+                    is_llama_hf = True
+            except (json.JSONDecodeError, IOError):
+                pass
+        
+        # Only check for BPE if NOT already detected as Llama HF
+        if not is_llama_hf:
+            # First check for explicit BPE files
+            if vocab_json_path.is_file() and merges_txt_path.is_file():
+                logger.info("Detected BPE tokenizer (vocab.json + merges.txt)")
+                is_bpe = True
+            
+            # Check tokenizer.json structure to detect BPE or SentencePiece
+            elif tokenizer_json_path.is_file():
+                try:
+                    with open(tokenizer_json_path, "r", encoding="utf-8") as f:
+                        tokenizer_json = json.load(f)
+                    
                     # BPE tokenizers have "model" field with "type": "BPE" or similar
                     if "model" in tokenizer_json:
                         model_config = tokenizer_json["model"]
@@ -1057,9 +1058,9 @@ class BitnetModel(Model):
                         if isinstance(model_config, dict) and "merges" in model_config:
                             logger.info("Detected BPE tokenizer (merges field found in tokenizer.json)")
                             is_bpe = True
-                        
-            except (json.JSONDecodeError, IOError) as e:
-                logger.warning(f"Could not parse tokenizer.json: {e}")
+                            
+                except (json.JSONDecodeError, IOError) as e:
+                    logger.warning(f"Could not parse tokenizer.json: {e}")
         
         # Use detected or default tokenizer type
         if is_llama_hf:
