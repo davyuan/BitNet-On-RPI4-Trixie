@@ -466,8 +466,7 @@ def preprocess_weights_tl1(
 
     M, K = w.shape
     weight = w
-    weight = np.where(np.abs(weight) < 1e-6, 0, weight).astype(np.float32)
-    weight = np.sign(weight)
+    weight, scale = bitnet_158_quantize(weight)
     weight_num = np.prod(weight.shape)
 
     config.read('include/kernel_config.ini')
@@ -510,8 +509,30 @@ def preprocess_weights_tl1(
         row_hex = ' '.join(f'0x{x:02x}' for x in weight[i, :16])
         print(row_hex)'''
 
-    return weight
+    return weight, scale
 
+def bitnet_158_quantize(weight_array):
+    """
+    Quantizes a weight matrix to ternary values {-1, 0, 1} 
+    using the absmean scaling and RoundClip method.
+    """
+    # 1. Calculate the weight scale (gamma)
+    # This is the 'absmean' of the original weights
+    gamma = np.mean(np.abs(weight_array))
+    
+    # Small epsilon to prevent division by zero
+    epsilon = 1e-6
+    
+    # 2. Normalize weights by gamma
+    # This centers the weights around the range [-1, 1]
+    normalized_w = weight_array / (gamma + epsilon)
+    
+    # 3. RoundClip function:
+    # round(x) pushes to nearest integer (-1, 0, or 1)
+    # clip ensures no outliers escape the ternary set
+    quantized_w = np.clip(np.round(normalized_w), -1, 1).astype(np.int8)
+    
+    return quantized_w, gamma
 
 def preprocess_two_weights_tl2(M, K, weight_num, BM, BY, bm, by, weight, final_weight):
     weight = np.reshape(weight, (weight_num // 2, 2))
@@ -653,10 +674,8 @@ def preprocess_weights_tl2(
     return weight
 
 def transform_to_tl1(x: np.ndarray):
-    scale = np.max(np.abs(x))
-    # res = np.round(x / scale + 2).astype(np.uint8)
-    res = preprocess_weights_tl1(x)
-    return res, scale
+    res, scale = preprocess_weights_tl1(x)
+    return res, np.asarray(scale, dtype=np.float32)
 
 def transform_to_tl2(x: np.ndarray):
     scale = np.max(np.abs(x))
@@ -824,6 +843,7 @@ class LlamaModel(Model):
                 self.gguf_writer.add_tensor(new_name, data, raw_shape=raw_shape, raw_dtype=data_qtype)
                 if i2_scale is not None:
                     self.gguf_writer.add_tensor(new_name + "_scale", i2_scale, raw_dtype=gguf.GGMLQuantizationType.F32)
+                    logger.info(f"    Added scale tensor: {new_name + '_scale'}, F32, value: {i2_scale.shape[0]}")
 
 
     def set_gguf_parameters(self):
