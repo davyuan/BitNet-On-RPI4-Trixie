@@ -498,16 +498,17 @@ def preprocess_weights_tl1(
 
     weight = weight + 4
     weight = np.reshape(weight, (M, K // 2)).astype(np.uint8)
-    '''print("First 32 rows of weight before packing (32 elements each, hex):")
+    print("First 32 rows of weight before packing (32 elements each, hex):")
     for i in range(min(32, weight.shape[0])):
         row_hex = ' '.join(f'0x{x:02x}' for x in weight[i, :32])
-        print(row_hex)'''
+        print(row_hex)
 
     weight = process_tl1(weight, BM, BK, bm, bk, M, K)
-    '''print("First 16 rows of weight after packing (16 elements each, hex):")
+    print("First 16 rows of weight after packing (16 elements each, hex):")
     for i in range(min(16, weight.shape[0])):
         row_hex = ' '.join(f'0x{x:02x}' for x in weight[i, :16])
-        print(row_hex)'''
+        print(row_hex)
+    sj = input("Press Enter to continue...")
 
     return weight, scale
 
