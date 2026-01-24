@@ -499,9 +499,12 @@ def preprocess_weights_tl1(
 
     weight = weight + 4
     weight = np.reshape(weight, (M, K // 2)).astype(np.uint8)
+    print(f"First 16 rows of weight before packing (16 elements each):\n{weight[:16, :16]}")
 
     weight = process_tl1(weight, BM, BK, bm, bk, M, K)
+    print(f"First 16 rows of weight after packing(16 elements each):\n{weight[:16, :16]}")
 
+    s = input("wait")
     return weight
 
 
