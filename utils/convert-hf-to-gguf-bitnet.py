@@ -1121,8 +1121,10 @@ class BitnetModel(Model):
             # Merges must be added as an array of strings, not as a single string
             self.gguf_writer.add_array("tokenizer.ggml.merges", special_vocab.merges)
         
-        if hasattr(special_vocab, 'chat_template') and special_vocab.chat_template:
-            self.gguf_writer.add_string("tokenizer.chat_template", special_vocab.chat_template)
+        self.gguf_writer.add_string("tokenizer.chat_template", 
+            "{% for message in messages %}{% if loop.index0 == 0 and message['role'] == 'system' %}{{ '<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n' + message['content'] + '<|eot_id|>' }}{% else %}{{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n' + message['content'] + '<|eot_id|>' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ '<|start_header_id|>assistant<|end_header_id|>\n\n' }}{% endif %}")
+        #if hasattr(special_vocab, 'chat_template') and special_vocab.chat_template:
+        #    self.gguf_writer.add_string("tokenizer.chat_template", special_vocab.chat_template)
         
         # Add the special token IDs that we explicitly set
         self.gguf_writer.add_uint32("tokenizer.ggml.bos_token_id", 128000)
