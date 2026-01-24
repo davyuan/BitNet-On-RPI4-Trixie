@@ -499,10 +499,16 @@ def preprocess_weights_tl1(
 
     weight = weight + 4
     weight = np.reshape(weight, (M, K // 2)).astype(np.uint8)
-    print(f"First 32 rows of weight before packing (32 elements each, hex):\n{np.array2string(weight[:32, :32], formatter={'int': lambda x: f'0x{x:02x}'}, threshold=np.inf)}")
+    print("First 32 rows of weight before packing (32 elements each, hex):")
+    for i in range(min(32, weight.shape[0])):
+        row_hex = ' '.join(f'0x{x:02x}' for x in weight[i, :32])
+        print(row_hex)
 
     weight = process_tl1(weight, BM, BK, bm, bk, M, K)
-    print(f"First 16 rows of weight after packing (16 elements each, hex):\n{np.array2string(weight[:16, :16], formatter={'int': lambda x: f'0x{x:02x}'}, threshold=np.inf)}")
+    print("First 16 rows of weight after packing (16 elements each, hex):")
+    for i in range(min(16, weight.shape[0])):
+        row_hex = ' '.join(f'0x{x:02x}' for x in weight[i, :16])
+        print(row_hex)
 
     s = input("wait")
     return weight
