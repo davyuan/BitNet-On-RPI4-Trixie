@@ -18,8 +18,9 @@ import configparser
 
 import numpy as np
 import torch
+from transformers import AutoTokenizer
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:   
     from torch import Tensor
 
 if 'NO_LOCAL_GGUF' not in os.environ:
@@ -197,9 +198,6 @@ class Model(ABC):
             self.gguf_writer.add_tensor(new_name, data)
 
     def write(self):
-        chat_template = "{% set loop_messages = messages %}{% for message in loop_messages %}{% set content = message['role'] | capitalize + ': '+ message['content'] | trim + '<|eot_id|>' %}{{ content }}{% endfor %}{% if add_generation_prompt %}{{ 'Assistant: ' }}{% endif %}"
-        self.gguf_writer.add_chat_template(chat_template)
-
         self.write_tensors()
         self.gguf_writer.write_header_to_file()
         self.gguf_writer.write_kv_data_to_file()
@@ -260,7 +258,6 @@ class Model(ABC):
         tokens: list[str] = []
         toktypes: list[int] = []
 
-        from transformers import AutoTokenizer
         # Load tokenizer from the BitNet model folder
         tokenizer = AutoTokenizer.from_pretrained(self.dir_model)
         vocab_size = self.hparams.get("vocab_size", len(tokenizer.vocab))
@@ -288,10 +285,11 @@ class Model(ABC):
             else:
                 tokens.append(reverse_vocab[i])
                 toktypes.append(gguf.TokenType.NORMAL)
+        
         return tokens, toktypes, tokpre
 
     def _set_vocab_gpt2(self) -> None:
-        tokens, toktypes, tokpre = self.get_vocab_base()
+        tokens, toktypes, tokpre, chat_template = self.get_vocab_base()
         self.gguf_writer.add_tokenizer_model("gpt2")
         self.gguf_writer.add_tokenizer_pre(tokpre)
         self.gguf_writer.add_token_list(tokens)
@@ -442,6 +440,8 @@ class Model(ABC):
         self.gguf_writer.add_token_list(tokens)
         self.gguf_writer.add_token_scores(scores)
         self.gguf_writer.add_token_types(toktypes)
+        tokenizer = AutoTokenizer.from_pretrained(self.dir_model)
+        self.gguf_writer.add_string("tokenizer.chat_template", tokenizer.chat_template)        
 
         special_vocab = gguf.SpecialVocab(self.dir_model, n_vocab=len(tokens))
         special_vocab.add_to_gguf(self.gguf_writer)
@@ -1099,7 +1099,7 @@ class BitnetModel(Model):
             if hidden_size >= 4000:
                 model_size = "7B"
             elif hidden_size >= 2000:
-                model_size = "3B" if hidden_size >= 2500 else "2B"
+                model_size = "3B" if hidden_size >= 2600 else "2B"
             elif hidden_size >= 1000:
                 model_size = "1B"
         
