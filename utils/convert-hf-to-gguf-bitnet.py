@@ -843,7 +843,7 @@ class LlamaModel(Model):
                 self.gguf_writer.add_tensor(new_name, data, raw_shape=raw_shape, raw_dtype=data_qtype)
                 if i2_scale is not None:
                     self.gguf_writer.add_tensor(new_name + "_scale", i2_scale, raw_dtype=gguf.GGMLQuantizationType.F32)
-                    logger.info(f"    Added scale tensor: {new_name + '_scale'}, F32, value: {i2_scale[0]}")
+                    logger.info(f"    Added scale tensor: {new_name + '_scale'}, F32, value: {i2_scale.item()}")
 
 
     def set_gguf_parameters(self):
@@ -1316,7 +1316,7 @@ class BitnetModel(Model):
                 if i2_scale is not None:
                     i2_scale = np.asarray(i2_scale, dtype=np.float32)
                     self.gguf_writer.add_tensor(new_name + "_scale", i2_scale, raw_dtype=gguf.GGMLQuantizationType.F32)
-                    logger.info(f"    Added scale tensor: {new_name + '_scale'}, F32, value: {i2_scale[0]}")
+                    logger.info(f"    Added scale tensor: {new_name + '_scale'}, F32, value: {i2_scale.item()}")
 
 
 
