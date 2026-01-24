@@ -3,10 +3,10 @@ from transformers import AutoTokenizer
 
 model_path = "models/bitnet-b1.58-2B-4T-bf16/ggml-model-tl1.gguf"
 model_dir = "models/bitnet-b1.58-2B-4T-bf16"
+text = "Is capitalism good or bad?"
 
 def load_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained(model_dir)
-    text = "Is capitalism good or bad?"
 
     # 1. Encode to IDs
     ids = tokenizer.encode(text, add_special_tokens=True)
@@ -55,5 +55,7 @@ def find_token_at_index(file_path, target_idx):
                 return f"Token[{i}]: {token_val}"
             curr_pos += str_len
 
-#print(find_token_at_index(model_path, 1567))
+
 ids = load_tokenizer()
+print(find_token_at_index(model_path, ids[2])) # Check token for the 3rd ID -- capitalism
+print(find_token_at_index(model_path, ids[3])) # Check token for the 4th ID -- good
