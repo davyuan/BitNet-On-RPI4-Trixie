@@ -24,7 +24,9 @@ if TYPE_CHECKING:
     from torch import Tensor
 
 if 'NO_LOCAL_GGUF' not in os.environ:
-    sys.path.insert(1, str(Path(__file__).parent / 'gguf-py'))
+    gguf_path = Path(__file__).resolve().parent / '3rdparty' / 'llama.cpp' / 'gguf-py'
+    if gguf_path.exists():
+        sys.path.insert(1, str(gguf_path))
 import gguf
 
 from convert import LlamaHfVocab, permute
@@ -294,10 +296,7 @@ class Model(ABC):
         self.gguf_writer.add_token_list(tokens)
         self.gguf_writer.add_token_types(toktypes)
 
-        # Don't call special_vocab.add_to_gguf() as we've already added all tokens
-        # including special tokens via add_token_list() above.
-        # Only add special token metadata (BOS, EOS, etc.)
-        special_vocab = gguf.SpecialVocab(self.dir_model, load_merges=False)
+        special_vocab = gguf.SpecialVocab(self.dir_model, load_merges=True)
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def _set_vocab_sentencepiece(self):
