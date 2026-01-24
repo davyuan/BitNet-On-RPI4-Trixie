@@ -6,7 +6,7 @@ model_dir = "models/bitnet-b1.58-2B-4T-bf16"
 text = "Is capitalism good or bad?"
 
 def load_tokenizer():
-    tokenizer = AutoTokenizer.from_pretrained(model_dir)
+    tokenizer = AutoTokenizer.from_pretrained(model_dir, fix_mistral_regex=True)
 
     # 1. Encode to IDs
     ids = tokenizer.encode(text, add_special_tokens=True)
@@ -55,7 +55,9 @@ def find_token_at_index(file_path, target_idx):
                 return f"Token[{i}]: {token_val}"
             curr_pos += str_len
 
-
+# First we encode the text with the Tokenizer to get the IDs
 ids = load_tokenizer()
+
+# Now we find the tokens corresponding to those IDs in the GGUF file
 print(find_token_at_index(model_path, ids[2])) # Check token for the 3rd ID -- capitalism
 print(find_token_at_index(model_path, ids[3])) # Check token for the 4th ID -- good

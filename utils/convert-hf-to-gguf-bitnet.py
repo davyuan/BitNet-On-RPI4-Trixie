@@ -1015,7 +1015,6 @@ class BitnetModel(Model):
             return "llama-bpe"
 
     def _set_vocab_llama_hf(self):
-        """Override to use fix_mistral_regex=True for BitNet"""
         vocab = LlamaHfVocab(self.dir_model)
         tokens = []
         scores = []
