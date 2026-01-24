@@ -1029,33 +1029,34 @@ class BitnetModel(Model):
                 with open(tokenizer_json_path, "r", encoding="utf-8") as f:
                     tokenizer_json = json.load(f)
                 
-                # BPE tokenizers have "model" field with "type": "BPE" or similar
-                if "model" in tokenizer_json:
-                    model_config = tokenizer_json["model"]
-                    if isinstance(model_config, dict) and model_config.get("type") in ("BPE", "WordPiece"):
-                        logger.info(f"Detected {model_config.get('type')} tokenizer from tokenizer.json")
-                        is_bpe = True
-                
-                # Additional heuristic: BPE models have merges, SentencePiece doesn't
-                if not is_bpe and "model" in tokenizer_json:
-                    model_config = tokenizer_json["model"]
-                    if isinstance(model_config, dict) and "merges" in model_config:
-                        logger.info("Detected BPE tokenizer (merges field found in tokenizer.json)")
-                        is_bpe = True
-                
-                # Check if this is a Llama-style HF tokenizer (has tokenizer_config.json)
-                tokenizer_config_path = self.dir_model / 'tokenizer_config.json'
-                if tokenizer_config_path.is_file() and is_bpe:
-                    try:
-                        with open(tokenizer_config_path, "r", encoding="utf-8") as f:
-                            tokenizer_config = json.load(f)
-                        # If it's Llama-based, use the HF vocab handler which is more robust
-                        if any(key in str(tokenizer_config).lower() for key in ["llama", "mistral", "meta-llama"]):
-                            logger.info("Detected Llama/Mistral HF tokenizer - using HF vocab handler")
-                            is_llama_hf = True
-                            is_bpe = False  # Don't use gpt2 path
-                    except (json.JSONDecodeError, IOError):
-                        pass
+        # Check if this is a Llama-style HF tokenizer FIRST (check tokenizer_config.json)
+        tokenizer_config_path = self.dir_model / 'tokenizer_config.json'
+        if tokenizer_config_path.is_file():
+            try:
+                with open(tokenizer_config_path, "r", encoding="utf-8") as f:
+                    tokenizer_config = json.load(f)
+                # If it's Llama-based, use the HF vocab handler which is more robust
+                if any(key in str(tokenizer_config).lower() for key in ["llama", "mistral", "meta-llama"]):
+                    logger.info("Detected Llama/Mistral HF tokenizer - using HF vocab handler")
+                    is_llama_hf = True
+            except (json.JSONDecodeError, IOError):
+                pass
+        
+        # Only check for BPE if NOT already detected as Llama HF
+        if not is_llama_hf:
+            # BPE tokenizers have "model" field with "type": "BPE" or similar
+            if "model" in tokenizer_json:
+                model_config = tokenizer_json["model"]
+                if isinstance(model_config, dict) and model_config.get("type") in ("BPE", "WordPiece"):
+                    logger.info(f"Detected {model_config.get('type')} tokenizer from tokenizer.json")
+                    is_bpe = True
+            
+            # Additional heuristic: BPE models have merges, SentencePiece doesn't
+            if not is_bpe and "model" in tokenizer_json:
+                model_config = tokenizer_json["model"]
+                if isinstance(model_config, dict) and "merges" in model_config:
+                    logger.info("Detected BPE tokenizer (merges field found in tokenizer.json)")
+                    is_bpe = True
                         
             except (json.JSONDecodeError, IOError) as e:
                 logger.warning(f"Could not parse tokenizer.json: {e}")
