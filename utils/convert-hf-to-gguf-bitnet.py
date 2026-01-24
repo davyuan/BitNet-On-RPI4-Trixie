@@ -969,7 +969,7 @@ class LlamaModel(Model):
 
 @Model.register("BitnetForCausalLM", "BitNetForCausalLM")
 class BitnetModel(Model):
-    model_arch = gguf.MODEL_ARCH.BITNET
+    model_arch = gguf.MODEL_ARCH.BITNET_B158
 
     def get_vocab_base(self) -> tuple[list[str], list[int], str]:
         """Override to fix Mistral/Llama tokenizer regex issues"""
