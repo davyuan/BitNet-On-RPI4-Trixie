@@ -837,13 +837,14 @@ class LlamaModel(Model):
 
                 # n_dims is implicit in the shape
                 logger.info(f"{f'%-{max_name_len}s' % f'{new_name},'} {old_dtype} --> {data_qtype.name}, shape = {shape_str}")
-
+                logger.info(f"i2_scale: {i2_scale}")
+                
                 # For TL1/TL2, pass the original logical shape so llama.cpp gets the right tensor dimensions
                 raw_shape = shape_before_quant if data_qtype in (gguf.GGMLQuantizationType.TL1, gguf.GGMLQuantizationType.TL2) else data.shape
                 self.gguf_writer.add_tensor(new_name, data, raw_shape=raw_shape, raw_dtype=data_qtype)
                 if i2_scale is not None:
                     self.gguf_writer.add_tensor(new_name + "_scale", i2_scale, raw_dtype=gguf.GGMLQuantizationType.F32)
-                    logger.info(f"    Added scale tensor: {new_name + '_scale'}, F32, value: {i2_scale.shape[0]}")
+                    logger.info(f"    Added scale tensor: {new_name + '_scale'}, F32, value: {i2_scale[0]}")
 
 
     def set_gguf_parameters(self):
