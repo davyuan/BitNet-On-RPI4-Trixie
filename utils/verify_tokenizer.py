@@ -1,20 +1,41 @@
-from gguf import GGUFReader
+import struct
 
 model_path = "models/bitnet-b1.58-2B-4T-bf16/ggml-model-tl1.gguf"
-reader = GGUFReader(model_path)
 
-# Find the specific token index
-target_index = 1567
-token_key = "tokenizer.ggml.tokens"
+def find_token_at_index(file_path, target_idx):
+    with open(file_path, 'rb') as f:
+        # Skip GGUF Header (Magic: 4, Version: 4, TensorCount: 8, KVCount: 8) = 24 bytes
+        f.seek(24)
+        
+        # Search for the 'tokenizer.ggml.tokens' key in the first 50MB
+        content = f.read(50 * 1024 * 1024)
+        key = b"tokenizer.ggml.tokens"
+        key_pos = content.find(key)
+        
+        if key_pos == -1:
+            return "Key not found in the first 50MB."
 
-for field in reader.fields.values():
-    if field.name == token_key:
-        if target_index < len(field.parts):
-            # field.parts contains the raw bytes of the tokens
-            token_bytes = field.parts[target_index]
-            print(f"Token at [{target_index}]: {token_bytes.tobytes().decode('utf-8', errors='replace')}")
-        else:
-            print(f"Index {target_index} is out of bounds for vocab size {len(field.parts)}")
-        break
-else:
-    print(f"Key '{token_key}' not found in metadata.")
+        # The GGUF structure after the key is:
+        # [4 bytes: GGUF_TYPE_ARRAY (9)] 
+        # [4 bytes: GGUF_TYPE_STRING (8) - the type inside the array]
+        # [8 bytes: Number of elements in array]
+        # [Each element: 8 bytes length + N bytes string data]
+        
+        # Move to the start of the array data
+        # Position is: key_pos + len(key) + type_info(8 bytes)
+        pos = key_pos + len(key) + 8 
+        n_elements = struct.unpack("<Q", content[pos:pos+8])[0]
+        
+        if target_idx >= n_elements:
+            return f"Index {target_idx} out of range (Total: {n_elements})"
+        
+        curr_pos = pos + 8
+        for i in range(n_elements):
+            str_len = struct.unpack("<Q", content[curr_pos:curr_pos+8])[0]
+            curr_pos += 8
+            if i == target_idx:
+                token_val = content[curr_pos:curr_pos+str_len].decode('utf-8', errors='replace')
+                return f"Token[{i}]: {token_val}"
+            curr_pos += str_len
+
+print(find_token_at_index(model_path, 1567))
