@@ -289,7 +289,7 @@ class Model(ABC):
         return tokens, toktypes, tokpre
 
     def _set_vocab_gpt2(self) -> None:
-        tokens, toktypes, tokpre, chat_template = self.get_vocab_base()
+        tokens, toktypes, tokpre = self.get_vocab_base()
         self.gguf_writer.add_tokenizer_model("gpt2")
         self.gguf_writer.add_tokenizer_pre(tokpre)
         self.gguf_writer.add_token_list(tokens)
