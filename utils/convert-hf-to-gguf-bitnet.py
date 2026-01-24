@@ -294,8 +294,6 @@ class Model(ABC):
         self.gguf_writer.add_tokenizer_pre(tokpre)
         self.gguf_writer.add_token_list(tokens)
         self.gguf_writer.add_token_types(toktypes)
-        tokenizer = AutoTokenizer.from_pretrained(self.dir_model)
-        self.gguf_writer.add_string("tokenizer.chat_template", tokenizer.chat_template)        
 
         special_vocab = gguf.SpecialVocab(self.dir_model, load_merges=True)
         special_vocab.add_to_gguf(self.gguf_writer)
@@ -1029,42 +1027,57 @@ class BitnetModel(Model):
         self.gguf_writer.add_token_list(tokens)
         self.gguf_writer.add_token_scores(scores)
         self.gguf_writer.add_token_types(toktypes)
-        tokenizer = AutoTokenizer.from_pretrained(self.dir_model, fix_mistral_regex=True)
-        if hasattr(tokenizer, 'chat_template') and tokenizer.chat_template:
-            self.gguf_writer.add_string("tokenizer.chat_template", tokenizer.chat_template)        
 
         special_vocab = gguf.SpecialVocab(self.dir_model, n_vocab=len(tokens))
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def set_vocab(self):
-        # Auto-detect tokenizer type from tokenizer.json structure
+        # Auto-detect tokenizer type from config and tokenizer.json structure
         tokenizer_json_path = self.dir_model / 'tokenizer.json'
         tokenizer_model_path = self.dir_model / 'tokenizer.model'
         vocab_json_path = self.dir_model / 'vocab.json'
         merges_txt_path = self.dir_model / 'merges.txt'
         tokenizer_config_path = self.dir_model / 'tokenizer_config.json'
+        config_path = self.dir_model / 'config.json'
         
         is_bpe = False
         is_llama_hf = False
         
-        # FIRST: Check if this is a Llama-style HF tokenizer (check tokenizer_config.json)
+        # FIRST: Check if this is a Llama-style HF tokenizer (check model config and tokenizer_config)
         # This takes priority over BPE detection since Llama HF can also have merges
         if tokenizer_config_path.is_file():
             try:
                 with open(tokenizer_config_path, "r", encoding="utf-8") as f:
                     tokenizer_config = json.load(f)
-                # If it's Llama-based, use the HF vocab handler which is more robust
-                if any(key in str(tokenizer_config).lower() for key in ["llama", "mistral", "meta-llama"]):
-                    logger.info("Detected Llama/Mistral HF tokenizer - using HF vocab handler")
+                # If it's Llama-based or BitNet-like, use the HF vocab handler which is more robust
+                if any(key in str(tokenizer_config).lower() for key in ["llama", "mistral", "meta-llama", "bitnet"]):
+                    logger.info("Detected Llama/Mistral/BitNet HF tokenizer - using HF vocab handler")
                     is_llama_hf = True
             except (json.JSONDecodeError, IOError):
                 pass
         
-        # Only check for BPE if NOT already detected as Llama HF
+        # Also check model config for BitNet or other modern architectures that use HF tokenizers
+        if not is_llama_hf and config_path.is_file():
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+                model_type = config.get("model_type", "").lower()
+                if model_type in ("bitnet", "llama", "mistral", "qwen", "gpt2"):
+                    # Check if it uses modern BPE tokenizer (has tokenizer.json with BPE model)
+                    if tokenizer_json_path.is_file():
+                        with open(tokenizer_json_path, "r", encoding="utf-8") as f:
+                            tokenizer_json = json.load(f)
+                        if "model" in tokenizer_json and tokenizer_json["model"].get("type") == "BPE":
+                            logger.info(f"Detected {model_type} model with modern BPE tokenizer - using HF vocab handler")
+                            is_llama_hf = True
+            except (json.JSONDecodeError, IOError):
+                pass
+        
+        # Only check for legacy BPE if NOT already detected as Llama HF
         if not is_llama_hf:
-            # First check for explicit BPE files
+            # First check for explicit BPE files (legacy setup)
             if vocab_json_path.is_file() and merges_txt_path.is_file():
-                logger.info("Detected BPE tokenizer (vocab.json + merges.txt)")
+                logger.info("Detected legacy BPE tokenizer (vocab.json + merges.txt)")
                 is_bpe = True
             
             # Check tokenizer.json structure to detect BPE or SentencePiece
@@ -1092,10 +1105,10 @@ class BitnetModel(Model):
         
         # Use detected or default tokenizer type
         if is_llama_hf:
-            logger.info("Using Llama HF tokenizer (GGUF type: llama)")
+            logger.info("Using Llama/BitNet HF tokenizer (GGUF type: llama)")
             self._set_vocab_llama_hf()
         elif is_bpe:
-            logger.info("Using BPE tokenizer (GGUF type: gpt2)")
+            logger.info("Using legacy BPE tokenizer (GGUF type: gpt2)")
             self._set_vocab_gpt2()
         elif tokenizer_model_path.is_file() or tokenizer_json_path.is_file():
             logger.info("Using SentencePiece tokenizer (GGUF type: llama)")
