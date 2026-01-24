@@ -1100,6 +1100,26 @@ class BitnetModel(Model):
         else:
             logger.warning("No tokenizer files detected, defaulting to SentencePiece")
             self._set_vocab_sentencepiece()
+
+    def _set_vocab_gpt2(self) -> None:
+        """Override GPT2 vocab to correctly set BitNet special tokens"""
+        tokens, toktypes, tokpre = self.get_vocab_base()
+        self.gguf_writer.add_tokenizer_model("gpt2")
+        self.gguf_writer.add_tokenizer_pre(tokpre)
+        self.gguf_writer.add_token_list(tokens)
+        self.gguf_writer.add_token_types(toktypes)
+
+        # For BitNet, explicitly set the correct special tokens
+        # Don't let SpecialVocab auto-detect as it picks the wrong tokens
+        special_vocab = gguf.SpecialVocab(self.dir_model, load_merges=True)
+        
+        # Manually set BitNet special tokens
+        special_vocab._set_special_token("bos", 128000)    # <|begin_of_text|>
+        special_vocab._set_special_token("eos", 128001)    # <|end_of_text|>
+        special_vocab._set_special_token("eot", 128009)    # <|eot_id|>
+        special_vocab._set_special_token("pad", 128001)    # <|end_of_text|> (padding)
+        
+        special_vocab.add_to_gguf(self.gguf_writer)
         
         
         
