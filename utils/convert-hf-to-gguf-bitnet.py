@@ -274,10 +274,9 @@ class Model(ABC):
                 tokens.append(f"[PAD{i}]")
                 toktypes.append(gguf.TokenType.USER_DEFINED)
             elif reverse_vocab[i] in added_vocab:
-                # We need to manually encode and decode the added tokens in case special characters
-                # used for `\n` / `\t` have been manually added in the added tokens
-                encoded_decoded_token = tokenizer.decode(tokenizer.encode(reverse_vocab[i]))
-                tokens.append(encoded_decoded_token)
+                # For special tokens, use the raw token text directly
+                # Don't encode/decode as it can cause merging of token sequences
+                tokens.append(reverse_vocab[i])
                 if tokenizer.added_tokens_decoder[i].special:
                     toktypes.append(gguf.TokenType.CONTROL)
                 else:
@@ -295,7 +294,10 @@ class Model(ABC):
         self.gguf_writer.add_token_list(tokens)
         self.gguf_writer.add_token_types(toktypes)
 
-        special_vocab = gguf.SpecialVocab(self.dir_model, load_merges=True)
+        # Don't call special_vocab.add_to_gguf() as we've already added all tokens
+        # including special tokens via add_token_list() above.
+        # Only add special token metadata (BOS, EOS, etc.)
+        special_vocab = gguf.SpecialVocab(self.dir_model, load_merges=False)
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def _set_vocab_sentencepiece(self):
