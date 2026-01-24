@@ -1010,6 +1010,32 @@ class BitnetModel(Model):
             logger.warning("Defaulting to llama-bpe for BitNet model")
             return "llama-bpe"
 
+    def _set_vocab_llama_hf(self):
+        """Override to use fix_mistral_regex=True for BitNet"""
+        vocab = LlamaHfVocab(self.dir_model, fix_mistral_regex=True)
+        tokens = []
+        scores = []
+        toktypes = []
+
+        for text, score, toktype in vocab.all_tokens():
+            tokens.append(text)
+            scores.append(score)
+            toktypes.append(toktype)
+
+        assert len(tokens) == vocab.vocab_size
+
+        self.gguf_writer.add_tokenizer_model("llama")
+        self.gguf_writer.add_tokenizer_pre("default")
+        self.gguf_writer.add_token_list(tokens)
+        self.gguf_writer.add_token_scores(scores)
+        self.gguf_writer.add_token_types(toktypes)
+        tokenizer = AutoTokenizer.from_pretrained(self.dir_model, fix_mistral_regex=True)
+        if hasattr(tokenizer, 'chat_template') and tokenizer.chat_template:
+            self.gguf_writer.add_string("tokenizer.chat_template", tokenizer.chat_template)        
+
+        special_vocab = gguf.SpecialVocab(self.dir_model, n_vocab=len(tokens))
+        special_vocab.add_to_gguf(self.gguf_writer)
+
     def set_vocab(self):
         # Auto-detect tokenizer type from tokenizer.json structure
         tokenizer_json_path = self.dir_model / 'tokenizer.json'
