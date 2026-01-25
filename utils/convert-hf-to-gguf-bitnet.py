@@ -1130,43 +1130,36 @@ class BitnetModel(Model):
         """Override GPT2 vocab to correctly set BitNet special tokens"""
         tokens, toktypes, tokpre = self.get_vocab_base()
         self.gguf_writer.add_tokenizer_model("gpt2")
-        self.gguf_writer.add_tokenizer_pre(tokpre)
         self.gguf_writer.add_token_list(tokens)
         self.gguf_writer.add_token_types(toktypes)
 
-        # For BitNet, manually add merges and special tokens without auto-detection
+        # For BitNet, load and add merges
         special_vocab = gguf.SpecialVocab(self.dir_model, load_merges=True)
         
-        # Manually set BitNet special tokens
-        special_vocab._set_special_token("bos", 128000)    # <|begin_of_text|>
-        special_vocab._set_special_token("eos", 128001)    # <|end_of_text|>
-        special_vocab._set_special_token("eot", 128009)    # <|eot_id|>
-        special_vocab._set_special_token("pad", 128001)    # <|end_of_text|> (padding)
-        
-        # Manually add only the merges and chat_template, don't let add_to_gguf auto-detect tokens
+        # Add merges if present
         if special_vocab.merges:
-            # Merges must be added as an array of strings, not as a single string
             self.gguf_writer.add_array("tokenizer.ggml.merges", special_vocab.merges)
-            custom_template = (
-                "{{ bos_token }}"
-                "{% for message in messages %}"
-                "{% set role = message['role'] | capitalize %}"
-                "{% set content = message['content'] | trim %}"
-                "{{ role + ': ' + content + '<|eot_id|>\n' }}"
-                "{% endfor %}"
-                "{% if add_generation_prompt %}"
-                "{{ 'Assistant: ' }}"
-                "{% endif %}"
-            )        
-        self.gguf_writer.add_string("tokenizer.chat_template", custom_template)
-        #if hasattr(special_vocab, 'chat_template') and special_vocab.chat_template:
-        #    self.gguf_writer.add_string("tokenizer.chat_template", special_vocab.chat_template)
+            logger.info(f"gguf: added {len(special_vocab.merges)} merges")
         
-        # Add the special token IDs that we explicitly set
+        # Add chat template
+        custom_template = (
+            "{{ bos_token }}"
+            "{% for message in messages %}"
+            "{% set role = message['role'] | capitalize %}"
+            "{% set content = message['content'] | trim %}"
+            "{{ role + ': ' + content + '<|eot_id|>\n' }}"
+            "{% endfor %}"
+            "{% if add_generation_prompt %}"
+            "{{ 'Assistant: ' }}"
+            "{% endif %}"
+        )
+        self.gguf_writer.add_string("tokenizer.chat_template", custom_template)
+        
+        # Add the special token IDs
         self.gguf_writer.add_uint32("tokenizer.ggml.bos_token_id", 128000)
         self.gguf_writer.add_uint32("tokenizer.ggml.eos_token_id", 128001)
         self.gguf_writer.add_uint32("tokenizer.ggml.eot_token_id", 128009)
-        self.gguf_writer.add_uint32("tokenizer.ggml.pad_token_id", 128001)
+        self.gguf_writer.add_uint32("tokenizer.ggml.padding_token_id", 128001)
         
         
         
@@ -1174,6 +1167,13 @@ class BitnetModel(Model):
         super().set_gguf_parameters()
 
         self.gguf_writer.add_vocab_size(self.hparams["vocab_size"])
+
+        # Add rope dimension count
+        if "head_dim" in self.hparams:
+            rope_dim = self.hparams["head_dim"]
+        else:
+            rope_dim = self.hparams["hidden_size"] // self.hparams["num_attention_heads"]
+        self.gguf_writer.add_rope_dimension_count(rope_dim)
 
         # Extract model size from directory name or calculate from parameters
         # Look for size indicators in directory name (e.g., "2B", "3B", "large")
@@ -1199,9 +1199,6 @@ class BitnetModel(Model):
         
         if model_size:
             logger.info(f"gguf: model size = {model_size}")
-
-        self.gguf_writer.add_rope_scaling_type(gguf.RopeScalingType.LINEAR)
-        self.gguf_writer.add_rope_scaling_factor(1.0)
 
     def weight_quant(self, weight):
         """Compute quantization scale but don't quantize yet - we need the scale for saving"""
