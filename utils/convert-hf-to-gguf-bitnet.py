@@ -159,6 +159,9 @@ class Model(ABC):
         self.gguf_writer.add_file_type(self.ftype)
         logger.info(f"gguf: file type = {self.ftype}")
 
+        self.gguf_writer.add_quantization_version(gguf.GGML_QUANT_VERSION)
+        logger.info(f"gguf: quantization version = {gguf.GGML_QUANT_VERSION}")
+
     def write_tensors(self):
         block_count = self.hparams.get("n_layers", self.hparams.get("num_hidden_layers", self.hparams.get("n_layer")))
         tensor_map = gguf.get_tensor_name_map(self.model_arch, block_count)
@@ -1160,6 +1163,7 @@ class BitnetModel(Model):
         self.gguf_writer.add_uint32("tokenizer.ggml.eos_token_id", 128001)
         self.gguf_writer.add_uint32("tokenizer.ggml.eot_token_id", 128009)
         self.gguf_writer.add_uint32("tokenizer.ggml.padding_token_id", 128001)
+        self.gguf_writer.add_bool("tokenizer.ggml.add_bos_token", True)
         
         
         

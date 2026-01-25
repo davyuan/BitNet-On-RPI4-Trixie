@@ -76,7 +76,7 @@ cd .. && hf download microsoft/bitnet-b1.58-2B-4T-bf16 --local-dir models/bitnet
 ## Convert the BF16 model into tl1
 This step is only necessary if you downloaded the BF16 model and want to quantize it into tl1.
 ```bash
-python utils/convert-hf-to-gguf-bitnet.py models/bitnet-b1.58-2B-4T-bf16 --outtype tl1 --quant-embd
+python utils/convert-hf-to-gguf-bitnet.py models/bitnet-b1.58-2B-4T-bf16 --outtype tl1
 ```
 
 ## Run the BitNet-b1.58-2B-4T Model
