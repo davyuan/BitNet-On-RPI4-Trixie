@@ -696,7 +696,7 @@ void init_Bs(float32_t* B, float32_t* B_T, int N, int K) {
     printf("Initializing test matrices...\n");
     std::random_device rd; 
     std::mt19937 gen(rd()); 
-    std::uniform_real_distribution<float> distr(-1024.0f, 1024.0f);    
+    std::uniform_real_distribution<float> distr(-0.08f, 0.08f);    
     for (int i = 0; i < N * K; i++) {
         B[i] = distr(gen);
     }

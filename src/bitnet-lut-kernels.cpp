@@ -13,6 +13,7 @@
 
 #define BM 128
 #define BK 64
+#define epsilon 1e-7f
 
 bool initialized = false;
 bitnet_tensor_extra * bitnet_tensor_extras = nullptr;
@@ -47,7 +48,7 @@ static void per_tensor_quant(int k, void* lut_scales_, void* b_) {
       temp_max = vmaxq_f32(abssum, temp_max);
     }
     float32_t max_val = vmaxvq_f32(temp_max);
-    *lut_scales = (max_val > 0) ? (127.0f / max_val) : 1.0f;
+    *lut_scales = (max_val > epsilon) ? (127.0f / max_val) : 1.0f;
 #elif defined __AVX2__
     __m256 max_vec = _mm256_set1_ps(0.f);
     const __m256 vec_sign = _mm256_set1_ps(-0.0f);
@@ -60,7 +61,7 @@ static void per_tensor_quant(int k, void* lut_scales_, void* b_) {
     max1 = _mm_max_ps(max1, _mm_movehl_ps(max1, max1));
     max1 = _mm_max_ss(max1, _mm_movehdup_ps(max1));
     float max_val = _mm_cvtss_f32(max1);
-    *lut_scales = (max_val > 0) ? (127.0f / max_val) : 1.0f;
+    *lut_scales = (max_val > epsilon) ? (127.0f / max_val) : 1.0f;
 #else
     // Fallback: scalar implementation
     float max_val = 0.0f;
@@ -68,7 +69,7 @@ static void per_tensor_quant(int k, void* lut_scales_, void* b_) {
         float abs_val = fabs(b[i]);
         if (abs_val > max_val) max_val = abs_val;
     }
-    *lut_scales = (max_val > 0) ? (127.0f / max_val) : 1.0f;
+    *lut_scales = (max_val > epsilon) ? (127.0f / max_val) : 1.0f;
 #endif
 }
 
