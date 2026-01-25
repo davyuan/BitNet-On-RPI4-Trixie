@@ -55,7 +55,7 @@ Now to build bitnet.cpp. It's is done with these commands. Copy and run them one
 ```bash
 export CC=clang-18 CXX=clang++-18
 rm -rf build && mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -DBITNET_ARM_TL1=ON -DGGML_BITNET_ARM_TL1=ON
+cmake .. -DCMAKE_BUILD_TYPE=Release -DBITNET_ARM_TL1=ON -DGGML_BITNET_ARM_TL1=ON -DGGML_USE_LLAMAFILE=ON
 make -j$(nproc)
 ```
 
