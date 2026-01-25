@@ -19,6 +19,7 @@
 *.so
 *.tmp
 push.sh
+sync_symbol.sh
 
 # IDE / OS
 
