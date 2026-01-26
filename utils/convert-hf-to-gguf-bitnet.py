@@ -798,8 +798,6 @@ class LlamaModel(Model):
                     gguf.MODEL_TENSOR.POS_EMBD,
                     gguf.MODEL_TENSOR.TOKEN_TYPES,
                 ]
-                if not args.quant_embd:
-                    tensors_f32.append(gguf.MODEL_TENSOR.TOKEN_EMBD)
                 extra_f32 = extra_f32 or any(self.match_model_tensor_name(new_name, key, bid) for key in tensors_f32)
 
                 # if f16 desired, convert any float32 2-dim weight tensors to float16
@@ -1260,8 +1258,6 @@ class BitnetModel(Model):
                     gguf.MODEL_TENSOR.POS_EMBD,
                     gguf.MODEL_TENSOR.TOKEN_TYPES,
                 ]
-                if not args.quant_embd:
-                    tensors_f32.append(gguf.MODEL_TENSOR.TOKEN_EMBD)
                 extra_f32 = extra_f32 or any(self.match_model_tensor_name(new_name, key, bid) for key in tensors_f32)
 
                 # if f16 desired, convert any float32 2-dim weight tensors to float16
@@ -1362,7 +1358,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--use-temp-file", action="store_true", help="use the tempfile library while processing (helpful when running out of memory, process killed)")
     parser.add_argument("--model-name", type=str, default=None, help="name of the model")
     parser.add_argument("--verbose", action="store_true", help="increase output verbosity")
-    parser.add_argument("--quant-embd", action="store_true", help="quantize the embedding layer")
 
     return parser.parse_args()
 
