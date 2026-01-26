@@ -1276,15 +1276,14 @@ class BitnetModel(Model):
                     data_qtype = gguf.GGMLQuantizationType.F32
 
 
-                shape = data.shape
+                # For TL1/TL2, use the original logical shape; otherwise use the actual data shape
+                shape = shape_before_quant if data_qtype in (gguf.GGMLQuantizationType.TL1, gguf.GGMLQuantizationType.TL2) else data.shape
+                raw_shape = shape
                 # reverse shape to make it similar to the internal ggml dimension order
                 shape_str = f"{{{', '.join(str(n) for n in reversed(shape))}}}"
 
                 # n_dims is implicit in the shape
                 logger.info(f"{f'%-{max_name_len}s' % f'{new_name},'} {old_dtype} --> {data_qtype.name}, shape = {shape_str}")
-
-                # For TL1/TL2, pass the original logical shape so llama.cpp gets the right tensor dimensions
-                raw_shape = shape_before_quant if data_qtype in (gguf.GGMLQuantizationType.TL1, gguf.GGMLQuantizationType.TL2) else data.shape
                 self.gguf_writer.add_tensor(new_name, data, raw_shape=raw_shape, raw_dtype=data_qtype)
                 if i2_scale is not None:
                     i2_scale = np.asarray(i2_scale, dtype=np.float32)
