@@ -472,7 +472,7 @@ def preprocess_weights_tl1(
     weight = np.reshape((hi_weight + lo_weight), weight_num // 2)
 
     weight = weight + 4
-    weight = np.reshape(weight, (M, K // 2))
+    weight = np.reshape(weight, (M, K // 2)).astype(np.uint8)
     '''print("First 32 rows of weight before packing (32 elements each, hex):")
     for i in range(min(32, weight.shape[0])):
         row_hex = ' '.join(f'0x{x:02x}' for x in weight[i, :32])
@@ -1212,7 +1212,7 @@ class BitnetModel(Model):
                 extra_f32 = any(cond for cond in (
                     extra_f32,
                     n_dims == 1,
-                    new_name.endswith("_norm.weight"),
+                    new_name.endswith("norm.weight"),
                 ))
 
                 # Some tensor types are always in float32
