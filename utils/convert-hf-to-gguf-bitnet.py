@@ -450,48 +450,21 @@ class Model(ABC):
 
 # TL1
 
-def process_tl1(weight, BM, BK, bm, bk, M, K):
-    weight = weight.reshape((M, K // 2)).astype(np.uint8)
+def process_tl1(weight, M, K):
     weight = weight.transpose(1, 0)  # K/2, M
     weight = weight.reshape((K // 2, M // 2, 2))
     weight_0 = weight[:, :, 0] << 4
     weight_1 = weight[:, :, 1]
     weight = weight_0 + weight_1
-    return weight
+    return weight  #Shape (K/2, M/2)
 
 def preprocess_weights_tl1(
-    w: np.ndarray,
-    bits = 2,
-    g    = 4,
+    w: np.ndarray
 ) -> Tuple[np.ndarray, np.ndarray]:
-    from configparser import ConfigParser
-    config = ConfigParser()
 
     M, K = w.shape
     weight, scale = bitnet_158_quantize(w)
-    weight_num = np.prod(weight.shape)
-
-    config.read('include/kernel_config.ini')
-    BM = -1
-    BK = -1
-    bm = -1
-    bk = -1
-
-    for kernel in config.sections():
-        if int(config.get(kernel, 'm')) == M and int(config.get(kernel, 'k')) == K:
-            BM = int(config.get(kernel, 'bm'))
-            BK = int(config.get(kernel, 'bk'))
-            bm = int(config.get(kernel, 'bmm'))
-            bk = 256 // bm
-            break   
-
-    # If no matching kernel config found, use sensible defaults (matching TL1 dims used in BitNet)
-    if BM == -1:
-        BM = 128
-        BK = 64
-        bm = 32
-        bk = 256 // bm
-        logger.warning(f"No kernel config for M={M}, K={K}. Using defaults: BM={BM}, BK={BK}, bm={bm}, bk={bk}")
+    weight_num = M * K
     weight = np.reshape(weight, (weight_num // 2, 2))
     hi_weight = np.multiply(np.split(weight, 2, axis=1)[0], 3)
     lo_weight = np.split(weight, 2, axis=1)[1]
@@ -499,40 +472,29 @@ def preprocess_weights_tl1(
     weight = np.reshape((hi_weight + lo_weight), weight_num // 2)
 
     weight = weight + 4
-    weight = np.reshape(weight, (M, K // 2)).astype(np.uint8)
+    weight = np.reshape(weight, (M, K // 2))
     '''print("First 32 rows of weight before packing (32 elements each, hex):")
     for i in range(min(32, weight.shape[0])):
         row_hex = ' '.join(f'0x{x:02x}' for x in weight[i, :32])
         print(row_hex)'''
 
-    weight = process_tl1(weight, BM, BK, bm, bk, M, K)
+    weight = process_tl1(weight, M, K)
     '''print("First 16 rows of weight after packing (16 elements each, hex):")
     for i in range(min(16, weight.shape[0])):
         row_hex = ' '.join(f'0x{x:02x}' for x in weight[i, :16])
         print(row_hex)
     sj = input("Press Enter to continue...")'''
 
-    return weight, scale
+    return weight, scale  #Shape (K/2, M/2), ()
 
 def bitnet_158_quantize(weight_array):
     """
     Quantizes a weight matrix to ternary values {-1, 0, 1} 
     using the absmean scaling and RoundClip method.
     """
-    # 1. Calculate the weight scale (gamma)
-    # This is the 'absmean' of the original weights
     gamma = np.mean(np.abs(weight_array))
-    
-    # Small epsilon to prevent division by zero
-    epsilon = 1e-6
-    
-    # 2. Normalize weights by gamma
-    # This centers the weights around the range [-1, 1]
+    epsilon = 1e-7
     normalized_w = weight_array / (gamma + epsilon)
-    
-    # 3. RoundClip function:
-    # round(x) pushes to nearest integer (-1, 0, or 1)
-    # clip ensures no outliers escape the ternary set
     quantized_w = np.clip(np.round(normalized_w), -1, 1).astype(np.int8)
     
     return quantized_w, gamma
