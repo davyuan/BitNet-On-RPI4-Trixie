@@ -1276,16 +1276,12 @@ class BitnetModel(Model):
 
                 i2_scale = None
                 if self.ftype != gguf.GGMLQuantizationType.F32 and extra_f16 and not extra_f32:
+                    # Convert to float32 first for quantization processing
+                    data_f32 = data.astype(np.float32)
+                    
                     if self.ftype == gguf.GGMLQuantizationType.TL1 and suit_i2:
                         # For ternary quantization: apply weight_quant before TL1 packing
-                        if name.endswith(("q_proj.weight", "k_proj.weight", "v_proj.weight", 
-                                          "down_proj.weight", "up_proj.weight", "gate_proj.weight",
-                                          "o_proj.weight")):
-                            # Apply ternary quantization (BitNet specific)
-                            data_f32 = data.astype(np.float32)
-                            s = 1.0 / (np.abs(data_f32).mean() + 1e-5)
-                            data = np.round(data_f32 * s).clip(-1, 1) / s
-                        data, i2_scale = transform_to_tl1(data)
+                        data, i2_scale = transform_to_tl1(data_f32)
                         assert data.dtype == np.uint8
                         assert i2_scale.dtype in (np.float32, np.float64, float)
                         data_qtype = gguf.GGMLQuantizationType.TL1
@@ -1295,16 +1291,14 @@ class BitnetModel(Model):
                                           "down_proj.weight", "up_proj.weight", "gate_proj.weight",
                                           "o_proj.weight")):
                             # Apply ternary quantization (BitNet specific)
-                            data_f32 = data.astype(np.float32)
                             s = 1.0 / (np.abs(data_f32).mean() + 1e-5)
                             data = np.round(data_f32 * s).clip(-1, 1) / s
                         data, i2_scale = transform_to_tl2(data)
                         assert data.dtype == np.uint8
                         assert i2_scale.dtype in (np.float32, np.float64, float)
                         data_qtype = gguf.GGMLQuantizationType.TL2
-                    else:  # default to float16 for quantized tensors
-                        if data_dtype != np.float16:
-                            data = data.astype(np.float16)
+                    elif name.endswith('embed_tokens.weight'):  # quantize embedding layer to f16
+                        data = data.astype(np.float16)
                         data_qtype = gguf.GGMLQuantizationType.F16
 
                 if data_qtype is None:  # by default, convert to float32
