@@ -1295,16 +1295,12 @@ class BitnetModel(Model):
                         data_qtype = gguf.GGMLQuantizationType.TL2
                     elif name.endswith('embed_tokens.weight'):  # quantize embedding layer to f16
                         abs_max = np.max(np.abs(data_f32))
-                        print(f"Absolute Max: {abs_max}")
-
-                        # 2. Check against FP16 Limit
                         if abs_max > 65504:
                             print(f"!!! CRITICAL: Max value {abs_max} will OVERFLOW FP16.")
                             # Count how many elements are problematic
                             overflow_count = np.sum(np.abs(data_f32) > 65504)
                             print(f"Number of overflowing elements: {overflow_count}")
 
-                        # 3. Check for existing Poison
                         if not np.isfinite(data_f32).all():
                             print("!!! WARNING: Data contains NaN or Inf before conversion.")
                             print(f"NaNs: {np.isnan(data_f32).sum()} | Infs: {np.isinf(data_f32).sum()}")
