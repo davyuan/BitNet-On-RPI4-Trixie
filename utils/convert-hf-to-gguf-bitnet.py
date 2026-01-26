@@ -1330,8 +1330,11 @@ class BitnetModel(Model):
                 self.gguf_writer.add_tensor(new_name, data, raw_shape=raw_shape, raw_dtype=data_qtype)
                 if i2_scale is not None:
                     i2_scale = np.asarray(i2_scale, dtype=np.float32)
+                    # Ensure scale is 1D array with at least one element for GGUF compatibility
+                    if i2_scale.ndim == 0:
+                        i2_scale = np.array([i2_scale.item()], dtype=np.float32)
                     self.gguf_writer.add_tensor(new_name + "_scale", i2_scale, raw_dtype=gguf.GGMLQuantizationType.F32)
-                    logger.info(f"    Added scale tensor: {new_name + '_scale'}, F32, value: {i2_scale.item()}")
+                    logger.info(f"    Added scale tensor: {new_name + '_scale'}, F32, shape={i2_scale.shape}, value: {i2_scale.item()}")
 
 
 
