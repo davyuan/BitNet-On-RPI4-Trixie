@@ -65,35 +65,33 @@ void matmul_naive(float32_t* A, float32_t* B, float32_t* C, int M, int N, int K)
 }
 
 // A is (M x K/2) uint8_t, B is (K x N) float32_t
-void matmul_naive_weight_scale(uint8_t* A, float32_t* B, float32_t* C, float_t* ws, int M, int N, int K) {
-    for (int ii = 0; ii < M; ii+= WM) {
-        for (int jj = 0;  jj < N; jj+=BK) {
+void matmul_tiled_weight_scale(uint8_t* A, float32_t* B, float32_t* C, float_t* ws, int M, int N, int K) {
+    for(int j = 0; j < N; j++) {
+        for (int ii = 0; ii < M; ii+= WM) {
             for(int kk = 0; kk < K/2; kk+=BK) {
                 for(int i = ii; i < ii + WM; i++) {
-                    for(int j = jj; j < jj + BK; j++) {
-                        float32_t sum = 0;
-                        for(int k = kk; k < kk + BK; k++) {
-                            uint8_t a_val = A[i*(K/2) + k];
-                            float32_t b_val0 = B[(2*k)*N + j];
-                            float32_t b_val1 = B[(2*k + 1)*N + j];
-                            float32_t val = 0;
-                            switch(a_val){
-                                case 0: val = -b_val0 - b_val1; break;
-                                case 1: val = -b_val0; break;
-                                case 2: val = -b_val0 + b_val1; break;
-                                case 3: val = -b_val1; break;
-                                case 4: val = 0; break;
-                                case 5: val = b_val1; break;
-                                case 6: val = b_val0 - b_val1; break;
-                                case 7: val = b_val0; break;
-                                case 8: val = b_val0 + b_val1; break;
-                                default: assert(false); // Should not happen
-                            }
-                            sum += val;
+                    float32_t sum = 0;
+                    for(int k = kk; k < kk + BK; k++) {
+                        uint8_t a_val = A[i*(K/2) + k];
+                        float32_t b_val0 = B[(2*k)*N + j];
+                        float32_t b_val1 = B[(2*k + 1)*N + j];
+                        float32_t val = 0;
+                        switch(a_val){
+                            case 0: val = -b_val0 - b_val1; break;
+                            case 1: val = -b_val0; break;
+                            case 2: val = -b_val0 + b_val1; break;
+                            case 3: val = -b_val1; break;
+                            case 4: val = 0; break;
+                            case 5: val = b_val1; break;
+                            case 6: val = b_val0 - b_val1; break;
+                            case 7: val = b_val0; break;
+                            case 8: val = b_val0 + b_val1; break;
+                            default: assert(false); // Should not happen
                         }
-                        float32_t scale = ws[i / WM + (2*kk / BK) * (M / WM)];
-                        C[i*N + j] += sum * scale;                    
+                        sum += val;
                     }
+                    float32_t scale = ws[i / WM + (2*kk / BK) * (M / WM)];
+                    C[i*N + j] += sum * scale;                    
                 }
             }
         }
@@ -994,7 +992,7 @@ int main() {
     /*for(int i=0; i< M/WM * K/2; i++) {
         weight_scale[i] = 1.0f;
     }*/
-    matmul_naive_weight_scale(A, B, C_simd, weight_scale, M, N, K);
+    matmul_tiled_weight_scale(A, B, C_simd, weight_scale, M, N, K);
     printf("\nComparing naive matmul with weight scaling output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_naive_weight_scale comparison");
     
