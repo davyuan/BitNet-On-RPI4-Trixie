@@ -9,6 +9,7 @@
 #include <iostream>
 #include <vector>
 #include <stdexcept>
+#include <cassert>
 #include "ggml-bitnet.h"
 #include "bitnet-lut-kernels.h"
 
