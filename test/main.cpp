@@ -753,9 +753,7 @@ std::vector<int8_t> bitnet_158_quantize(const std::vector<float>& weight_array, 
     
     // Step 2: Normalize weights by (gamma + epsilon)
     // Step 3: Round and clip to ternary values {-1, 0, 1}
-    std::vector<int8_t> quantized_w(size);
-    float32_t denominator = gamma + epsilon;
-    
+    std::vector<int8_t> quantized_w(size);    
     for(int m = 0; m < M/BM; m++) {
         float32_t block_gamma = weight_scale[m];
         for (int i = 0; i < BM * K; i++) {
@@ -942,7 +940,7 @@ int main() {
     for (int iter = 0; iter < num_iterations; iter++) {
         memset(C_simd, 0, M * N * sizeof(float32_t));
         auto microkernel_start = std::chrono::high_resolution_clock::now();           
-        matmul_lut_micro_kernel(A_packed_T, B_T, C_simd, ws, M, N, K);
+        matmul_lut_micro_kernel(A_packed_T, B_T, C_simd, weight_scale, M, N, K);
         auto microkernel_end = std::chrono::high_resolution_clock::now();
         auto microkernel_duration = std::chrono::duration_cast<std::chrono::milliseconds>(microkernel_end - microkernel_start);
         total_microkernel_time += microkernel_duration.count();
