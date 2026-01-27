@@ -807,8 +807,13 @@ std::vector<float> generate_normal_weights(int M, int K, float mean = 0.0f, floa
 */
 void init_As(float32_t* A_, uint8_t* A, uint8_t* A_T, uint8_t* A_packed_T, float32_t* weight_scale, int M, int K) {
     // A_ will be the one used for reference computation
-    std::vector<float32_t> A_vec = generate_normal_weights(M, K, 0, 15.0f);
-    std::memcpy(A_, A_vec.data(), M * K * sizeof(float32_t));
+    //std::vector<float32_t> A_vec = generate_normal_weights(M, K, 0, 15.0f);
+    //std::memcpy(A_, A_vec.data(), M * K * sizeof(float32_t));
+    for(int i=0; i < M * K; i++) {
+        A_[i] = rand() % 3 - 1;  // Random values in {-1, 0, 1}
+    }
+
+    std::vector<float> A_vec(A_, A_ + M * K);
    
     // Call bitnet_158_quantize to quantize to ternary {-1, 0, 1}
     std::vector<int8_t> quantized_ternary = bitnet_158_quantize(A_vec, weight_scale, M, K);
@@ -875,7 +880,7 @@ int main() {
     }
 
     // Debug: Print first 16 rows of A_, A_packed, and A_packed_T
-    /*printf("\n=== DEBUG: First 16 rows of A_ (float32_t, 16 elements each) ===\n");
+    printf("\n=== DEBUG: First 16 rows of A_ (float32_t, 16 elements each) ===\n");
     for (int i = 0; i < 16; i++) {
         printf("A_[%2d]: ", i);
         for (int j = 0; j < 16; j++) {
@@ -919,7 +924,7 @@ int main() {
             printf("%8.3f ", B_T[i * K + j]);
         }
         printf("\n");
-    }*/
+    }
 
     printf("Running LUT construction and inference...\n");
     printf("Matrix dimensions:  A(2560x2560), B(2560x640), C(2560x160)\n");
