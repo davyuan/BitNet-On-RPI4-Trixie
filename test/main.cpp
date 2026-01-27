@@ -686,7 +686,39 @@ void compare_matrices(float32_t* C_simd, float32_t* C_, int M, int N, float32_t 
            error_count, M * N, nan_count, inf_count, bad_ref_count);
 
     double sqnr = calculate_sqnr(C_, C_simd, M, N);
+    double cosine_similarity = calculate_cosine_similarity(C_, C_simd, M, N);
+    printf("%s: Cosine Similarity = %.6f\n", label, cosine_similarity
     printf("%s: SQNR = %.2f dB\n", label, sqnr);
+}
+
+#include <cmath>
+#include <iostream>
+
+/**
+ * Calculates Cosine Similarity between two matrices C and C_hat of size M x N.
+ * Returns a value between -1.0 and 1.0.
+ */
+double calculate_cosine_similarity(const float32_t* C, const float32_t* C_hat, int M, int N) {
+    double dot_product = 0.0;
+    double norm_c = 0.0;
+    double norm_c_hat = 0.0;
+    size_t total_elements = static_cast<size_t>(M) * N;
+
+    for (size_t i = 0; i < total_elements; ++i) {
+        double val_c = static_cast<double>(C[i]);
+        double val_c_hat = static_cast<double>(C_hat[i]);
+
+        dot_product += val_c * val_c_hat;
+        norm_c += val_c * val_c;
+        norm_c_hat += val_c_hat * val_c_hat;
+    }
+
+    // Check for zero vectors to avoid division by zero
+    if (norm_c == 0.0 || norm_c_hat == 0.0) {
+        return 0.0; 
+    }
+
+    return dot_product / (std::sqrt(norm_c) * std::sqrt(norm_c_hat));
 }
 
 // BitNet 1.58 quantization: convert weights to ternary {-1, 0, 1} using absmean scaling
