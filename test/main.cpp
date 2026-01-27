@@ -740,7 +740,6 @@ void compare_matrices(float32_t* C_simd, float32_t* C_, int M, int N, float32_t 
 std::vector<int8_t> bitnet_158_quantize(const std::vector<float>& weight_array, float32_t * weight_scale, int M, int K) {
     const float32_t epsilon = 1e-7f;
     int size = weight_array.size();
-    float32_t* weight_scale = aligned_alloc(sizeof(float32_t) * M/BM);
     
     // Step 1: Calculate gamma = mean(|weights|)
     for(int m = 0; m < M/BM; m++) {
@@ -915,7 +914,7 @@ int main() {
     printf("\nStep 2: Running naive matmul with weight scaling, to test math stability\n");
         
     memset(C_simd, 0, M * N * sizeof(float32_t));
-    matmul_naive_weight_scale(A, B, C_simd, ws, M, N, K);
+    matmul_naive_weight_scale(A, B, C_simd, weight_scale, M, N, K);
     printf("\nComparing naive matmul with weight scaling output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_naive_weight_scale comparison");
     
@@ -925,7 +924,7 @@ int main() {
     for (int iter = 0; iter < num_iterations; iter++) {
         memset(C_simd, 0, M * N * sizeof(float32_t));
         auto lut_simd_start = std::chrono::high_resolution_clock::now();
-        matmul_lut_simd(A_T, B_T, C_simd, ws, M, N, K);
+        matmul_lut_simd(A_T, B_T, C_simd, weight_scale, M, N, K);
         auto lut_simd_end = std::chrono::high_resolution_clock::now();
         auto lut_simd_duration = std::chrono::duration_cast<std::chrono::milliseconds>(lut_simd_end - lut_simd_start);
         total_simd_time += lut_simd_duration.count();
