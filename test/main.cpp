@@ -809,30 +809,17 @@ void init_As(float32_t* A_, uint8_t* A, uint8_t* A_T, uint8_t* A_packed_T, float
     // A_ will be the one used for reference computation
     //std::vector<float32_t> A_vec = generate_normal_weights(M, K, 0, 15.0f);
     //std::memcpy(A_, A_vec.data(), M * K * sizeof(float32_t));
-    for(int i=0; i < M * K; i++) {
-        A_[i] = rand() % 3 - 1;  // Random values in {-1, 0, 1}
+    std::random_device rd; 
+    std::mt19937 gen(rd()); 
+    std::uniform_real_distribution<float> distr(-15.0f, 15.0f);    
+    for (int i = 0; i < M * K; i++) {
+        A_[i] = distr(gen);
     }
 
     std::vector<float> A_vec(A_, A_ + M * K);
    
     // Call bitnet_158_quantize to quantize to ternary {-1, 0, 1}
     std::vector<int8_t> quantized_ternary = bitnet_158_quantize(A_vec, weight_scale, M, K);
-    
-    // Compare if quantized_ternary matches A_
-    /*int mismatch_count = 0;
-    for (int i = 0; i < M * K; i++) {
-        if ((int8_t)A_[i] != quantized_ternary[i]) {
-            mismatch_count++;
-            if (mismatch_count <= 10) {  // Print first 10 mismatches
-                printf("  Mismatch at [%d]: A_=%.1f, quantized_ternary=%d\n", i, A_[i], (int)quantized_ternary[i]);
-            }
-        }
-    }
-    if (mismatch_count > 0) {
-        printf("Total mismatches: %d/%d\n", mismatch_count, M * K);
-    } else {
-        printf("✓ quantized_ternary matches A_ perfectly!\n");
-    }*/
         
     // Pack ternary values into A (2 ternary values per uint8_t)
     // Map {-1, 0, 1} to indices {0-8} for 2 values: 9 combinations
