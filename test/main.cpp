@@ -203,12 +203,10 @@ void matmul_lut_naive2(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K)
    This version doesn't use SIMD optimizations either, but focus on one LUT table at once to avoid
    overhead of reconstructing LUTs in the same tile. 
 */
-void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int K) {
+void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
     int KK = K / 2;
     int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
     float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
-    float32_t* Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
-    *Scales = 1.0f;
 
     for (int j = 0; j < N; j++) {
         ggml_preprocessor(M, K, (void*)(B + j * K), (void*)LUT_Scales, (void*)QLUT);                  
@@ -249,9 +247,8 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int K
 
                     float32_t* pC = (float32_t*) &(C[(i+0)*N + j]);
                     const float32_t lut_scale = ((float32_t*)LUT_Scales)[0];
-                    const float32_t scale = ((float32_t*)Scales)[0];
+                    const float32_t scale = *ws;
                     int16_t tmp_vals[8];
-                    static int debug_count_simd = 0;
 #pragma unroll
                     for (int block = 0; block < 2; ++block) {
                         vst1q_s16(tmp_vals, vec_c[block]);
@@ -267,7 +264,6 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int K
 
     aligned_free(QLUT);
     aligned_free(LUT_Scales);
-    aligned_free(Scales);
 }
 
 /* A(K/2 x M), B(N x K)
@@ -822,41 +818,23 @@ int main() {
     auto naive_duration = std::chrono::duration_cast<std::chrono::milliseconds>(naive_end - naive_start);
     
     printf("Reference matmul complete. Time: %ld ms\n", naive_duration.count());
-    printf("\nStep 2: Running qGEMM_LUT packed (50 iterations for average)\n");
+    printf("\nStep 2: Running qGEMM_LUT SIMD (50 iterations for average)\n");
         
     const int num_iterations = 50;
     long long total_simd_time = 0;
     for (int iter = 0; iter < num_iterations; iter++) {
         memset(C_simd, 0, M * N * sizeof(float32_t));
         auto lut_simd_start = std::chrono::high_resolution_clock::now();
-        matmul_lut_packed(A_packed_T, B_T, C_simd, ws, M, N, K);
+        matmul_lut_simd(A_T, B_T, C_simd, ws, M, N, K);
         auto lut_simd_end = std::chrono::high_resolution_clock::now();
         auto lut_simd_duration = std::chrono::duration_cast<std::chrono::milliseconds>(lut_simd_end - lut_simd_start);
         total_simd_time += lut_simd_duration.count();
     }
     long long avg_simd_time = total_simd_time / num_iterations;
-    printf("Matmul_lut_packed complete. Average time over %d runs: %lld ms\n", num_iterations, avg_simd_time);
+    printf("Matmul_lut_simd complete. Average time over %d runs: %lld ms\n", num_iterations, avg_simd_time);
 
     printf("\nComparing kernel output (C) with reference (C_)...\n");
-    compare_matrices(C_simd, C_, M, N, 1e-2, "Matmul_lut_packed comparison");
-
-           
-    // Step 3: Run qGEMM with LUT + SIMD (50 runs for averaging)
-    /*printf("\nStep 3: Running qGEMM_LUT SIMD2 (50 iterations for average)\n");
-    long long total_simd_time2 = 0;
-    for (int iter = 0; iter < num_iterations; iter++) {
-        memset(C_simd, 0, M * N * sizeof(float32_t));
-        auto lut_simd_start2 = std::chrono::high_resolution_clock::now();
-        matmul_lut_simd2(A_T, B_T, C_simd, M, N, K);
-        auto lut_simd_end2 = std::chrono::high_resolution_clock::now();
-        auto lut_simd_duration = std::chrono::duration_cast<std::chrono::milliseconds>(lut_simd_end2 - lut_simd_start2);
-        total_simd_time2 += lut_simd_duration.count();
-    }
-    long long avg_simd_time2 = total_simd_time2 / num_iterations;
-    printf("Matmul_simd2 complete. Average time over %d runs: %lld ms\n", num_iterations, avg_simd_time2);
-
-    printf("\nComparing kernel output (C) with reference (C_)...\n");
-    compare_matrices(C_simd, C_, M, N, 1e-2, "Matmul_simd2 comparison");*/
+    compare_matrices(C_simd, C_, M, N, 1e-2, "Matmul_lut_simd comparison");
 
     // Step 3: Run qGEMM with micro kernel (50 runs for averaging)
     printf("\nStep 3: Running qGEMM_LUT microkernel (50 iterations for average)\n");
