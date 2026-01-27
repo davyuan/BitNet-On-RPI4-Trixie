@@ -763,7 +763,16 @@ int main() {
     init_Bs(B, B_T, N, K);
     init_As(A_, A, A_T, A_packed_T, ws, M, K);
   
-    // Debug: Print first 16 rows of A, A_packed, and A_packed_T
+    // Debug: Print first 16 rows of A_, A_packed, and A_packed_T
+    printf("\n=== DEBUG: First 16 rows of A_ (float32_t, 16 elements each) ===\n");
+    for (int i = 0; i < 16; i++) {
+        printf("A_[%2d]: ", i);
+        for (int j = 0; j < 16; j++) {
+            printf("%8.3f ", A_[i * K + j]);
+        }
+        printf("\n");
+    }
+    
     printf("\n=== DEBUG: First 16 rows of A (uint8_t, 16 elements each) ===\n");
     for (int i = 0; i < 16; i++) {
         printf("A[%2d]: ", i);
@@ -787,7 +796,7 @@ int main() {
     for (int i = 0; i < 16; i++) {
         printf("B[%2d]: ", i);
         for (int j = 0; j < 16; j++) {
-            printf("%8.1f ", B[i * N + j]);
+            printf("%8.3f ", B[i * N + j]);
         }
         printf("\n");
     }
@@ -796,7 +805,7 @@ int main() {
     for (int i = 0; i < 16; i++) {
         printf("B_T[%2d]: ", i);
         for (int j = 0; j < 16; j++) {
-            printf("%8.1f ", B_T[i * K + j]);
+            printf("%8.3f ", B_T[i * K + j]);
         }
         printf("\n");
     }
