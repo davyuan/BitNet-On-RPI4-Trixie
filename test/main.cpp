@@ -714,7 +714,7 @@ void compare_matrices(float32_t* C_simd, float32_t* C_, int M, int N, float32_t 
 
     double sqnr = calculate_sqnr(C_, C_simd, M, N);
     double cosine_similarity = calculate_cosine_similarity(C_, C_simd, M, N);
-    printf("%s: Cosine Similarity = %.6f\n", label, cosine_similarity
+    printf("%s: Cosine Similarity = %.6f\n", label, cosine_similarity);
     printf("%s: SQNR = %.2f dB\n", label, sqnr);
 }
 
