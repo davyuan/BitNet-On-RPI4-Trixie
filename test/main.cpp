@@ -285,7 +285,7 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int 
 
                     float32_t* pC = (float32_t*) &(C[(i+0)*N + j]);
                     const float32_t lut_scale = ((float32_t*)LUT_Scales)[0];
-                    const float32_t scale = weight_scale;
+                    const float32_t scale = ws[0];
                     int16_t tmp_vals[8];
 #pragma unroll
                     for (int block = 0; block < 2; ++block) {
