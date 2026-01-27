@@ -69,6 +69,7 @@ void matmul_tiled_weight_scale(uint8_t* A, float32_t* B, float32_t* C, float_t* 
     for(int j = 0; j < N; j++) {
         for (int ii = 0; ii < M; ii+= WM) {
             for(int kk = 0; kk < K/2; kk+=BK) {
+                float32_t scale = ws[ii / WM + (2*kk / BK) * (M / WM)];
                 for(int i = ii; i < ii + WM; i++) {
                     float32_t sum = 0;
                     for(int k = kk; k < kk + BK; k++) {
@@ -90,7 +91,6 @@ void matmul_tiled_weight_scale(uint8_t* A, float32_t* B, float32_t* C, float_t* 
                         }
                         sum += val;
                     }
-                    float32_t scale = ws[i / WM + (2*kk / BK) * (M / WM)];
                     C[i*N + j] += sum * scale;                    
                 }
             }
