@@ -50,12 +50,12 @@ static inline void interleave_vec_c_block(int16x4_t c0, int16x4_t c1, int16x4_t 
     out[3] = vmovl_s16(rows23.val[1]);
 }
 
-void matmul_naive(int8_t* A, float32_t* B, float32_t* C, int M, int N, int K) {
+void matmul_naive(float32_t* A, float32_t* B, float32_t* C, int M, int N, int K) {
     for (int i = 0; i < M; i++) {
         for (int j = 0; j < N; j++) {
             float32_t sum = 0;
             for (int k = 0; k < K; k++) {
-                sum += (float32_t)A[i*K + k] * (float32_t)B[k*N + j];
+                sum += A[i*K + k] * B[k*N + j];
             }
             C[i*N + j] = sum;
         }
@@ -469,13 +469,11 @@ void matmul_lut_simd2(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int 
    This version doesn't use SIMD optimizations either, but focus on one LUT table at once to avoid
    overhead of reconstructing LUTs in the same tile. 
 */
-void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int K) {
+void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
     int KK = K / 2;
     int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
     const uint8x16_t vec_mask = vdupq_n_u8(0x0f);
     float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
-    float32_t* Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
-    *Scales = 1.0f;
 
     for (int j = 0; j < N; j++) {
         ggml_preprocessor(M, K, (void*)(B + j * K), (void*)LUT_Scales, (void*)QLUT);                  
@@ -526,13 +524,13 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int
 
                     float32_t* pC = (float32_t*) &(C[(i+0)*N + j]);
                     const float32_t lut_scale = ((float32_t*)LUT_Scales)[0];
-                    const float32_t scale = ((float32_t*)Scales)[0];
+                    const float32_t weight_scale = *ws;
                     int16_t tmp_vals[8];                
 #pragma unroll
                     for (int block = 0; block < 4; ++block) {
                         vst1q_s16(tmp_vals, vec_c[block]);
                         for (int lane = 0; lane < 8; ++lane, pC += N) {
-                            float32_t val = (tmp_vals[lane] / lut_scale) * scale;
+                            float32_t val = (tmp_vals[lane] / lut_scale) * weight_scale;
                             (*pC) += val;
                         }
                     }
@@ -543,7 +541,6 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int
 
     aligned_free(QLUT);
     aligned_free(LUT_Scales);
-    aligned_free(Scales);
 }
 
 /* A(K/2 x M), B(N x K)
@@ -553,15 +550,13 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int
    This version doesn't use SIMD optimizations either, but focus on one LUT table at once to avoid
    overhead of reconstructing LUTs in the same tile. 
 */
-void matmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int K) {
+void matmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
     int ne00 = K;
     int ne01 = M;
     int ne10 = K;
     int ne11 = N;
     int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
     float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
-    float32_t* Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
-    *Scales = 1.0f;
 
     #pragma omp parallel num_threads(4)
     {    
@@ -578,7 +573,7 @@ void matmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, int M, int 
             for (int ii = ith * range_per_thread_ii; ii < (ith + 1) * range_per_thread_ii; ii += BM) {          
                 ggml_qgemm_lut( ne01, ne11, ne10, ii, j, A, 
                                 QLUT, 
-                                Scales, 
+                                ws, 
                                 LUT_Scales, 
                                 C);
             }
@@ -588,7 +583,6 @@ void matmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, int M, int 
 
     aligned_free(QLUT);
     aligned_free(LUT_Scales);
-    aligned_free(Scales);
 }
 
 void compare_matrices(float32_t* C_simd, float32_t* C_, int M, int N, float32_t threshold, const char* label) {
@@ -656,26 +650,68 @@ void compare_matrices(float32_t* C_simd, float32_t* C_, int M, int N, float32_t 
            error_count, M * N, nan_count, inf_count, bad_ref_count);
 }
 
+// BitNet 1.58 quantization: convert weights to ternary {-1, 0, 1} using absmean scaling
+// Returns: pair of (quantized_weights, gamma_scale)
+std::pair<std::vector<int8_t>, float> bitnet_158_quantize(const std::vector<float>& weight_array) {
+    const float epsilon = 1e-7f;
+    int size = weight_array.size();
+    
+    // Step 1: Calculate gamma = mean(|weights|)
+    float sum_abs = 0.0f;
+    for (float w : weight_array) {
+        sum_abs += std::fabs(w);
+    }
+    float gamma = sum_abs / size;
+    
+    // Step 2: Normalize weights by (gamma + epsilon)
+    // Step 3: Round and clip to ternary values {-1, 0, 1}
+    std::vector<int8_t> quantized_w(size);
+    float denominator = gamma + epsilon;
+    
+    for (int i = 0; i < size; i++) {
+        float normalized = weight_array[i] / denominator;
+        float rounded = std::round(normalized);
+        // Clip to [-1, 1] range
+        int8_t clipped = static_cast<int8_t>(
+            std::max(-1.0f, std::min(1.0f, rounded))
+        );
+        quantized_w[i] = clipped;
+    }
+    
+    return {quantized_w, gamma};
+}
+
+
 /* After packing A_packed_T will be (K/2 x M /2)
     A_ will be (M x K)
     A will be (M x K/2) 4-bit representation
     A_T will be (K/2 x M)
 */
-void init_As(uint8_t* A, int8_t* A_, uint8_t* A_T, uint8_t* A_packed_T, int M, int K) {
-    for (int i = 0; i < M * K / 2; i++) {
-        A[i] = rand() % 9;
+void init_As(float32_t* A_, int8_t* A, uint8_t* A_T, uint8_t* A_packed_T, float32_t* ws, int M, int K) {
+    // A_ will be the one used for reference computation
+    std::random_device rd; 
+    std::mt19937 gen(rd()); 
+    std::uniform_real_distribution<float> distr(-15.0f, 15.0f);    
+    for (int i = 0; i < M * K; i++) {
+        A_[i] = distr(gen);
+    }
 
-        switch(A[i]) {
-            case 0: A_[i * 2 + 0] = -1; A_[i * 2 + 1] = -1; break;
-            case 1: A_[i * 2 + 0] = -1; A_[i * 2 + 1] = 0;  break;
-            case 2: A_[i * 2 + 0] = -1; A_[i * 2 + 1] = 1; break;
-            case 3: A_[i * 2 + 0] = 0; A_[i * 2 + 1] = -1; break;
-            case 4: A_[i * 2 + 0] = 0; A_[i * 2 + 1] = 0; break;
-            case 5: A_[i * 2 + 0] = 0; A_[i * 2 + 1] = 1; break;
-            case 6: A_[i * 2 + 0] = 1; A_[i * 2 + 1] = -1; break;
-            case 7: A_[i * 2 + 0] = 1; A_[i * 2 + 1] = 0; break;
-            case 8: A_[i * 2 + 0] = 1; A_[i * 2 + 1] = 1; break;
-        }
+    // Convert A_ array to vector for bitnet_158_quantize
+    std::vector<float> A_vec(A_, A_ + M * K);
+    
+    // Call bitnet_158_quantize to quantize to ternary {-1, 0, 1}
+    auto [quantized_ternary, gamma] = bitnet_158_quantize(A_vec);
+    
+    printf("BitNet 1.58 quantization: weight scale = %.6f\n", gamma);
+    *ws = gamma;
+    
+    // Pack ternary values into A (2 ternary values per uint8_t)
+    // Map {-1, 0, 1} to indices {0-8} for 2 values: 9 combinations
+    for (int i = 0; i < M * K / 2; i++) {
+        int8_t val0 = quantized_ternary[i * 2];      // first value
+        int8_t val1 = quantized_ternary[i * 2 + 1];  // second value
+        
+        A[i] = (val0 * 3 + val1) + 4;  // Map to [0, 8] range
     }
 
     // Transpose A for SIMD version
@@ -684,8 +720,8 @@ void init_As(uint8_t* A, int8_t* A_, uint8_t* A_T, uint8_t* A_packed_T, int M, i
     // Pack A into 4-bit format
     for (int i = 0; i < KK; i++) {
         for (int j = 0; j < M; j+=2) {
-            uint8_t high_nibble = (A_T[i * M + j] & 0x0F) << 4;
-            uint8_t low_nibble = (A_T[i * M + j + 1] & 0x0F);
+            uint8_t high_nibble = A_T[i * M + j] << 4;
+            uint8_t low_nibble = A_T[i * M + j + 1] & 0x0F;
             A_packed_T[i * (M / 2) + j/2] = high_nibble | low_nibble;
         }
     }
@@ -717,6 +753,7 @@ int main() {
     //int32_t* C = (int32_t*)aligned_malloc(M * N * sizeof(int32_t));
     float32_t* C_ = (float32_t*)aligned_malloc(M * N * sizeof(float32_t));
     float32_t* C_simd = (float32_t*)aligned_malloc(M * N * sizeof(float32_t));
+    float32_t* ws = (float32_t*)aligned_malloc(sizeof(float32_t));
     
     // Allocate reference output matrix C_
     memset(C_, 0, M * N * sizeof(float32_t));
@@ -724,10 +761,10 @@ int main() {
     memset(C_simd, 0, M * N * sizeof(float32_t));
 
     init_Bs(B, B_T, N, K);
-    init_As(A, A_, A_T, A_packed_T, M, K);
+    init_As(A_, A, A_T, A_packed_T, ws, M, K);
   
     // Debug: Print first 16 rows of A, A_packed, and A_packed_T
-    /*printf("\n=== DEBUG: First 16 rows of A (uint8_t, 16 elements each) ===\n");
+    printf("\n=== DEBUG: First 16 rows of A (uint8_t, 16 elements each) ===\n");
     for (int i = 0; i < 16; i++) {
         printf("A[%2d]: ", i);
         for (int j = 0; j < 16; j++) {
@@ -762,7 +799,7 @@ int main() {
             printf("%8.1f ", B_T[i * K + j]);
         }
         printf("\n");
-    }*/
+    }
 
     printf("Running LUT construction and inference...\n");
     printf("Matrix dimensions:  A(2560x2560), B(2560x640), C(2560x160)\n");
@@ -776,17 +813,6 @@ int main() {
     auto naive_duration = std::chrono::duration_cast<std::chrono::milliseconds>(naive_end - naive_start);
     
     printf("Reference matmul complete. Time: %ld ms\n", naive_duration.count());
-    
-    // Step 1: Run qGEMM with LUT
-    /*printf("\nStep 1: Running qGEMM_LUT (32x64 kernel)\n");
-    auto lut_start = std::chrono::high_resolution_clock::now();
-    matmul_lut_naive2(A, B_T, C, M, N, K);
-    auto lut_end = std::chrono::high_resolution_clock::now();
-    auto lut_duration = std::chrono::duration_cast<std::chrono::milliseconds>(lut_end - lut_start);
-    
-    printf("Matmul_naive2 complete. Time: %lld ms\n", lut_duration.count());*/
-    
-    //Step 2: Run qGEMM with LUT + SIMD (50 runs for averaging)
     printf("\nStep 2: Running qGEMM_LUT packed (50 iterations for average)\n");
         
     const int num_iterations = 50;
@@ -794,7 +820,7 @@ int main() {
     for (int iter = 0; iter < num_iterations; iter++) {
         memset(C_simd, 0, M * N * sizeof(float32_t));
         auto lut_simd_start = std::chrono::high_resolution_clock::now();
-        matmul_lut_packed(A_packed_T, B_T, C_simd, M, N, K);
+        matmul_lut_packed(A_packed_T, B_T, C_simd, ws, M, N, K);
         auto lut_simd_end = std::chrono::high_resolution_clock::now();
         auto lut_simd_duration = std::chrono::duration_cast<std::chrono::milliseconds>(lut_simd_end - lut_simd_start);
         total_simd_time += lut_simd_duration.count();
@@ -830,7 +856,7 @@ int main() {
     for (int iter = 0; iter < num_iterations; iter++) {
         memset(C_simd, 0, M * N * sizeof(float32_t));
         auto microkernel_start = std::chrono::high_resolution_clock::now();           
-        matmul_lut_micro_kernel(A_packed_T, B_T, C_simd, M, N, K);
+        matmul_lut_micro_kernel(A_packed_T, B_T, C_simd, ws, M, N, K);
         auto microkernel_end = std::chrono::high_resolution_clock::now();
         auto microkernel_duration = std::chrono::duration_cast<std::chrono::milliseconds>(microkernel_end - microkernel_start);
         total_microkernel_time += microkernel_duration.count();
@@ -864,6 +890,7 @@ int main() {
     //aligned_free(C);
     aligned_free(B_T);
     aligned_free(C_simd);
+    aligned_free(ws);
     
     printf("\nTest complete.\n");
     return 0;
