@@ -14,7 +14,7 @@
 #include "bitnet-lut-kernels.h"
 
 #define TILE_SIZE 16
-#define WM 1
+#define WM 32 // Weight rows per scale
 
 const int M = 2560;           // Weight rows (A rows)
 const int K = 2560;        // Shared dimension
@@ -69,7 +69,9 @@ void matmul_naive_weight_scale(uint8_t* A, float32_t* B, float32_t* C, float_t* 
     for (int i = 0; i < M; i++) {
         for (int j = 0; j < N; j++) {
             float32_t sum = 0;
+
             for (int k = 0; k < K /2; k++) {
+                float32_t scale = ws[i / WM + k * (M / WM)];
                 uint8_t a_val = A[i*(K/2) + k];
                 float32_t b_val0 = B[(2*k)*N + j];
                 float32_t b_val1 = B[(2*k + 1)*N + j];
@@ -86,9 +88,9 @@ void matmul_naive_weight_scale(uint8_t* A, float32_t* B, float32_t* C, float_t* 
                     case 8: val = b_val0 + b_val1; break;
                     default: assert(false); // Should not happen
                 }
-                sum += val;
+                sum += val * scale;
             }
-            C[i*N + j] = sum * ws[i / WM];
+            C[i*N + j] = sum;
         }
     }
 }
@@ -742,30 +744,39 @@ std::vector<int8_t> bitnet_158_quantize(const std::vector<float>& weight_array, 
     const float32_t epsilon = 1e-7f;
     int size = weight_array.size();
     
-    // Step 1: Calculate gamma = mean(|weights|)
-    for(int m = 0; m < M/WM; m++) {
-        float sum_abs = 0.0f;
-        for (int i = 0; i < WM * K; i++) {
-            sum_abs += std::fabs(weight_array[m * WM * K + i]);
+    for(int m = 0; m < M; m+=WM) {
+        for(int k = 0; k < K/2; k++) {
+            float sum_abs = 0.0f;
+            for (int i = m; i < m + WM; i++) {
+                sum_abs += std::fabs(weight_array[i * K + k * 2]) + std::fabs(weight_array[i * K + k * 2 + 1]);
+            }
+            float32_t gamma = sum_abs / (WM * 2);
+            weight_scale[k * (M / WM) + (m / WM)] = gamma;
         }
-        float32_t gamma = sum_abs / (WM * K);
-        weight_scale[m] = gamma;
     }
     
-    // Step 2: Normalize weights by (gamma + epsilon)
-    // Step 3: Round and clip to ternary values {-1, 0, 1}
     std::vector<int8_t> quantized_w(size);    
-    for(int m = 0; m < M/WM; m++) {
-        float32_t block_gamma = weight_scale[m];
-        for (int i = 0; i < WM * K; i++) {
-            int idx = m * WM * K + i;
-            float normalized = weight_array[idx] / (block_gamma + epsilon);
-            float rounded = std::round(normalized);
-            // Clip to [-1, 1] range
-            int8_t clipped = static_cast<int8_t>(
-                std::max(-1.0f, std::min(1.0f, rounded))
-            );
-            quantized_w[idx] = clipped;
+    for(int m = 0; m < M; m+= WM) {
+        for(int k = 0; k < K / 2; k++) {
+            float32_t block_gamma = weight_scale[k * (M / WM) + (m / WM)];
+            for (int i = m; i < m + WM; i++) {
+                int idx = i * K + k * 2;
+                float normalized = weight_array[idx] / (block_gamma + epsilon);
+                float rounded = std::round(normalized);
+                // Clip to [-1, 1] range
+                int8_t clipped = static_cast<int8_t>(
+                    std::max(-1.0f, std::min(1.0f, rounded))
+                );
+
+                quantized_w[idx] = clipped;
+                normalized = weight_array[idx + 1] / (block_gamma + epsilon);
+                rounded = std::round(normalized);
+                // Clip to [-1, 1] range
+                int8_t clipped = static_cast<int8_t>(
+                    std::max(-1.0f, std::min(1.0f, rounded))
+                );
+                quantized_w[idx + 1] = clipped;
+            }
         }
     }
     
@@ -850,7 +861,7 @@ int main() {
     //int32_t* C = (int32_t*)aligned_malloc(M * N * sizeof(int32_t));
     float32_t* C_ = (float32_t*)aligned_malloc(M * N * sizeof(float32_t));
     float32_t* C_simd = (float32_t*)aligned_malloc(M * N * sizeof(float32_t));
-    float32_t* weight_scale = (float32_t*)aligned_malloc((M / WM) * sizeof(float32_t));
+    float32_t* weight_scale = (float32_t*)aligned_malloc((M / WM * K / 2) * sizeof(float32_t));
     
     // Allocate reference output matrix C_
     memset(C_, 0, M * N * sizeof(float32_t));
