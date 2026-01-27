@@ -687,7 +687,7 @@ std::pair<std::vector<int8_t>, float> bitnet_158_quantize(const std::vector<floa
     A will be (M x K/2) 4-bit representation
     A_T will be (K/2 x M)
 */
-void init_As(float32_t* A_, int8_t* A, uint8_t* A_T, uint8_t* A_packed_T, float32_t* ws, int M, int K) {
+void init_As(float32_t* A_, uint8_t* A, uint8_t* A_T, uint8_t* A_packed_T, float32_t* ws, int M, int K) {
     // A_ will be the one used for reference computation
     std::random_device rd; 
     std::mt19937 gen(rd()); 
@@ -711,7 +711,7 @@ void init_As(float32_t* A_, int8_t* A, uint8_t* A_T, uint8_t* A_packed_T, float3
         int8_t val0 = quantized_ternary[i * 2];      // first value
         int8_t val1 = quantized_ternary[i * 2 + 1];  // second value
         
-        A[i] = (val0 * 3 + val1) + 4;  // Map to [0, 8] range
+        A[i] = (uint8_t)(val0 * 3 + val1) + 4;  // Map to [0, 8] range
     }
 
     // Transpose A for SIMD version
@@ -749,7 +749,7 @@ int main() {
     uint8_t* A = (uint8_t*)aligned_malloc(M * K / 2 * sizeof(uint8_t));
     uint8_t* A_T = (uint8_t*)aligned_malloc(M * K / 2 * sizeof(uint8_t));
     uint8_t* A_packed_T = (uint8_t*)aligned_malloc(M * K / 4 * sizeof(uint8_t));
-    int8_t* A_ = (int8_t*)aligned_malloc(M * K * sizeof(int8_t));
+    float32_t* A_ = (float32_t*)aligned_malloc(M * K * sizeof(float32_t));
     //int32_t* C = (int32_t*)aligned_malloc(M * N * sizeof(int32_t));
     float32_t* C_ = (float32_t*)aligned_malloc(M * N * sizeof(float32_t));
     float32_t* C_simd = (float32_t*)aligned_malloc(M * N * sizeof(float32_t));
