@@ -69,7 +69,6 @@ void matmul_tiled_weight_scale(uint8_t* A, float32_t* B, float32_t* C, float_t* 
     for(int j = 0; j < N; j++) {
         for (int ii = 0; ii < M; ii+= WM) {
             for(int kk = 0; kk < K/2; kk+=BK) {
-                float32_t scale = ws[ii / WM + (2*kk / BK) * (M / WM)];
                 for(int i = ii; i < ii + WM; i++) {
                     float32_t sum = 0;
                     for(int k = kk; k < kk + BK; k++) {
@@ -91,6 +90,7 @@ void matmul_tiled_weight_scale(uint8_t* A, float32_t* B, float32_t* C, float_t* 
                         }
                         sum += val;
                     }
+                    float32_t scale = ws[i / WM + (2*kk / BK) * (M / WM)];
                     C[i*N + j] += sum * scale;                    
                 }
             }
@@ -923,9 +923,9 @@ int main() {
 
     init_Bs(B, B_T, N, K);
     init_As(A_, A, A_T, A_packed_T, weight_scale, M, K);
-    for(int i=0; i < M / WM * K / BK; i++) {
+    /*for(int i=0; i < M / WM * K / BK; i++) {
         printf("Weight scale for block %d: %.6f\n", i, weight_scale[i]);
-    }
+    }*/
 
     // Debug: Print first 16 rows of A_, A_packed, and A_packed_T
     printf("\n=== DEBUG: First 16 rows of A_ (float32_t, 16 elements each) ===\n");
