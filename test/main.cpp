@@ -581,6 +581,46 @@ void matmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, float32_t* 
     aligned_free(LUT_Scales);
 }
 
+#include <iostream>
+#include <vector>
+#include <cmath>
+#include <stdexcept>
+
+/**
+ * Calculates the Signal-to-Quantization-Noise Ratio (SQNR) in decibels.
+ * * @param C     The reference (original) matrix.
+ * @param C_hat The quantized (approximate) matrix.
+ * @param M     Number of rows.
+ * @param N     Number of columns.
+ * @return      SQNR in dB.
+ */
+double calculate_sqnr(const float32_t* C, const float32_t* C_hat, int M, int N) {
+    double signal_power = 0.0;
+    double noise_power = 0.0;
+    size_t total_elements = static_cast<size_t>(M) * N;
+
+    for (size_t i = 0; i < total_elements; ++i) {
+        double ref_val = static_cast<double>(C[i]);
+        double quant_val = static_cast<double>(C_hat[i]);
+        double error = ref_val - quant_val;
+
+        signal_power += ref_val * ref_val;
+        noise_power += error * error;
+    }
+
+    if (noise_power == 0.0) {
+        // If there is no noise, the signal is identical. 
+        // Returning a high value representing infinity.
+        return 999.0; 
+    }
+
+    if (signal_power == 0.0) {
+        return 0.0;
+    }
+
+    return 10.0 * std::log10(signal_power / noise_power);
+}
+
 void compare_matrices(float32_t* C_simd, float32_t* C_, int M, int N, float32_t threshold, const char* label) {
     float32_t max_error = 0.0f;
     int max_error_idx = -1;
@@ -644,6 +684,9 @@ void compare_matrices(float32_t* C_simd, float32_t* C_, int M, int N, float32_t 
            max_error_idx >= 0 ? C_simd[max_error_idx] : 0.0f,
            max_error_idx >= 0 ? C_[max_error_idx] : 0.0f,
            error_count, M * N, nan_count, inf_count, bad_ref_count);
+
+    double sqnr = calculate_sqnr(C_, C_simd, M, N);
+    printf("%s: SQNR = %.2f dB\n", label, sqnr
 }
 
 // BitNet 1.58 quantization: convert weights to ternary {-1, 0, 1} using absmean scaling
