@@ -941,7 +941,7 @@ int main() {
     printf("\nStep 2: Running naive matmul with weight scaling, to test math stability\n");
         
     memset(C_simd, 0, M * N * sizeof(float32_t));
-    memset(weight_scale, 1.0f, (M / WM * K / 2) * sizeof(float32_t));
+    std::fill(std::begin(weight_scale), std::end(weight_scale), 1.0f);
     matmul_naive_weight_scale(A, B, C_simd, weight_scale, M, N, K);
     printf("\nComparing naive matmul with weight scaling output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_naive_weight_scale comparison");
