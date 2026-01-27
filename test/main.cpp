@@ -6,6 +6,9 @@
 #include <omp.h>
 #include <arm_neon.h>
 #include <random>
+#include <iostream>
+#include <vector>
+#include <stdexcept>
 #include "ggml-bitnet.h"
 #include "bitnet-lut-kernels.h"
 
@@ -581,19 +584,6 @@ void matmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, float32_t* 
     aligned_free(LUT_Scales);
 }
 
-#include <iostream>
-#include <vector>
-#include <cmath>
-#include <stdexcept>
-
-/**
- * Calculates the Signal-to-Quantization-Noise Ratio (SQNR) in decibels.
- * * @param C     The reference (original) matrix.
- * @param C_hat The quantized (approximate) matrix.
- * @param M     Number of rows.
- * @param N     Number of columns.
- * @return      SQNR in dB.
- */
 double calculate_sqnr(const float32_t* C, const float32_t* C_hat, int M, int N) {
     double signal_power = 0.0;
     double noise_power = 0.0;
@@ -906,7 +896,7 @@ int main() {
     printf("Matmul_lut_simd complete. Average time over %d runs: %lld ms\n", num_iterations, avg_simd_time);
 
     printf("\nComparing kernel output (C) with reference (C_)...\n");
-    compare_matrices(C_simd, C_, M, N, 2e-1, "Matmul_lut_simd comparison");
+    compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_lut_simd comparison");
 
     // Step 3: Run qGEMM with micro kernel (50 runs for averaging)
     printf("\nStep 3: Running qGEMM_LUT microkernel (50 iterations for average)\n");
@@ -923,8 +913,27 @@ int main() {
     long long avg_microkernel_time = total_microkernel_time / num_iterations;
     printf("Matmul_microkernel complete. Average time over %d runs: %lld ms\n", num_iterations, avg_microkernel_time);
     printf("\nComparing kernel output (C) with reference (C_)...\n");
-    compare_matrices(C_simd, C_, M, N, 2e-1, "Matmul_microkernel comparison");
+    compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_microkernel comparison");
 
+    // Debug: Print first 16 rows of C_ and C_simd
+    printf("\n=== DEBUG: First 16 rows of C_ (float32_t, 16 elements each) ===\n");
+    for (int i = 0; i < 16; i++) {
+        printf("C_[%2d]: ", i);
+        for (int j = 0; j < 16; j++) {
+            printf("%8.3f ", C_[i * N + j]);
+        }
+        printf("\n");
+    }
+    printf("\n=== DEBUG: First 16 rows of C_simd (float32_t, 16 elements each) ===\n");
+    for (int i = 0; i < 16; i++) {
+        printf("C_simd[%2d]: ", i);
+        for (int j = 0; j < 16; j++) {
+            printf("%8.3f ", C_simd[i * N + j]);
+        }
+        printf("\n");
+    }
+    printf("\n");
+    
     // Print performance comparison
     //double speedup_naive2 = (double)naive_duration.count() / (double)lut_duration.count();
     double speedup_simd = (double)naive_duration.count() / (double)avg_simd_time;
