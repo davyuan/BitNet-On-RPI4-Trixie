@@ -686,7 +686,7 @@ void compare_matrices(float32_t* C_simd, float32_t* C_, int M, int N, float32_t 
            error_count, M * N, nan_count, inf_count, bad_ref_count);
 
     double sqnr = calculate_sqnr(C_, C_simd, M, N);
-    printf("%s: SQNR = %.2f dB\n", label, sqnr
+    printf("%s: SQNR = %.2f dB\n", label, sqnr);
 }
 
 // BitNet 1.58 quantization: convert weights to ternary {-1, 0, 1} using absmean scaling
