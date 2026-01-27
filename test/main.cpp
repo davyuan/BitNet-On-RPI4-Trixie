@@ -772,6 +772,22 @@ std::vector<int8_t> bitnet_158_quantize(const std::vector<float>& weight_array, 
     return quantized_w;
 }
 
+std::vector<float> generate_normal_weights(int M, int K, float mean = 0.0f, float stddev = 0.02f) {
+    std::vector<float> matrix(static_cast<size_t>(M) * K);
+    
+    // Seed with a real random device
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    
+    // Define the normal distribution
+    std::normal_distribution<float> dist(mean, stddev);
+
+    for (int i = 0; i < M * K; ++i) {
+        matrix[i] = dist(gen);
+    }
+
+    return matrix;
+}
 
 /* After packing A_packed_T will be (K/2 x M /2)
     A_ will be (M x K)
@@ -780,12 +796,8 @@ std::vector<int8_t> bitnet_158_quantize(const std::vector<float>& weight_array, 
 */
 void init_As(float32_t* A_, uint8_t* A, uint8_t* A_T, uint8_t* A_packed_T, float32_t* weight_scale, int M, int K) {
     // A_ will be the one used for reference computation
-    std::random_device rd; 
-    std::mt19937 gen(rd()); 
-    std::uniform_real_distribution<float> distr(-15.0f, 15.0f);    
-    for (int i = 0; i < M * K; i++) {
-        A_[i] = distr(gen);
-    }
+    std::vector<float> A_vec = generate_normal_weights(M, K);
+    A_ = A_vec.data();
 
     // Convert A_ array to vector for bitnet_158_quantize
     std::vector<float> A_vec(A_, A_ + M * K);
