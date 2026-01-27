@@ -796,8 +796,8 @@ std::vector<float> generate_normal_weights(int M, int K, float mean = 0.0f, floa
 */
 void init_As(float32_t* A_, uint8_t* A, uint8_t* A_T, uint8_t* A_packed_T, float32_t* weight_scale, int M, int K) {
     // A_ will be the one used for reference computation
-    std::vector<float> A_vec = generate_normal_weights(M, K, 0, 15.0f);
-    A_ = A_vec.data();
+    std::vector<float32_t> A_vec = generate_normal_weights(M, K, 0, 15.0f);
+    std::memcpy(A_, A_vec.data(), M * K * sizeof(float32_t));
    
     // Call bitnet_158_quantize to quantize to ternary {-1, 0, 1}
     std::vector<int8_t> quantized_ternary = bitnet_158_quantize(A_vec, weight_scale, M, K);
