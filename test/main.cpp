@@ -940,6 +940,24 @@ int main() {
     printf("\nComparing naive matmul with weight scaling output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_naive_weight_scale comparison");
     
+    // Debug: Print first 16 rows of C_ and C_simd
+    printf("\n=== DEBUG: First 16 rows of C_ (float32_t, 16 elements each) ===\n");
+    for (int i = 0; i < 16; i++) {
+        printf("C_[%8.3f]: ", i);
+        for (int j = 0; j < 16; j++) {
+            printf("%8.3f ", C_[i * N + j]);
+        }
+        printf("\n");
+    }
+    printf("\n=== DEBUG: First 16 rows of C_simd (float32_t, 16 elements each) ===\n");
+    for (int i = 0; i < 16; i++) {
+        printf("C_simd[%2d]: ", i);
+        for (int j = 0; j < 16; j++) {
+            printf("%8.3f ", C_simd[i * N + j]);
+        }
+        printf("\n");
+    }
+    
     printf("\nStep 2: Running qGEMM_LUT SIMD (50 iterations for average)\n");        
     const int num_iterations = 50;
     long long total_simd_time = 0;
@@ -974,23 +992,6 @@ int main() {
     printf("\nComparing kernel output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_microkernel comparison");
 
-    // Debug: Print first 16 rows of C_ and C_simd
-    printf("\n=== DEBUG: First 16 rows of C_ (float32_t, 16 elements each) ===\n");
-    for (int i = 0; i < 16; i++) {
-        printf("C_[%2d]: ", i);
-        for (int j = 0; j < 16; j++) {
-            printf("%8.3f ", C_[i * N + j]);
-        }
-        printf("\n");
-    }
-    printf("\n=== DEBUG: First 16 rows of C_simd (float32_t, 16 elements each) ===\n");
-    for (int i = 0; i < 16; i++) {
-        printf("C_simd[%2d]: ", i);
-        for (int j = 0; j < 16; j++) {
-            printf("%8.3f ", C_simd[i * N + j]);
-        }
-        printf("\n");
-    }
     printf("\n");
 
     // Print performance comparison
