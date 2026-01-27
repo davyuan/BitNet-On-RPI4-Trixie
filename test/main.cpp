@@ -849,9 +849,12 @@ int main() {
 
     init_Bs(B, B_T, N, K);
     init_As(A_, A, A_T, A_packed_T, weight_scale, M, K);
-  
+    for(int i=0; i < M / BM; i++) {
+        printf("Weight scale for block %d: %.6f\n", i, weight_scale[i]);
+    }
+
     // Debug: Print first 16 rows of A_, A_packed, and A_packed_T
-    printf("\n=== DEBUG: First 16 rows of A_ (float32_t, 16 elements each) ===\n");
+    /*printf("\n=== DEBUG: First 16 rows of A_ (float32_t, 16 elements each) ===\n");
     for (int i = 0; i < 16; i++) {
         printf("A_[%2d]: ", i);
         for (int j = 0; j < 16; j++) {
@@ -895,7 +898,7 @@ int main() {
             printf("%8.3f ", B_T[i * K + j]);
         }
         printf("\n");
-    }
+    }*/
 
     printf("Running LUT construction and inference...\n");
     printf("Matrix dimensions:  A(2560x2560), B(2560x640), C(2560x160)\n");
