@@ -817,6 +817,22 @@ void init_As(float32_t* A_, uint8_t* A, uint8_t* A_T, uint8_t* A_packed_T, float
    
     // Call bitnet_158_quantize to quantize to ternary {-1, 0, 1}
     std::vector<int8_t> quantized_ternary = bitnet_158_quantize(A_vec, weight_scale, M, K);
+    
+    // Compare if quantized_ternary matches A_
+    int mismatch_count = 0;
+    for (int i = 0; i < M * K; i++) {
+        if ((int8_t)A_[i] != quantized_ternary[i]) {
+            mismatch_count++;
+            if (mismatch_count <= 10) {  // Print first 10 mismatches
+                printf("  Mismatch at [%d]: A_=%.1f, quantized_ternary=%d\n", i, A_[i], (int)quantized_ternary[i]);
+            }
+        }
+    }
+    if (mismatch_count > 0) {
+        printf("Total mismatches: %d/%d\n", mismatch_count, M * K);
+    } else {
+        printf("✓ quantized_ternary matches A_ perfectly!\n");
+    }
         
     // Pack ternary values into A (2 ternary values per uint8_t)
     // Map {-1, 0, 1} to indices {0-8} for 2 values: 9 combinations
