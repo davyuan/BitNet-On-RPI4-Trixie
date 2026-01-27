@@ -65,6 +65,35 @@ void matmul_naive(float32_t* A, float32_t* B, float32_t* C, int M, int N, int K)
     }
 }
 
+// A is (M x K/2) uint8_t, B is (K x N) float32_t
+void matmul_naive_weight_scale(uint8_t* A, float32_t* B, float32_t* C, float_t* ws, int M, int N, int K) {
+    for (int i = 0; i < M; i++) {
+        for (int j = 0; j < N; j++) {
+            float32_t sum = 0;
+            for (int k = 0; k < K /2; k++) {
+                uint8_t a_val = A[i*(K/2) + k];
+                float32_t b_val0 = B[(2*k)*N + j];
+                float32_t b_val1 = B[(2*k + 1)*N + j];
+                float32_t val = 0;
+                switch(a_val){
+                    case 0: val = -b_val0 - b_val1; break;
+                    case 1: val = -b_val0; break;
+                    case 2: val = -b_val0 + b_val1; break;
+                    case 3: val = -b_val1; break;
+                    case 4: val = 0; break;
+                    case 5: val = b_val1; break;
+                    case 6: val = b_val0 - b_val1; break;
+                    case 7: val = b_val0; break;
+                    case 8: val = b_val0 + b_val1; break;
+                    default: assert(false); // Should not happen
+                }
+                sum += val;
+            }
+            C[i*N + j] = sum * (*ws);
+        }
+    }
+}
+
 /* A(MxK/2), B(NxK)
    QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
         each K represents 2 activations in B. 
@@ -880,8 +909,14 @@ int main() {
     auto naive_duration = std::chrono::duration_cast<std::chrono::milliseconds>(naive_end - naive_start);
     
     printf("Reference matmul complete. Time: %ld ms\n", naive_duration.count());
-    printf("\nStep 2: Running qGEMM_LUT SIMD (50 iterations for average)\n");
+    printf("\nStep 2: Running naive matmul with weight scaling, to test math stability\n");
         
+    memset(C_simd, 0, M * N * sizeof(float32_t));
+    matmul_naive_weight_scale(A, B, C_simd, ws, M, N, K);
+    printf("\nComparing naive matmul with weight scaling output (C) with reference (C_)...\n");
+    compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_naive_weight_scale comparison");
+    
+    printf("\nStep 2: Running qGEMM_LUT SIMD (50 iterations for average)\n");        
     const int num_iterations = 50;
     long long total_simd_time = 0;
     for (int iter = 0; iter < num_iterations; iter++) {
@@ -933,7 +968,7 @@ int main() {
         printf("\n");
     }
     printf("\n");
-    
+
     // Print performance comparison
     //double speedup_naive2 = (double)naive_duration.count() / (double)lut_duration.count();
     double speedup_simd = (double)naive_duration.count() / (double)avg_simd_time;
