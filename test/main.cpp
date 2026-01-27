@@ -13,14 +13,11 @@
 #include "ggml-bitnet.h"
 #include "bitnet-lut-kernels.h"
 
-#define TILE_K 32
-#define TILE_N 16
-#define TILE_M 4
-#define TILE_SIZE 2
-
 const int M = 2560;           // Weight rows (A rows)
 const int K = 2560;        // Shared dimension
 const int N = 160;         // Activation rows (B rows) = output size
+const int BM = 128;          // Block size for M dimension
+const int BK = 64;           // Block size for K dimension
 
 // Transpose matrix B from (N x M) to B_T (M x N)
 void transpose_matrix(float32_t* B, float32_t* B_T, int M, int N) {
@@ -90,7 +87,7 @@ void matmul_naive_weight_scale(uint8_t* A, float32_t* B, float32_t* C, float_t* 
                 }
                 sum += val;
             }
-            C[i*N + j] = sum * (*ws);
+            C[i*N + j] = sum * ws[i / BM];
         }
     }
 }
@@ -740,33 +737,41 @@ void compare_matrices(float32_t* C_simd, float32_t* C_, int M, int N, float32_t 
 
 // BitNet 1.58 quantization: convert weights to ternary {-1, 0, 1} using absmean scaling
 // Returns: pair of (quantized_weights, gamma_scale)
-std::pair<std::vector<int8_t>, float> bitnet_158_quantize(const std::vector<float>& weight_array) {
-    const float epsilon = 1e-7f;
+std::vector<int8_t> bitnet_158_quantize(const std::vector<float>& weight_array, float32_t * weight_scale, int M, int K) {
+    const float32_t epsilon = 1e-7f;
     int size = weight_array.size();
+    float32_t* weight_scale = aligned_alloc(sizeof(float32_t) * M/BM);
     
     // Step 1: Calculate gamma = mean(|weights|)
-    float sum_abs = 0.0f;
-    for (float w : weight_array) {
-        sum_abs += std::fabs(w);
+    for(int m = 0; m < M/BM; m++) {
+        float sum_abs = 0.0f;
+        for (int i = 0; i < BM * K; i++) {
+            sum_abs += std::fabs(weight_array[m * BM * K + i]);
+        }
+        float32_t gamma = sum_abs / (BM * K);
+        weight_scale[m] = gamma;
     }
-    float gamma = sum_abs / size;
     
     // Step 2: Normalize weights by (gamma + epsilon)
     // Step 3: Round and clip to ternary values {-1, 0, 1}
     std::vector<int8_t> quantized_w(size);
-    float denominator = gamma + epsilon;
+    float32_t denominator = gamma + epsilon;
     
-    for (int i = 0; i < size; i++) {
-        float normalized = weight_array[i] / denominator;
-        float rounded = std::round(normalized);
-        // Clip to [-1, 1] range
-        int8_t clipped = static_cast<int8_t>(
-            std::max(-1.0f, std::min(1.0f, rounded))
-        );
-        quantized_w[i] = clipped;
+    for(int m = 0; m < M/BM; m++) {
+        float32_t block_gamma = weight_scale[m];
+        for (int i = 0; i < BM * K; i++) {
+            int idx = m * BM * K + i;
+            float normalized = weight_array[idx] / (block_gamma + epsilon);
+            float rounded = std::round(normalized);
+            // Clip to [-1, 1] range
+            int8_t clipped = static_cast<int8_t>(
+                std::max(-1.0f, std::min(1.0f, rounded))
+            );
+            quantized_w[idx] = clipped;
+        }
     }
     
-    return {quantized_w, gamma};
+    return quantized_w;
 }
 
 
@@ -775,7 +780,7 @@ std::pair<std::vector<int8_t>, float> bitnet_158_quantize(const std::vector<floa
     A will be (M x K/2) 4-bit representation
     A_T will be (K/2 x M)
 */
-void init_As(float32_t* A_, uint8_t* A, uint8_t* A_T, uint8_t* A_packed_T, float32_t* ws, int M, int K) {
+void init_As(float32_t* A_, uint8_t* A, uint8_t* A_T, uint8_t* A_packed_T, float32_t* weight_scale, int M, int K) {
     // A_ will be the one used for reference computation
     std::random_device rd; 
     std::mt19937 gen(rd()); 
@@ -788,11 +793,8 @@ void init_As(float32_t* A_, uint8_t* A, uint8_t* A_T, uint8_t* A_packed_T, float
     std::vector<float> A_vec(A_, A_ + M * K);
     
     // Call bitnet_158_quantize to quantize to ternary {-1, 0, 1}
-    auto [quantized_ternary, gamma] = bitnet_158_quantize(A_vec);
-    
-    printf("BitNet 1.58 quantization: weight scale = %.6f\n", gamma);
-    *ws = gamma;
-    
+    std::vector<int8_t> quantized_ternary = bitnet_158_quantize(A_vec, weight_scale, M, K);
+        
     // Pack ternary values into A (2 ternary values per uint8_t)
     // Map {-1, 0, 1} to indices {0-8} for 2 values: 9 combinations
     for (int i = 0; i < M * K / 2; i++) {
@@ -841,7 +843,7 @@ int main() {
     //int32_t* C = (int32_t*)aligned_malloc(M * N * sizeof(int32_t));
     float32_t* C_ = (float32_t*)aligned_malloc(M * N * sizeof(float32_t));
     float32_t* C_simd = (float32_t*)aligned_malloc(M * N * sizeof(float32_t));
-    float32_t* ws = (float32_t*)aligned_malloc(sizeof(float32_t));
+    float32_t* weight_scale = (float32_t*)aligned_malloc((M / BM) * sizeof(float32_t));
     
     // Allocate reference output matrix C_
     memset(C_, 0, M * N * sizeof(float32_t));
@@ -849,7 +851,7 @@ int main() {
     memset(C_simd, 0, M * N * sizeof(float32_t));
 
     init_Bs(B, B_T, N, K);
-    init_As(A_, A, A_T, A_packed_T, ws, M, K);
+    init_As(A_, A, A_T, A_packed_T, weight_scale, M, K);
   
     // Debug: Print first 16 rows of A_, A_packed, and A_packed_T
     printf("\n=== DEBUG: First 16 rows of A_ (float32_t, 16 elements each) ===\n");
@@ -994,7 +996,7 @@ int main() {
     //aligned_free(C);
     aligned_free(B_T);
     aligned_free(C_simd);
-    aligned_free(ws);
+    aligned_free(weight_scale);
     
     printf("\nTest complete.\n");
     return 0;
