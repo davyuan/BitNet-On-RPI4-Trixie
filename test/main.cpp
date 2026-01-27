@@ -13,11 +13,11 @@
 #include "ggml-bitnet.h"
 #include "bitnet-lut-kernels.h"
 
+#define TILE_SIZE 16
+
 const int M = 2560;           // Weight rows (A rows)
 const int K = 2560;        // Shared dimension
 const int N = 160;         // Activation rows (B rows) = output size
-const int BM = 128;          // Block size for M dimension
-const int BK = 64;           // Block size for K dimension
 
 // Transpose matrix B from (N x M) to B_T (M x N)
 void transpose_matrix(float32_t* B, float32_t* B_T, int M, int N) {
