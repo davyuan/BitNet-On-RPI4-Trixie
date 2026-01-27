@@ -943,7 +943,7 @@ int main() {
     // Debug: Print first 16 rows of C_ and C_simd
     printf("\n=== DEBUG: First 16 rows of C_ (float32_t, 16 elements each) ===\n");
     for (int i = 0; i < 16; i++) {
-        printf("C_[%8.3f]: ", i);
+        printf("C_[%2df]: ", i);
         for (int j = 0; j < 16; j++) {
             printf("%8.3f ", C_[i * N + j]);
         }
