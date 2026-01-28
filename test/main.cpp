@@ -7,6 +7,7 @@
 #include <arm_neon.h>
 #include <random>
 #include <iostream>
+#include <fstream>
 #include <vector>
 #include <stdexcept>
 #include <cassert>
