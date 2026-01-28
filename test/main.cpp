@@ -802,8 +802,8 @@ std::vector<int8_t> bitnet_158_quantize_32x2(const std::vector<float>& weight_ar
                 int8_t clipped = static_cast<int8_t>(
                     std::max(-1.0f, std::min(1.0f, rounded))
                 );
-
                 quantized_w[idx] = clipped;
+                
                 normalized = weight_array[idx + 1] / (block_gamma + epsilon);
                 rounded = std::round(normalized);
                 // Clip to [-1, 1] range
