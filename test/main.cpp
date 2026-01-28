@@ -786,15 +786,15 @@ std::vector<int8_t> bitnet_158_quantize(const std::vector<float>& weight_array, 
         }
     }
     float32_t gamma = sum_abs / (M * K);
-    gamma = 1.097f;
+    gamma = 4.365f;
     weight_scale[0] = gamma;
     
     std::vector<int8_t> quantized_w(size);    
     for(int m = 0; m < M; m++) {
         for(int k = 0; k < K; k++) {
-            float32_t block_gamma = weight_scale[0];
+            float32_t gamma = weight_scale[0];
             int idx = m * K + k;
-            float normalized = weight_array[idx] / (block_gamma + epsilon);
+            float normalized = weight_array[idx] / (gamma + epsilon);
             float rounded = std::round(normalized);
             // Clip to [-1, 1] range
             int8_t clipped = static_cast<int8_t>(
@@ -993,7 +993,7 @@ int main() {
 
     init_Bs(B, B_T, N, K);
     init_As(A_, A, A_T, A_packed_T, weight_scale, M, K);
-    for(int i=0; i < std::min(M / WM * K / BK, 16); i++) {
+    for(int i=0; i < std::min(M / WM * K / BK, 4); i++) {
         printf("Weight scale for block %d: %.6f\n", i, weight_scale[i]);
     }
 
