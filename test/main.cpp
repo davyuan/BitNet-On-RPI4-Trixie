@@ -829,23 +829,6 @@ std::vector<int8_t> bitnet_158_quantize_32x64(const std::vector<float>& weight_a
     return quantized_w;
 }
 
-std::vector<float> generate_normal_weights(int M, int K, float mean = 0.0f, float stddev = 0.02f) {
-    std::vector<float> matrix(static_cast<size_t>(M) * K);
-    
-    // Seed with a real random device
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    
-    // Define the normal distribution
-    std::normal_distribution<float> dist(mean, stddev);
-
-    for (int i = 0; i < M * K; ++i) {
-        matrix[i] = dist(gen);
-    }
-
-    return matrix;
-}
-
 /* After packing A_packed_T will be (K/2 x M /2)
     A_ will be (M x K)
     A will be (M x K/2) 4-bit representation
@@ -863,7 +846,7 @@ void init_As(float32_t* A_, uint8_t* A, uint8_t* A_T, uint8_t* A_packed_T, float
         std::mt19937 gen(rd()); 
         std::uniform_real_distribution<float> distr(-15.0f, 15.0f);    
         for (int i = 0; i < M * K; i++) {
-            A_[i] = distr(gen);
+            A_[i] = rand() % 3 -1; //distr(gen);
         }
     } else {
         // Read weights from file
@@ -938,9 +921,9 @@ int main() {
 
     init_Bs(B, B_T, N, K);
     init_As(A_, A, A_T, A_packed_T, weight_scale, M, K);
-    /*for(int i=0; i < M / WM * K / BK; i++) {
+    for(int i=0; i < std::min(M / WM * K / BK, 16); i++) {
         printf("Weight scale for block %d: %.6f\n", i, weight_scale[i]);
-    }*/
+    }
 
     // Debug: Print first 16 rows of A_, A_packed, and A_packed_T
     printf("\n=== DEBUG: First 16 rows of A_ (float32_t, 16 elements each) ===\n");
@@ -994,22 +977,21 @@ int main() {
 
     // Step 0: Compute reference result using normal matmul (A_ @ B.T -> C_)
     printf("\nStep 0: Computing reference matmul with A_ and B...\n");
-    // C_[m,n] = sum_k A_[n,k] * B[m,k]
     auto naive_start = std::chrono::high_resolution_clock::now();
     matmul_naive(A_, B, C_, M, N, K);
     auto naive_end = std::chrono::high_resolution_clock::now();
     auto naive_duration = std::chrono::duration_cast<std::chrono::milliseconds>(naive_end - naive_start);
     
     printf("Reference matmul complete. Time: %ld ms\n", naive_duration.count());
-    printf("\nStep 2: Running naive matmul with weight scaling, to test math stability\n");
+    printf("\nStep 2: Running tiled matmul with weight scaling, to test math stability\n");
         
     memset(C_simd, 0, M * N * sizeof(float32_t));
-    /*for(int i=0; i< M/WM * K/2; i++) {
+    for(int i=0; i< M/WM * K/BK; i++) {
         weight_scale[i] = 1.0f;
-    }*/
+    }
     matmul_tiled_weight_scale(A, B, C_simd, weight_scale, M, N, K);
-    printf("\nComparing naive matmul with weight scaling output (C) with reference (C_)...\n");
-    compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_naive_weight_scale comparison");
+    printf("\nComparing tiled matmul with weight scaling output (C) with reference (C_)...\n");
+    compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_tiled_weight_scale comparison");
     
     // Debug: Print first 16 rows of C_ and C_simd
     printf("\n=== DEBUG: First 16 rows of C_ (float32_t, 16 elements each) ===\n");
