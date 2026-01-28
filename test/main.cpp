@@ -67,12 +67,13 @@ void matmul_naive(float32_t* A, float32_t* B, float32_t* C, int M, int N, int K)
 
 // A is (M x K/2) uint8_t, B is (K x N) float32_t
 void matmul_naive_weight_scale(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
+    float32_t scale = ws[0];
     for (int i = 0; i < M; i++) {
         for (int j = 0; j < N; j++) {
             float32_t sum = 0;
             for (int k = 0; k < K/2; k++) {
                 uint8_t a_val = A[i*(K/2) + k];
-                float32_t scale = ws[i / WM + (2*k / BK) * (M / WM)];
+                //float32_t scale = ws[i / WM + (2*k / BK) * (M / WM)];
                 float32_t b_val0 = B[(2*k)*N + j];
                 float32_t b_val1 = B[(2*k + 1)*N + j];
                 float32_t val = 0;
@@ -927,14 +928,6 @@ void init_As(float32_t* A_, uint8_t* A, uint8_t* A_T, uint8_t* A_packed_T, float
    
     // Call bitnet_158_quantize to quantize to ternary {-1, 0, 1}
     std::vector<int8_t> quantized_ternary = bitnet_158_quantize(A_vec, weight_scale, M, K);
-    std::vector<float> dequantized_ternary(M * K);
-    for (int i = 0; i < M * K; i++) {
-        dequantized_ternary[i] = (float)quantized_ternary[i] * weight_scale[0];
-    }
-    printf("Created dequantized_ternary vector (size: %d)\n", (int)dequantized_ternary.size());
-        
-    double cosine_sim = calculate_cosine_similarity(A_, dequantized_ternary.data(), M, K);
-    printf("Cosine similarity between A_ and Quantized(A_): %.6f\n", cosine_sim);
     
     // Pack ternary values into A (2 ternary values per uint8_t)
     // Map {-1, 0, 1} to indices {0-8} for 2 values: 9 combinations
