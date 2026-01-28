@@ -66,6 +66,36 @@ void matmul_naive(float32_t* A, float32_t* B, float32_t* C, int M, int N, int K)
 }
 
 // A is (M x K/2) uint8_t, B is (K x N) float32_t
+void matmul_naive_weight_scale(float32_t* A, float32_t* B, float32_t* C, float_c* ws, int M, int N, int K) {
+    for (int i = 0; i < M; i++) {
+        for (int j = 0; j < N; j++) {
+            float32_t sum = 0;
+            for (int k = 0; k < K/2; k++) {
+                uint8_t a_val = A[i*(K/2) + k];
+                float32_t scale = ws[i / WM + (2*k / BK) * (M / WM)];
+                float32_t b_val0 = B[(2*k)*N + j];
+                float32_t b_val1 = B[(2*k + 1)*N + j];
+                float32_t val = 0;
+                switch(a_val){
+                    case 0: val = -b_val0 - b_val1; break;
+                    case 1: val = -b_val0; break;
+                    case 2: val = -b_val0 + b_val1; break;
+                    case 3: val = -b_val1; break;
+                    case 4: val = 0; break;
+                    case 5: val = b_val1; break;
+                    case 6: val = b_val0 - b_val1; break;
+                    case 7: val = b_val0; break;
+                    case 8: val = b_val0 + b_val1; break;
+                    default: assert(false); // Should not happen
+                }
+                sum += val * scale;
+            }
+            C[i*N + j] = sum;
+        }
+    }
+}
+
+// A is (M x K/2) uint8_t, B is (K x N) float32_t
 void matmul_tiled_weight_scale(uint8_t* A, float32_t* B, float32_t* C, float_t* ws, int M, int N, int K) {
     for(int j = 0; j < N; j++) {
         for (int ii = 0; ii < M; ii+= WM) {
@@ -752,12 +782,10 @@ std::vector<int8_t> bitnet_158_quantize_32x2(const std::vector<float>& weight_ar
         for(int k = 0; k < K/2; k+=BK) {
             float sum_abs = 0.0f;
             for (int i = m; i < m + WM; i++) {
-                for(int j = k; j < k + BK; j++) {
-                    sum_abs += std::fabs(weight_array[i * K + j * 2]) 
-                        + std::fabs(weight_array[i * K + j * 2 + 1]);
-                }
+                sum_abs += std::fabs(weight_array[i * K + j * 2]) 
+                    + std::fabs(weight_array[i * K + j * 2 + 1]);
             }
-            float32_t gamma = sum_abs / (WM * BK * 2);
+            float32_t gamma = sum_abs / (WM * 2);
             weight_scale[k * (M / WM) + (m / WM)] = gamma;
         }
     }
@@ -862,7 +890,7 @@ void init_As(float32_t* A_, uint8_t* A, uint8_t* A_T, uint8_t* A_packed_T, float
     std::vector<float> A_vec(A_, A_ + M * K);
    
     // Call bitnet_158_quantize to quantize to ternary {-1, 0, 1}
-    std::vector<int8_t> quantized_ternary = bitnet_158_quantize_32x64(A_vec, weight_scale, M, K);
+    std::vector<int8_t> quantized_ternary = bitnet_158_quantize_32x2(A_vec, weight_scale, M, K);
         
     // Pack ternary values into A (2 ternary values per uint8_t)
     // Map {-1, 0, 1} to indices {0-8} for 2 values: 9 combinations
@@ -912,7 +940,7 @@ int main() {
     //int32_t* C = (int32_t*)aligned_malloc(M * N * sizeof(int32_t));
     float32_t* C_ = (float32_t*)aligned_malloc(M * N * sizeof(float32_t));
     float32_t* C_simd = (float32_t*)aligned_malloc(M * N * sizeof(float32_t));
-    float32_t* weight_scale = (float32_t*)aligned_malloc((M / WM * K / BK) * sizeof(float32_t));
+    float32_t* weight_scale = (float32_t*)aligned_malloc((M / WM * K / 2) * sizeof(float32_t));
     
     // Allocate reference output matrix C_
     memset(C_, 0, M * N * sizeof(float32_t));
@@ -986,10 +1014,11 @@ int main() {
     printf("\nStep 2: Running tiled matmul with weight scaling, to test math stability\n");
         
     memset(C_simd, 0, M * N * sizeof(float32_t));
-    /*for(int i=0; i< M/WM * K/BK; i++) {
+    for(int i=0; i< M/WM * K/2; i++) {
         weight_scale[i] = 1.0f;
-    }*/
-    matmul_tiled_weight_scale(A, B, C_simd, weight_scale, M, N, K);
+    }
+    //matmul_tiled_weight_scale(A, B, C_simd, weight_scale, M, N, K);
+    matmul_naive_weight_scale(A, B, C_simd, weight_scale, M, N, K);
     printf("\nComparing tiled matmul with weight scaling output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_tiled_weight_scale comparison");
     
