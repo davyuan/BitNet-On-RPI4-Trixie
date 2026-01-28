@@ -253,7 +253,7 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int 
             for (int kk = 0; kk < KK; kk += BK) {
                 int8x16_t vec_lut_high[BK];
                 int8x16_t vec_lut_low[BK];
-                
+
                 // LUT layout per index: [16 high_bytes] [16 low_bytes] = 32 bytes
 #pragma unroll
                 for (int k = 0; k < BK; k++) {
@@ -828,7 +828,6 @@ std::vector<int8_t> bitnet_158_quantize_32x64(const std::vector<float>& weight_a
     return quantized_w;
 }
 
-
 std::vector<float> generate_normal_weights(int M, int K, float mean = 0.0f, float stddev = 0.02f) {
     std::vector<float> matrix(static_cast<size_t>(M) * K);
     
@@ -852,15 +851,30 @@ std::vector<float> generate_normal_weights(int M, int K, float mean = 0.0f, floa
     A_T will be (K/2 x M)
 */
 void init_As(float32_t* A_, uint8_t* A, uint8_t* A_T, uint8_t* A_packed_T, float32_t* weight_scale, int M, int K) {
-    // A_ will be the one used for reference computation
-    //std::vector<float32_t> A_vec = generate_normal_weights(M, K, 0, 7.5f);
-    //std::memcpy(A_, A_vec.data(), M * K * sizeof(float32_t));
-    std::random_device rd; 
-    std::mt19937 gen(rd()); 
-    std::uniform_real_distribution<float> distr(-15.0f, 15.0f);    
-    for (int i = 0; i < M * K; i++) {
-        A_[i] = distr(gen);
+    // Load weights from binary file
+    const char *weight_file = "q_proj_weights.bin";
+    std::ifstream infile(weight_file, std::ios::binary);
+    if (!infile) {
+        std::cerr << "Failed to open weight file: " << weight_file << "\n";
+        std::cerr << "Falling back to random weights\n";
+        // Fallback to random weights
+        std::random_device rd; 
+        std::mt19937 gen(rd()); 
+        std::uniform_real_distribution<float> distr(-15.0f, 15.0f);    
+        for (int i = 0; i < M * K; i++) {
+            A_[i] = distr(gen);
+        }
+    } else {
+        // Read weights from file
+        infile.read(reinterpret_cast<char*>(A_), M * K * sizeof(float32_t));
+        if (!infile) {
+            std::cerr << "Failed to read weights from file\n";
+            return;
+        }
+        infile.close();
+        printf("Loaded weights from %s\n", weight_file);
     }
+    
     std::vector<float> A_vec(A_, A_ + M * K);
    
     // Call bitnet_158_quantize to quantize to ternary {-1, 0, 1}

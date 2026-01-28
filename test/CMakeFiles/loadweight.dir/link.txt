@@ -1,0 +1,1 @@
+/usr/bin/c++ CMakeFiles/loadweight.dir/loadweight.cpp.o -o loadweight  ../../safetensors/safetensors/target/release/libsafetensors.a -ldl 

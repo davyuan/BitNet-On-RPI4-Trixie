@@ -1,0 +1,3 @@
+/home/david/dev/BitNet-On-RPI4-Trixie/test/CMakeFiles/loadweight.dir
+/home/david/dev/BitNet-On-RPI4-Trixie/test/CMakeFiles/edit_cache.dir
+/home/david/dev/BitNet-On-RPI4-Trixie/test/CMakeFiles/rebuild_cache.dir
