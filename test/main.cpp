@@ -927,10 +927,15 @@ void init_As(float32_t* A_, uint8_t* A, uint8_t* A_T, uint8_t* A_packed_T, float
    
     // Call bitnet_158_quantize to quantize to ternary {-1, 0, 1}
     std::vector<int8_t> quantized_ternary = bitnet_158_quantize(A_vec, weight_scale, M, K);
-    // Validate loaded weights: calculate cosine similarity between A_ and sign(A_)
-    double cosine_sim = calculate_cosine_similarity(A_, quantized_ternary.data(), M, K);
-    printf("Cosine similarity between A_ and Quantized(A_): %.6f\n", cosine_sim);
+    std::vector<float> dequantized_ternary(M * K);
+    for (int i = 0; i < M * K; i++) {
+        dequantized_ternary[i] = (float)quantized_ternary[i] * weight_scale[0];
+    }
+    printf("Created dequantized_ternary vector (size: %d)\n", (int)dequantized_ternary.size());
         
+    double cosine_sim = calculate_cosine_similarity(A_, dequantized_ternary.data(), M, K);
+    printf("Cosine similarity between A_ and Quantized(A_): %.6f\n", cosine_sim);
+    
     // Pack ternary values into A (2 ternary values per uint8_t)
     // Map {-1, 0, 1} to indices {0-8} for 2 values: 9 combinations
     for (int i = 0; i < M * K / 2; i++) {
