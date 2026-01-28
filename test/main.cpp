@@ -786,7 +786,7 @@ std::vector<int8_t> bitnet_158_quantize(const std::vector<float>& weight_array, 
         }
     }
     float32_t gamma = sum_abs / (M * K);
-    gamma = 0.61f;
+    gamma = 0.5f;
     weight_scale[0] = gamma;
     
     std::vector<int8_t> quantized_w(size);    
