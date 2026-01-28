@@ -886,21 +886,15 @@ void init_As(float32_t* A_, uint8_t* A, uint8_t* A_T, uint8_t* A_packed_T, float
         }
         infile.close();
         printf("Loaded weights from %s\n", weight_file);
-        
-        // Validate loaded weights: calculate cosine similarity between A_ and sign(A_)
-        float32_t* A_sign = (float32_t*)aligned_malloc(M * K * sizeof(float32_t));
-        for (int i = 0; i < M * K; i++) {
-            A_sign[i] = (A_[i] > 0) ? 1.0f : (A_[i] < 0) ? -1.0f : 0.0f;
-        }
-        double cosine_sim = calculate_cosine_similarity(A_, A_sign, M, K);
-        printf("Cosine similarity between A_ and sign(A_): %.6f\n", cosine_sim);
-        aligned_free(A_sign);
     }
     
     std::vector<float> A_vec(A_, A_ + M * K);
    
     // Call bitnet_158_quantize to quantize to ternary {-1, 0, 1}
     std::vector<int8_t> quantized_ternary = bitnet_158_quantize_32x2(A_vec, weight_scale, M, K);
+    // Validate loaded weights: calculate cosine similarity between A_ and sign(A_)
+    double cosine_sim = calculate_cosine_similarity(A_, quantized_ternary.data(), M, K);
+    printf("Cosine similarity between A_ and sign(A_): %.6f\n", cosine_sim);
         
     // Pack ternary values into A (2 ternary values per uint8_t)
     // Map {-1, 0, 1} to indices {0-8} for 2 values: 9 combinations

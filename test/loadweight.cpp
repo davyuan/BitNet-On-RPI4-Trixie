@@ -12,6 +12,25 @@ static float bf16_to_f32(uint16_t v) {
     return f;
 }
 
+static float f16_to_f32(uint16_t v) {
+    uint32_t sign = (uint32_t)(v & 0x8000) << 16;
+    uint32_t exp = (uint32_t)(v & 0x7C00) << 13;
+    uint32_t frac = (uint32_t)(v & 0x03FF) << 13;
+    uint32_t u;
+    
+    if (exp == 0) {
+        u = sign | frac;
+    } else if (exp == 0x47800000) {
+        u = sign | 0x7F800000 | frac;
+    } else {
+        u = sign | (exp + 0x38000000) | frac;
+    }
+    
+    float f;
+    std::memcpy(&f, &u, sizeof(f));
+    return f;
+}
+
 int main() {
     const char *file = "../models/bitnet-b1.58-2B-4T-bf16/model.safetensors";
     const std::string tensor_name = "model.layers.0.self_attn.q_proj.weight";
@@ -45,10 +64,23 @@ int main() {
         return 1;
     }
     
-    // Check dtype
-    if (tensor.dtype != safetensors::kBFLOAT16) {
-        std::cerr << "Expected BF16, but got dtype: " << tensor.dtype << "\n";
+    // Check dtype - allow multiple formats
+    std::cout << "Tensor dtype: " << tensor.dtype << "\n";
+    std::cout << "safetensors::kFLOAT16: " << safetensors::kFLOAT16 << "\n";
+    std::cout << "safetensors::kBFLOAT16: " << safetensors::kBFLOAT16 << "\n";
+    
+    bool is_bf16 = (tensor.dtype == safetensors::kBFLOAT16);
+    bool is_f16 = (tensor.dtype == safetensors::kFLOAT16);
+    bool is_dtype_1 = (tensor.dtype == 1);  // Unknown dtype, possibly float16 variant
+    
+    if (!is_bf16 && !is_f16 && !is_dtype_1) {
+        std::cerr << "Expected BF16, F16, or dtype 1, but got dtype: " << tensor.dtype << "\n";
         return 1;
+    }
+    
+    if (is_dtype_1) {
+        std::cout << "Using dtype 1 (assuming F16 variant)\n";
+        is_f16 = true;  // Treat dtype 1 as F16
     }
 
     // Calculate total elements from shape
@@ -79,12 +111,20 @@ int main() {
         std::cout << "Using databuffer\n";
     }
     
-    const uint16_t *bf16_data = reinterpret_cast<const uint16_t *>(data_ptr);
+    const uint16_t *data_16 = reinterpret_cast<const uint16_t *>(data_ptr);
 
-    // Convert BF16 to F32
+    // Convert to F32 (BF16 or F16)
     std::vector<float> weights(numel);
-    for (size_t i = 0; i < numel; i++) {
-        weights[i] = bf16_to_f32(bf16_data[i]);
+    if (is_bf16) {
+        std::cout << "Converting BF16 to F32...\n";
+        for (size_t i = 0; i < numel; i++) {
+            weights[i] = bf16_to_f32(data_16[i]);
+        }
+    } else {
+        std::cout << "Converting F16 to F32...\n";
+        for (size_t i = 0; i < numel; i++) {
+            weights[i] = f16_to_f32(data_16[i]);
+        }
     }
 
     std::cout << "Loaded " << numel << " weights\n";
