@@ -803,7 +803,7 @@ std::vector<int8_t> bitnet_158_quantize_32x2(const std::vector<float>& weight_ar
                     std::max(-1.0f, std::min(1.0f, rounded))
                 );
                 quantized_w[idx] = clipped;
-                
+
                 normalized = weight_array[idx + 1] / (block_gamma + epsilon);
                 rounded = std::round(normalized);
                 // Clip to [-1, 1] range
@@ -891,6 +891,16 @@ void init_As(float32_t* A_, uint8_t* A, uint8_t* A_T, uint8_t* A_packed_T, float
    
     // Call bitnet_158_quantize to quantize to ternary {-1, 0, 1}
     std::vector<int8_t> quantized_ternary = bitnet_158_quantize_32x2(A_vec, weight_scale, M, K);
+    
+    // Print first 16 rows of quantized_ternary (16 elements per row)
+    printf("\n=== DEBUG: First 16 rows of quantized_ternary (int8_t, 16 elements each) ===\n");
+    for (int i = 0; i < 16; i++) {
+        printf("quantized_ternary[%2d]: ", i);
+        for (int j = 0; j < 16; j++) {
+            printf("%3d ", (int)quantized_ternary[i * K + j]);
+        }
+        printf("\n");
+    }
         
     // Pack ternary values into A (2 ternary values per uint8_t)
     // Map {-1, 0, 1} to indices {0-8} for 2 values: 9 combinations
