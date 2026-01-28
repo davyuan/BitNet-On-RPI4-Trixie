@@ -775,6 +775,39 @@ void compare_matrices(float32_t* C_simd, float32_t* C_, int M, int N, float32_t 
 
 // BitNet 1.58 quantization: convert weights to ternary {-1, 0, 1} using absmean scaling
 // Returns: pair of (quantized_weights, gamma_scale)
+std::vector<int8_t> bitnet_158_quantize(const std::vector<float>& weight_array, float32_t * weight_scale, int M, int K) {
+    const float32_t epsilon = 1e-7f;
+    int size = weight_array.size();
+    
+    float sum_abs = 0.0f;
+    for(int m = 0; m < M; m++) {
+        for(int k = 0; k < K; k++) {
+            sum_abs += std::fabs(weight_array[m * K + k]) ;
+        }
+    }
+    float32_t gamma = sum_abs / (M * K);
+    weight_scale[0] = gamma;
+    
+    std::vector<int8_t> quantized_w(size);    
+    for(int m = 0; m < M; m++) {
+        for(int k = 0; k < K; k++) {
+            float32_t block_gamma = weight_scale[0];
+            int idx = m * K + k;
+            float normalized = weight_array[idx] / (block_gamma + epsilon);
+            float rounded = std::round(normalized);
+            // Clip to [-1, 1] range
+            int8_t clipped = static_cast<int8_t>(
+                std::max(-1.0f, std::min(1.0f, rounded))
+            );
+            quantized_w[idx] = clipped;
+        }
+    }
+    
+    return quantized_w;
+}
+
+// BitNet 1.58 quantization: convert weights to ternary {-1, 0, 1} using absmean scaling
+// Returns: pair of (quantized_weights, gamma_scale)
 std::vector<int8_t> bitnet_158_quantize_32x2(const std::vector<float>& weight_array, float32_t * weight_scale, int M, int K) {
     const float32_t epsilon = 1e-7f;
     int size = weight_array.size();
@@ -892,10 +925,10 @@ void init_As(float32_t* A_, uint8_t* A, uint8_t* A_T, uint8_t* A_packed_T, float
     std::vector<float> A_vec(A_, A_ + M * K);
    
     // Call bitnet_158_quantize to quantize to ternary {-1, 0, 1}
-    std::vector<int8_t> quantized_ternary = bitnet_158_quantize_32x2(A_vec, weight_scale, M, K);
+    std::vector<int8_t> quantized_ternary = bitnet_158_quantize(A_vec, weight_scale, M, K);
     // Validate loaded weights: calculate cosine similarity between A_ and sign(A_)
     double cosine_sim = calculate_cosine_similarity(A_, quantized_ternary.data(), M, K);
-    printf("Cosine similarity between A_ and sign(A_): %.6f\n", cosine_sim);
+    printf("Cosine similarity between A_ and Quantized(A_): %.6f\n", cosine_sim);
         
     // Pack ternary values into A (2 ternary values per uint8_t)
     // Map {-1, 0, 1} to indices {0-8} for 2 values: 9 combinations
