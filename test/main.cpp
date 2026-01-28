@@ -782,8 +782,8 @@ std::vector<int8_t> bitnet_158_quantize_32x2(const std::vector<float>& weight_ar
         for(int k = 0; k < K/2; k+=BK) {
             float sum_abs = 0.0f;
             for (int i = m; i < m + WM; i++) {
-                sum_abs += std::fabs(weight_array[i * K + j * 2]) 
-                    + std::fabs(weight_array[i * K + j * 2 + 1]);
+                sum_abs += std::fabs(weight_array[i * K + k * 2]) 
+                    + std::fabs(weight_array[i * K + k * 2 + 1]);
             }
             float32_t gamma = sum_abs / (WM * 2);
             weight_scale[k * (M / WM) + (m / WM)] = gamma;
