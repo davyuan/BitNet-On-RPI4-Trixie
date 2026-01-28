@@ -929,6 +929,22 @@ void init_As(float32_t* A_, uint8_t* A, uint8_t* A_T, uint8_t* A_packed_T, float
     // Call bitnet_158_quantize to quantize to ternary {-1, 0, 1}
     std::vector<int8_t> quantized_ternary = bitnet_158_quantize(A_vec, weight_scale, M, K);
     
+    // Stats on quantized_ternary tensor
+    {
+        int64_t count_neg1 = 0, count_zero = 0, count_pos1 = 0;
+        for (int8_t val : quantized_ternary) {
+            if (val == -1) count_neg1++;
+            else if (val == 0) count_zero++;
+            else if (val == 1) count_pos1++;
+        }
+        int64_t total = quantized_ternary.size();
+        printf("=== Quantized Ternary Statistics ===\n");
+        printf("Total elements: %ld\n", total);
+        printf("  Count at -1: %ld (%.2f%%)\n", count_neg1, 100.0 * count_neg1 / total);
+        printf("  Count at  0: %ld (%.2f%%)\n", count_zero, 100.0 * count_zero / total);
+        printf("  Count at +1: %ld (%.2f%%)\n", count_pos1, 100.0 * count_pos1 / total);
+    }
+    
     // Pack ternary values into A (2 ternary values per uint8_t)
     // Map {-1, 0, 1} to indices {0-8} for 2 values: 9 combinations
     for (int i = 0; i < M * K / 2; i++) {
