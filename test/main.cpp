@@ -1015,9 +1015,9 @@ int main() {
     printf("\nStep 2: Running tiled matmul with weight scaling, to test math stability\n");
         
     memset(C_simd, 0, M * N * sizeof(float32_t));
-    for(int i=0; i< M/WM * K/2; i++) {
+    /*for(int i=0; i< M/WM * K/2; i++) {
         weight_scale[i] = 1.0f;
-    }
+    }*/
     //matmul_tiled_weight_scale(A, B, C_simd, weight_scale, M, N, K);
     matmul_naive_weight_scale(A, B, C_simd, weight_scale, M, N, K);
     printf("\nComparing tiled matmul with weight scaling output (C) with reference (C_)...\n");
