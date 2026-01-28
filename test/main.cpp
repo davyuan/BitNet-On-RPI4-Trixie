@@ -679,7 +679,8 @@ double calculate_sqnr(const float32_t* C, const float32_t* C_hat, int M, int N) 
  * Calculates Cosine Similarity between two matrices C and C_hat of size M x N.
  * Returns a value between -1.0 and 1.0.
  */
-double calculate_cosine_similarity(const float32_t* C, const float32_t* C_hat, int M, int N) {
+template<typename T>
+double calculate_cosine_similarity(const float32_t* C, const T* C_hat, int M, int N) {
     double dot_product = 0.0;
     double norm_c = 0.0;
     double norm_c_hat = 0.0;
