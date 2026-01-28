@@ -66,7 +66,7 @@ void matmul_naive(float32_t* A, float32_t* B, float32_t* C, int M, int N, int K)
 }
 
 // A is (M x K/2) uint8_t, B is (K x N) float32_t
-void matmul_naive_weight_scale(float32_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
+void matmul_naive_weight_scale(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
     for (int i = 0; i < M; i++) {
         for (int j = 0; j < N; j++) {
             float32_t sum = 0;
