@@ -988,7 +988,7 @@ int main() {
 
     init_Bs(B, B_T, N, K);
     init_As(A_, A, A_T, A_packed_T, weight_scale, M, K);
-    for(int i=0; i < std::min(M / WM * K / BK, 128); i++) {
+    for(int i=0; i < std::min(M / WM * K / BK, 16); i++) {
         printf("Weight scale for block %d: %.6f\n", i, weight_scale[i]);
     }
 
