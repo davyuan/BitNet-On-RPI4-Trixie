@@ -779,7 +779,7 @@ std::vector<int8_t> bitnet_158_quantize_32x2(const std::vector<float>& weight_ar
     int size = weight_array.size();
     
     for(int m = 0; m < M; m+=WM) {
-        for(int k = 0; k < K/2; k+=BK) {
+        for(int k = 0; k < K/2; k++) {
             float sum_abs = 0.0f;
             for (int i = m; i < m + WM; i++) {
                 sum_abs += std::fabs(weight_array[i * K + k * 2]) 
@@ -792,28 +792,26 @@ std::vector<int8_t> bitnet_158_quantize_32x2(const std::vector<float>& weight_ar
     
     std::vector<int8_t> quantized_w(size);    
     for(int m = 0; m < M; m+= WM) {
-        for(int k = 0; k < K / 2; k+=BK) {
+        for(int k = 0; k < K / 2; k++) {
             float32_t block_gamma = weight_scale[k * (M / WM) + (m / WM)];
             // Process each k within this BK block
-            for(int kk = k; kk < k + BK; kk++) {
-                for (int i = m; i < m + WM; i++) {
-                    int idx = i * K + kk * 2;
-                    float normalized = weight_array[idx] / (block_gamma + epsilon);
-                    float rounded = std::round(normalized);
-                    // Clip to [-1, 1] range
-                    int8_t clipped = static_cast<int8_t>(
-                        std::max(-1.0f, std::min(1.0f, rounded))
-                    );
-                    quantized_w[idx] = clipped;
+            for (int i = m; i < m + WM; i++) {
+                int idx = i * K + k * 2;
+                float normalized = weight_array[idx] / (block_gamma + epsilon);
+                float rounded = std::round(normalized);
+                // Clip to [-1, 1] range
+                int8_t clipped = static_cast<int8_t>(
+                    std::max(-1.0f, std::min(1.0f, rounded))
+                );
+                quantized_w[idx] = clipped;
 
-                    normalized = weight_array[idx + 1] / (block_gamma + epsilon);
-                    rounded = std::round(normalized);
-                    // Clip to [-1, 1] range
-                    clipped = static_cast<int8_t>(
-                        std::max(-1.0f, std::min(1.0f, rounded))
-                    );
-                    quantized_w[idx + 1] = clipped;
-                }
+                normalized = weight_array[idx + 1] / (block_gamma + epsilon);
+                rounded = std::round(normalized);
+                // Clip to [-1, 1] range
+                clipped = static_cast<int8_t>(
+                    std::max(-1.0f, std::min(1.0f, rounded))
+                );
+                quantized_w[idx + 1] = clipped;
             }
         }
     }
