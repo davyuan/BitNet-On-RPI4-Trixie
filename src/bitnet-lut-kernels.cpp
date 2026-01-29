@@ -139,14 +139,14 @@ void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT,
                 vec_c[3] = vaddq_s16(vec_c[3], out3); 
             }
 
-            float32_t* pC = (float32_t*) &(C[(i+0)*N + j]);
+            float32_t* pC = (float32_t*) &(C[j*M + i]);
             const float32_t lut_scale = ((float32_t*)LUT_Scales)[0];
             const float32_t scale = ((float32_t*)Scales)[0];
             int16_t tmp_vals[8];                
 #pragma unroll
             for (int block = 0; block < 4; ++block) {
                 vst1q_s16(tmp_vals, vec_c[block]);
-                for (int lane = 0; lane < 8; ++lane, pC += N) {
+                for (int lane = 0; lane < 8; ++lane, pC ++) {
                     float32_t val = (tmp_vals[lane] / lut_scale) * scale;
                     (*pC) += val;
                 }

@@ -2,6 +2,10 @@
 import numpy as np
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock
+
+# Mock sentencepiece to avoid dependencies
+sys.modules["sentencepiece"] = MagicMock()
 
 # Add gguf-py to path
 gguf_path = Path(__file__).parent.parent / "3rdparty/llama.cpp/gguf-py"
@@ -10,7 +14,7 @@ sys.path.insert(0, str(gguf_path))
 from gguf import GGUFReader
 
 # Configuration
-file_path = "./models/bitnet-b1.58-2B-4T-gguf/ggml-model-i2_s.gguf"
+file_path = "/home/david/dev/BitNet-On-RPI4-Trixie/models/bitnet-b1.58-2B-4T-gguf/ggml-model-i2_s.gguf"
 tensor_name = "blk.5.ffn_down.weight"
 
 def unpack_ternary_2bit(byte_val):
@@ -59,6 +63,10 @@ if tensor_found is None:
 print(f"Loaded tensor '{tensor_name}'")
 print(f"Shape: {tensor_found.shape}")
 print(f"Tensor type: {tensor_found.tensor_type}")
+
+# Try to read the "hidden" scale if it's a BitNet tensor
+if tensor_found.tensor_type in (36, 38): # I2_S=36, TL1=38
+    print(f"Detected BitNet tensor. Hidden scale (from GGUFReader): {tensor_found.scale}")
 
 # Get the tensor data
 weights_np = tensor_found.data
