@@ -11,10 +11,11 @@
 #include <vector>
 #include <stdexcept>
 #include <cassert>
+#include <functional>
 #include "ggml-bitnet.h"
 #include "bitnet-lut-kernels.h"
 
-#define TILE_SIZE 16
+#define TILE_SIZE 32
 #define WM 32 // Weight block is shape (WM x BK), we use BK = 64, so each scale covers 2 K indices
 
 const int M = 2560;           // Weight rows (A rows)
@@ -53,6 +54,8 @@ static inline void interleave_vec_c_block(int16x4_t c0, int16x4_t c1, int16x4_t 
     out[3] = vmovl_s16(rows23.val[1]);
 }
 
+/* A is M x K, B is K x N, C is N x M. C is transposed since in LLM, it is almost 
+    always immediately fed into the next sub-layer as tensor B.*/
 void matmul_naive(float32_t* A, float32_t* B, float32_t* C, int M, int N, int K) {
     for (int i = 0; i < M; i++) {
         for (int j = 0; j < N; j++) {
@@ -60,7 +63,7 @@ void matmul_naive(float32_t* A, float32_t* B, float32_t* C, int M, int N, int K)
             for (int k = 0; k < K; k++) {
                 sum += A[i*K + k] * B[k*N + j];
             }
-            C[i*N + j] = sum;
+            C[j*M + i] = sum;
         }
     }
 }
@@ -91,7 +94,7 @@ void matmul_naive_weight_scale(uint8_t* A, float32_t* B, float32_t* C, float32_t
                 }
                 sum += val * scale;
             }
-            C[i*N + j] = sum;
+            C[j*M + i] = sum;
         }
     }
 }
@@ -136,12 +139,11 @@ void matmul_tiled_weight_scale(uint8_t* A, float32_t* B, float32_t* C, float32_t
    C(MxN)
    This version natively implements the LUT-based matmul without SIMD optimizations.   
 */
-void matmul_lut_naive(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
+void matmul_lut_naive(int8_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
     int KK = K / 2;
     int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
     float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
     float32_t* Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
-    *Scales = 1.0f;
     *LUT_Scales = 1.0f;
 
     // Debug: Print full A matrix
@@ -206,7 +208,7 @@ void matmul_lut_naive(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) 
                         }
 
                         // Add to result (C is pre-initialized to 0)
-                        C[i*N + j] += local_sum;
+                        C[j*M + i] += local_sum * ws[0] / ((*LUT_Scales);
                     }
                 }
             }
@@ -313,14 +315,14 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int 
                         vec_c[1] = vaddq_s16(vec_c[1], out01);
                     }
 
-                    float32_t* pC = (float32_t*) &(C[(i+0)*N + j]);
+                    float32_t* pC = (float32_t*) &(C[j*M + i]);
                     const float32_t lut_scale = ((float32_t*)LUT_Scales)[0];
                     const float32_t scale = ws[0];
                     int16_t tmp_vals[8];
 #pragma unroll
                     for (int block = 0; block < 2; ++block) {
                         vst1q_s16(tmp_vals, vec_c[block]);
-                        for (int lane = 0; lane < 8; ++lane, pC += N) {
+                        for (int lane = 0; lane < 8; ++lane, pC ++) {
                             float32_t val = (tmp_vals[lane] / lut_scale) * scale;
                             (*pC) += val;
                         }
@@ -980,6 +982,24 @@ void init_Bs(float32_t* B, float32_t* B_T, int N, int K) {
     transpose_matrix(B, B_T, N, K);
 }
 
+long long benchmark_matmul(const char* step_info, const char* kernel_name, 
+                          std::function<void()> matmul_func, 
+                          float32_t* C, int M, int N, int num_iterations) {
+    if (step_info) printf("%s", step_info);
+    long long total_time = 0;
+    for (int iter = 0; iter < num_iterations; iter++) {
+        memset(C, 0, M * N * sizeof(float32_t));
+        auto start = std::chrono::high_resolution_clock::now();
+        matmul_func();
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        total_time += duration.count();
+    }
+    long long avg_time = total_time / num_iterations;
+    printf("%s complete. Average time over %d runs: %lld ms\n", kernel_name, num_iterations, avg_time);
+    return avg_time;
+}
+
 int main() {    
     printf("Allocating matrices...\n");
     
@@ -1061,16 +1081,12 @@ int main() {
     auto naive_start = std::chrono::high_resolution_clock::now();
     matmul_naive(A_, B, C_, M, N, K);
     auto naive_end = std::chrono::high_resolution_clock::now();
-    auto naive_duration = std::chrono::duration_cast<std::chrono::milliseconds>(naive_end - naive_start);
-    
+    auto naive_duration = std::chrono::duration_cast<std::chrono::milliseconds>(naive_end - naive_start);   
     printf("Reference matmul complete. Time: %ld ms\n", naive_duration.count());
+
     printf("\nStep 2: Running tiled matmul with weight scaling, to test math stability\n");
         
     memset(C_simd, 0, M * N * sizeof(float32_t));
-    /*for(int i=0; i< M/WM * K/2; i++) {
-        weight_scale[i] = 1.0f;
-    }*/
-    //matmul_tiled_weight_scale(A, B, C_simd, weight_scale, M, N, K);
     matmul_naive_weight_scale(A, B, C_simd, weight_scale, M, N, K);
     printf("\nComparing tiled matmul with weight scaling output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_tiled_weight_scale comparison");
@@ -1093,37 +1109,25 @@ int main() {
         printf("\n");
     }
     
-    printf("\nStep 2: Running qGEMM_LUT SIMD (50 iterations for average)\n");        
-    const int num_iterations = 50;
-    long long total_simd_time = 0;
-    for (int iter = 0; iter < num_iterations; iter++) {
-        memset(C_simd, 0, M * N * sizeof(float32_t));
-        auto lut_simd_start = std::chrono::high_resolution_clock::now();
-        matmul_lut_simd(A_T, B_T, C_simd, weight_scale, M, N, K);
-        auto lut_simd_end = std::chrono::high_resolution_clock::now();
-        auto lut_simd_duration = std::chrono::duration_cast<std::chrono::milliseconds>(lut_simd_end - lut_simd_start);
-        total_simd_time += lut_simd_duration.count();
-    }
-    long long avg_simd_time = total_simd_time / num_iterations;
-    printf("Matmul_lut_simd complete. Average time over %d runs: %lld ms\n", num_iterations, avg_simd_time);
+    /*const int num_iterations = 50;
+    long long avg_simd_time = benchmark_matmul(
+        "\nStep 2: Running qGEMM_LUT SIMD (50 iterations for average)\n",
+        "Matmul_lut_simd",
+        [&]() { matmul_lut_simd(A_T, B_T, C_simd, weight_scale, M, N, K); },
+        C_simd, M, N, num_iterations
+    );
 
     printf("\nComparing kernel output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_lut_simd comparison");
 
     // Step 3: Run qGEMM with micro kernel (50 runs for averaging)
-    printf("\nStep 3: Running qGEMM_LUT microkernel (50 iterations for average)\n");
-    
-    long long total_microkernel_time = 0;
-    for (int iter = 0; iter < num_iterations; iter++) {
-        memset(C_simd, 0, M * N * sizeof(float32_t));
-        auto microkernel_start = std::chrono::high_resolution_clock::now();           
-        matmul_lut_micro_kernel(A_packed_T, B_T, C_simd, weight_scale, M, N, K);
-        auto microkernel_end = std::chrono::high_resolution_clock::now();
-        auto microkernel_duration = std::chrono::duration_cast<std::chrono::milliseconds>(microkernel_end - microkernel_start);
-        total_microkernel_time += microkernel_duration.count();
-    }
-    long long avg_microkernel_time = total_microkernel_time / num_iterations;
-    printf("Matmul_microkernel complete. Average time over %d runs: %lld ms\n", num_iterations, avg_microkernel_time);
+    long long avg_microkernel_time = benchmark_matmul(
+        "\nStep 3: Running qGEMM_LUT microkernel (50 iterations for average)\n",
+        "Matmul_microkernel",
+        [&]() { matmul_lut_micro_kernel(A_packed_T, B_T, C_simd, weight_scale, M, N, K); },
+        C_simd, M, N, num_iterations
+    );
+
     printf("\nComparing kernel output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_microkernel comparison");
 
@@ -1141,7 +1145,7 @@ int main() {
     //printf("LUT matmul SIMD2 (avg):   %lld ms\n", avg_simd_time2);
     //printf("Speedup (naive / SIMD2): %.2fx\n\n", speedup_simd2);
     printf("LUT matmul microkernel (avg):   %lld ms\n", avg_microkernel_time);
-    printf("Speedup (naive / microkernel): %.2fx\n\n", speedup_microkernel);
+    printf("Speedup (naive / microkernel): %.2fx\n\n", speedup_microkernel);*/
     
     // Cleanup
     aligned_free(C_);
