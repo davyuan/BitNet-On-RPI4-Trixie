@@ -1058,21 +1058,21 @@ int main() {
     printf("\nComparing kernel output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_microkernel comparison");
 
-    printf("\n");
+    printf("\n");*/
 
     // Print performance comparison
-    //double speedup_naive2 = (double)naive_duration.count() / (double)lut_duration.count();
+    double speedup_naive2 = (double)naive_duration.count() / (double)lut_duration.count();
+    double speedup_lut = (double)naive_duration.count() / (double)avg_lut_time;
     double speedup_simd = (double)naive_duration.count() / (double)avg_simd_time;
+    double speedup_packed = (double)naive_duration.count() / (double)avg_packed_time;
     //double speedup_simd2 = (double)naive_duration.count() / (double)avg_simd_time2;
-    double speedup_microkernel = (double)naive_duration.count() / (double)avg_microkernel_time;
+    //double speedup_microkernel = (double)naive_duration.count() / (double)avg_microkernel_time;
     printf("\n=== PERFORMANCE COMPARISON ===\n");
     printf("matmul naive:   %ld ms\n", naive_duration.count());
-    //printf("LUT matmul SIMD (avg):   %lld ms\n", avg_simd_time);
+    printf("Speedup (naive / lut)):   %.2fx\n", speedup_lut);
     printf("Speedup (naive / SIMD): %.2fx\n\n", speedup_simd);
-    //printf("LUT matmul SIMD2 (avg):   %lld ms\n", avg_simd_time2);
-    //printf("Speedup (naive / SIMD2): %.2fx\n\n", speedup_simd2);
-    printf("LUT matmul microkernel (avg):   %lld ms\n", avg_microkernel_time);
-    printf("Speedup (naive / microkernel): %.2fx\n\n", speedup_microkernel);*/
+    printf("LUT matmul_lut_unpacked (avg):   %lld ms\n", avg_packed_time);
+    printf("Speedup (naive / lut_packed): %.2fx\n\n", speedup_packed);
     
     // Cleanup
     aligned_free(C_);
