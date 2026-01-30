@@ -1089,9 +1089,9 @@ int main() {
 
     const int num_iterations = 1;
     long long avg_simd_time = benchmark_matmul(
-        "\nStep 2: Running LUT Naive(50 iterations for average)\n",
+        "\nStep 2: Running LUT Tiled(50 iterations for average)\n",
         "Matmul_lut_tiled",
-        [&]() { matmul_lut_tiled(A, B, C_simd, weight_scale, M, N, K); },
+        [&]() { matmul_lut_tiled(A, B_T, C_simd, weight_scale, M, N, K); },
         C_simd, M, N, num_iterations
     );
 
