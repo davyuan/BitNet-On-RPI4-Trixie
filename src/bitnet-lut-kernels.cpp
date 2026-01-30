@@ -168,18 +168,21 @@ void ggml_qgemm_lut_2col(int M, int N, int K, int ii, int j, uint8_t* A, int8_t*
         int16x8_t acc4_j0 = vdupq_n_s16(0), acc5_j0 = vdupq_n_s16(0);
         int16x8_t acc6_j0 = vdupq_n_s16(0), acc7_j0 = vdupq_n_s16(0);
 
+        int i_packed = i / 2;
         int16x8_t acc0_j1 = vdupq_n_s16(0), acc1_j1 = vdupq_n_s16(0);
         int16x8_t acc2_j1 = vdupq_n_s16(0), acc3_j1 = vdupq_n_s16(0);
         int16x8_t acc4_j1 = vdupq_n_s16(0), acc5_j1 = vdupq_n_s16(0);
         int16x8_t acc6_j1 = vdupq_n_s16(0), acc7_j1 = vdupq_n_s16(0);
+
+        const uint8_t* pA0 = A + i_packed;
+        const uint8_t* pA1 = A + i_packed + 16;
+        const int row_stride = M / 2;
 
         for (int k = 0; k < KK; k++) {
             int8x16_t vh0 = vld1q_s8(LUT0 + k * 32);
             int8x16_t vl0 = vld1q_s8(LUT0 + k * 32 + 16);
             int8x16_t vh1 = vld1q_s8(LUT1 + k * 32);
             int8x16_t vl1 = vld1q_s8(LUT1 + k * 32 + 16);
-
-            int i_packed = i / 2;
             
 #define PROCESS_32_ROWS_2COL(a_ptr, acl0_j0, ach0_j0, acl1_j0, ach1_j0, \
                                        acl0_j1, ach0_j1, acl1_j1, ach1_j1) { \
@@ -209,13 +212,15 @@ void ggml_qgemm_lut_2col(int M, int N, int K, int ii, int j, uint8_t* A, int8_t*
                 acl1_j1 = vaddq_s16(acl1_j1, o2); ach1_j1 = vaddq_s16(ach1_j1, o3); \
             }
 
-            PROCESS_32_ROWS_2COL(A + k * M / 2 + i_packed,      \
+            PROCESS_32_ROWS_2COL(pA0, \
                                  acc0_j0, acc1_j0, acc2_j0, acc3_j0, \
                                  acc0_j1, acc1_j1, acc2_j1, acc3_j1);
-            PROCESS_32_ROWS_2COL(A + k * M / 2 + i_packed + 16, \
+            PROCESS_32_ROWS_2COL(pA1, \
                                  acc4_j0, acc5_j0, acc6_j0, acc7_j0, \
                                  acc4_j1, acc5_j1, acc6_j1, acc7_j1);
 #undef PROCESS_32_ROWS_2COL
+            pA0 += row_stride;
+            pA1 += row_stride;
         }
 
         // Write-back
