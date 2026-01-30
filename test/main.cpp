@@ -576,42 +576,44 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, in
 /* A(K/2 x M), B(N x K)
    QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
         each K represents 2 activations in B. 
-   C(MxN)
-   This version doesn't use SIMD optimizations either, but focus on one LUT table at once to avoid
-   overhead of reconstructing LUTs in the same tile. 
+   C(N x M)
+   This version call the micro kernel. 
 */
 void matmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
     int ne00 = K;
     int ne01 = M;
     int ne10 = K;
     int ne11 = N;
-    int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
-    float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
+    int8_t* QLUT0 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
+    int8_t* QLUT1 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
+    float32_t* LUT_Scales = (float32_t*)aligned_malloc(2 * sizeof(float32_t));
 
     #pragma omp parallel num_threads(4)
     {    
         int ith = omp_get_thread_num();
         int nth = omp_get_num_threads();
     
-        for (int j = 0; j < ne11; j++) {
+        for (int j = 0; j < ne11; j += 2) {
             if (ith == 0) {
-                ggml_preprocessor(ne01, ne00, B + (j * ne10), LUT_Scales, QLUT);
+                ggml_preprocessor(ne01, ne00, B + ((j + 0) * ne10), &LUT_Scales[0], QLUT0);
+                ggml_preprocessor(ne01, ne00, B + ((j + 1) * ne10), &LUT_Scales[1], QLUT1);
             }
 #pragma omp barrier
 
             const int range_per_thread_ii = ne01 / nth;
             for (int ii = ith * range_per_thread_ii; ii < (ith + 1) * range_per_thread_ii; ii += BM) {          
-                ggml_qgemm_lut( ne01, ne11, ne10, ii, j, A, 
-                                QLUT, 
-                                ws, 
-                                LUT_Scales, 
-                                C);
+                ggml_qgemm_lut_2col(ne01, ne11, ne10, ii, j, A, 
+                                     QLUT0, QLUT1,
+                                     ws, 
+                                     LUT_Scales, 
+                                     C);
             }
 #pragma omp barrier
         }
     }
 
-    aligned_free(QLUT);
+    aligned_free(QLUT0);
+    aligned_free(QLUT1);
     aligned_free(LUT_Scales);
 }
 
