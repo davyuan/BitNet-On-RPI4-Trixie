@@ -139,11 +139,10 @@ void matmul_tiled_weight_scale(uint8_t* A, float32_t* B, float32_t* C, float32_t
    C(MxN)
    This version natively implements the LUT-based matmul without SIMD optimizations.   
 */
-void matmul_lut_naive(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
+void matmul_lut_tiled(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
     int KK = K / 2;
     int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
     float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
-    float32_t* Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
     *LUT_Scales = 1.0f;
 
     // Debug: Print full A matrix
@@ -171,45 +170,43 @@ void matmul_lut_naive(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int
 
     // Partition rows among 4 cores
     #pragma omp parallel for num_threads(4) 
-    for (int ii = 0; ii < M; ii += TILE_SIZE) {          
-        for (int jj = 0; jj < N; jj += TILE_SIZE) {      
-            for (int kk = 0; kk < KK; kk += TILE_SIZE) {                
-                for (int i = ii; i < ii + TILE_SIZE; i++) {
-                    for (int j = jj; j < jj + TILE_SIZE; j++) {                        
-                        ggml_preprocessor(M, K, (void*)(B + j * K), (void*)LUT_Scales, (void*)QLUT);                  
+    for (int j = 0; j < N; j++) {                        
+        ggml_preprocessor(M, K, (void*)(B + j * K), (void*)LUT_Scales, (void*)QLUT);                  
+        for (int ii = 0; ii < M; ii += BM) {          
+            for (int kk = 0; kk < KK; kk += BK) {                
+                for (int i = ii; i < ii + BM; i++) {
                         
-                        // Debug: Print QLUT after construction (first iteration only)
-                        /*if (debug_count == 0) {
-                            printf("\n=== DEBUG: QLUT values for %2dth row in B ===\n", j);
-                            for (int idx = 0; idx < K * 16; idx++) {
-                                if ((idx) % 16 == 0) {
-                                    printf("\nLUT[%2d]: ", idx/32);
-                                }
-                                printf("%4d ", (int)QLUT[idx]);
+                    // Debug: Print QLUT after construction (first iteration only)
+                    /*if (debug_count == 0) {
+                        printf("\n=== DEBUG: QLUT values for %2dth row in B ===\n", j);
+                        for (int idx = 0; idx < K * 16; idx++) {
+                            if ((idx) % 16 == 0) {
+                                printf("\nLUT[%2d]: ", idx/32);
                             }
-                            printf("\n");
-                        }*/
-
-                        int32_t local_sum = 0; 
-                        
-                        for (int k = kk; k < kk + TILE_SIZE; k++) {
-                            int lut_index = A[i*KK + k];
-                            uint8_t high_byte = (uint8_t)QLUT[k * 32 + lut_index];
-                            uint8_t low_byte = (uint8_t)QLUT[k * 32 + 16 + lut_index];
-                            // Combine as unsigned first, then cast to signed int16
-                            int16_t combined = (int16_t)(((uint16_t)high_byte << 8) | (uint16_t)low_byte);
-                            
-                            local_sum += (int32_t)combined;
-                            /*if (debug_count < 64) {
-                                printf("DEBUG [%d]: i=%d, j=%d, k=%d, lut_index=%d, high_byte=%u, low_byte=%u, combined=%d, sum=%d\n",
-                                       debug_count, i, j, k, lut_index, (unsigned)high_byte, (unsigned)low_byte, (int)combined, (int)local_sum);
-                                debug_count++;
-                            }*/                            
+                            printf("%4d ", (int)QLUT[idx]);
                         }
+                        printf("\n");
+                    }*/
 
-                        // Add to result (C is pre-initialized to 0)
-                        C[j*M + i] += local_sum * ws[0] / (*LUT_Scales);
+                    int32_t local_sum = 0; 
+                    
+                    for (int k = kk; k < kk + BK; k++) {
+                        int lut_index = A[i*KK + k];
+                        uint8_t high_byte = (uint8_t)QLUT[k * 32 + lut_index];
+                        uint8_t low_byte = (uint8_t)QLUT[k * 32 + 16 + lut_index];
+                        // Combine as unsigned first, then cast to signed int16
+                        int16_t combined = (int16_t)(((uint16_t)high_byte << 8) | (uint16_t)low_byte);
+                        
+                        local_sum += (int32_t)combined;
+                        /*if (debug_count < 64) {
+                            printf("DEBUG [%d]: i=%d, j=%d, k=%d, lut_index=%d, high_byte=%u, low_byte=%u, combined=%d, sum=%d\n",
+                                    debug_count, i, j, k, lut_index, (unsigned)high_byte, (unsigned)low_byte, (int)combined, (int)local_sum);
+                            debug_count++;
+                        }*/                            
                     }
+
+                    // Add to result (C is pre-initialized to 0)
+                    C[j*M + i] += local_sum * ws[0] / (*LUT_Scales);
                 }
             }
         }
@@ -1094,8 +1091,8 @@ int main() {
     const int num_iterations = 1;
     long long avg_simd_time = benchmark_matmul(
         "\nStep 2: Running LUT Naive(50 iterations for average)\n",
-        "Matmul_lut_naive",
-        [&]() { matmul_lut_naive(A_T, B_T, C_simd, weight_scale, M, N, K); },
+        "Matmul_lut_tiled",
+        [&]() { matmul_lut_tiled(A, B, C_simd, weight_scale, M, N, K); },
         C_simd, M, N, num_iterations
     );
 
