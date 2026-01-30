@@ -185,72 +185,86 @@ void matmul_lut_tiled(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int
 */
 void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
     int KK = K / 2;
-    int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
-    float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
-    const float32_t scale = ws[0];
+    int8_t* QLUT0 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
+    int8_t* QLUT1 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
+    float32_t* LUT_Scales = (float32_t*)aligned_malloc(2 * sizeof(float32_t));
+    const float32_t weight_scale = ws[0];
 
-    for (int j = 0; j < N; j++) {
-        ggml_preprocessor(M, K, (void*)(B + j * K), (void*)LUT_Scales, (void*)QLUT);                  
-        const float32_t scale_val = scale / (*LUT_Scales);
-        const float32x4_t v_rescale = vdupq_n_f32(scale_val);
+    for (int j = 0; j < N; j += 2) {
+        ggml_preprocessor(M, K, (void*)(B + j * K), (void*)(&LUT_Scales[0]), (void*)QLUT0);                  
+        ggml_preprocessor(M, K, (void*)(B + (j + 1) * K), (void*)(&LUT_Scales[1]), (void*)QLUT1);                  
+        
+        const float32x4_t v_rescale0 = vdupq_n_f32(weight_scale / LUT_Scales[0]);
+        const float32x4_t v_rescale1 = vdupq_n_f32(weight_scale / LUT_Scales[1]);
        
         #pragma omp parallel for num_threads(4)
         for (int ii = 0; ii < M; ii += BM) {          
             for (int i = ii; i < ii + BM; i += 64) {
-                int16x8_t acc0 = vdupq_n_s16(0), acc1 = vdupq_n_s16(0);
-                int16x8_t acc2 = vdupq_n_s16(0), acc3 = vdupq_n_s16(0);
-                int16x8_t acc4 = vdupq_n_s16(0), acc5 = vdupq_n_s16(0);
-                int16x8_t acc6 = vdupq_n_s16(0), acc7 = vdupq_n_s16(0);
+                int16x8_t acc0_j0 = vdupq_n_s16(0), acc1_j0 = vdupq_n_s16(0);
+                int16x8_t acc2_j0 = vdupq_n_s16(0), acc3_j0 = vdupq_n_s16(0);
+                int16x8_t acc4_j0 = vdupq_n_s16(0), acc5_j0 = vdupq_n_s16(0);
+                int16x8_t acc6_j0 = vdupq_n_s16(0), acc7_j0 = vdupq_n_s16(0);
 
-                for (int k = 0; k < KK; k += 2) {
-                    // Load LUTs for k and k+1
-                    int8x16_t vh0 = vld1q_s8(QLUT + k * 32);
-                    int8x16_t vl0 = vld1q_s8(QLUT + k * 32 + 16);
-                    int8x16_t vh1 = vld1q_s8(QLUT + (k + 1) * 32);
-                    int8x16_t vl1 = vld1q_s8(QLUT + (k + 1) * 32 + 16);
+                int16x8_t acc0_j1 = vdupq_n_s16(0), acc1_j1 = vdupq_n_s16(0);
+                int16x8_t acc2_j1 = vdupq_n_s16(0), acc3_j1 = vdupq_n_s16(0);
+                int16x8_t acc4_j1 = vdupq_n_s16(0), acc5_j1 = vdupq_n_s16(0);
+                int16x8_t acc6_j1 = vdupq_n_s16(0), acc7_j1 = vdupq_n_s16(0);
 
-                    // Process 4 blocks of 16 rows, interleaving k and k+1 to hide latency
-#define CORE_WORK_K2(offset, accl, acch) { \
-                        uint8x16_t va0 = vld1q_u8(A + k * M + i + offset); \
-                        uint8x16_t va1 = vld1q_u8(A + (k + 1) * M + i + offset); \
-                        int8x16_t r0h = vqtbl1q_s8(vh0, va0); \
-                        int8x16_t r0l = vqtbl1q_s8(vl0, va0); \
-                        int8x16_t r1h = vqtbl1q_s8(vh1, va1); \
-                        int8x16_t r1l = vqtbl1q_s8(vl1, va1); \
-                        int16x8_t o0h, o0l, o1h, o1l; \
-                        reconstruct_int16_pair(r0h, r0l, o0l, o0h); \
-                        reconstruct_int16_pair(r1h, r1l, o1l, o1h); \
-                        accl = vaddq_s16(accl, o0l); \
-                        acch = vaddq_s16(acch, o0h); \
-                        accl = vaddq_s16(accl, o1l); \
-                        acch = vaddq_s16(acch, o1h); \
+                for (int k = 0; k < KK; k++) {
+                    int8x16_t vh0 = vld1q_s8(QLUT0 + k * 32);
+                    int8x16_t vl0 = vld1q_s8(QLUT0 + k * 32 + 16);
+                    int8x16_t vh1 = vld1q_s8(QLUT1 + k * 32);
+                    int8x16_t vl1 = vld1q_s8(QLUT1 + k * 32 + 16);
+
+#define CORE_WORK_2COL(offset, accl0, acch0, accl1, acch1) { \
+                        uint8x16_t va = vld1q_u8(A + k * M + i + offset); \
+                        int8x16_t rh0 = vqtbl1q_s8(vh0, va); \
+                        int8x16_t rl0 = vqtbl1q_s8(vl0, va); \
+                        int8x16_t rh1 = vqtbl1q_s8(vh1, va); \
+                        int8x16_t rl1 = vqtbl1q_s8(vl1, va); \
+                        int16x8_t o0l, o0h, o1l, o1h; \
+                        reconstruct_int16_pair(rh0, rl0, o0l, o0h); \
+                        reconstruct_int16_pair(rh1, rl1, o1l, o1h); \
+                        accl0 = vaddq_s16(accl0, o0l); \
+                        acch0 = vaddq_s16(acch0, o0h); \
+                        accl1 = vaddq_s16(accl1, o1l); \
+                        acch1 = vaddq_s16(acch1, o1h); \
                     }
 
-                    CORE_WORK_K2(0,  acc0, acc1);
-                    CORE_WORK_K2(16, acc2, acc3);
-                    CORE_WORK_K2(32, acc4, acc5);
-                    CORE_WORK_K2(48, acc6, acc7);
-#undef CORE_WORK_K2
+                    CORE_WORK_2COL(0,  acc0_j0, acc1_j0, acc0_j1, acc1_j1);
+                    CORE_WORK_2COL(16, acc2_j0, acc3_j0, acc2_j1, acc3_j1);
+                    CORE_WORK_2COL(32, acc4_j0, acc5_j0, acc4_j1, acc5_j1);
+                    CORE_WORK_2COL(48, acc6_j0, acc7_j0, acc6_j1, acc7_j1);
+#undef CORE_WORK_2COL
                 }
 
-                // Write-back ONLY once at the end of K loop
-                float32_t* pC = &(C[j * M + i]);
-#define WRITE_BACK(out_ptr, accl, acch) { \
-                    vst1q_f32(out_ptr + 0, vfmaq_f32(vld1q_f32(out_ptr + 0), vcvtq_f32_s32(vmovl_s16(vget_low_s16(accl))), v_rescale)); \
-                    vst1q_f32(out_ptr + 4, vfmaq_f32(vld1q_f32(out_ptr + 4), vcvtq_f32_s32(vmovl_s16(vget_high_s16(accl))), v_rescale)); \
-                    vst1q_f32(out_ptr + 8, vfmaq_f32(vld1q_f32(out_ptr + 8), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acch))), v_rescale)); \
-                    vst1q_f32(out_ptr + 12, vfmaq_f32(vld1q_f32(out_ptr + 12), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acch))), v_rescale)); \
+                // Write-back
+                float32_t* pC0 = &(C[j * M + i]);
+                float32_t* pC1 = &(C[(j + 1) * M + i]);
+
+#define WRITE_BACK(out_ptr, accl, acch, rescale) { \
+                    vst1q_f32(out_ptr + 0, vfmaq_f32(vld1q_f32(out_ptr + 0), vcvtq_f32_s32(vmovl_s16(vget_low_s16(accl))), rescale)); \
+                    vst1q_f32(out_ptr + 4, vfmaq_f32(vld1q_f32(out_ptr + 4), vcvtq_f32_s32(vmovl_s16(vget_high_s16(accl))), rescale)); \
+                    vst1q_f32(out_ptr + 8, vfmaq_f32(vld1q_f32(out_ptr + 8), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acch))), rescale)); \
+                    vst1q_f32(out_ptr + 12, vfmaq_f32(vld1q_f32(out_ptr + 12), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acch))), rescale)); \
                 }
-                WRITE_BACK(pC,      acc0, acc1);
-                WRITE_BACK(pC + 16, acc2, acc3);
-                WRITE_BACK(pC + 32, acc4, acc5);
-                WRITE_BACK(pC + 48, acc6, acc7);
+
+                WRITE_BACK(pC0,      acc0_j0, acc1_j0, v_rescale0);
+                WRITE_BACK(pC0 + 16, acc2_j0, acc3_j0, v_rescale0);
+                WRITE_BACK(pC0 + 32, acc4_j0, acc5_j0, v_rescale0);
+                WRITE_BACK(pC0 + 48, acc6_j0, acc7_j0, v_rescale0);
+
+                WRITE_BACK(pC1,      acc0_j1, acc1_j1, v_rescale1);
+                WRITE_BACK(pC1 + 16, acc2_j1, acc3_j1, v_rescale1);
+                WRITE_BACK(pC1 + 32, acc4_j1, acc5_j1, v_rescale1);
+                WRITE_BACK(pC1 + 48, acc6_j1, acc7_j1, v_rescale1);
 #undef WRITE_BACK
             }
         }
     }
 
-    aligned_free(QLUT);
+    aligned_free(QLUT0);
+    aligned_free(QLUT1);
     aligned_free(LUT_Scales);
 }
 
@@ -475,46 +489,34 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, in
                 int16x8_t acc4 = vdupq_n_s16(0), acc5 = vdupq_n_s16(0);
                 int16x8_t acc6 = vdupq_n_s16(0), acc7 = vdupq_n_s16(0);
 
-                for (int k = 0; k < KK; k += 2) {
-                    int8x16_t vh0 = vld1q_s8(QLUT + k * 32);
-                    int8x16_t vl0 = vld1q_s8(QLUT + k * 32 + 16);
-                    int8x16_t vh1 = vld1q_s8(QLUT + (k + 1) * 32);
-                    int8x16_t vl1 = vld1q_s8(QLUT + (k + 1) * 32 + 16);
+                for (int k = 0; k < KK; k++) {
+                    int8x16_t vh = vld1q_s8(QLUT + k * 32);
+                    int8x16_t vl = vld1q_s8(QLUT + k * 32 + 16);
 
                     // Process 64 rows (two 16-byte chunks from packed A)
                     int i_packed = i / 2;
                     
-#define PROCESS_32_ROWS_K2(offset, acl0, ach0, acl1, ach1) { \
-                        uint8x16_t va0 = vld1q_u8(A + k * M / 2 + i_packed + offset); \
-                        uint8x16_t va1 = vld1q_u8(A + (k + 1) * M / 2 + i_packed + offset); \
-                        uint8x16_t va0_top = vshrq_n_u8(va0, 4); \
-                        uint8x16_t va1_top = vshrq_n_u8(va1, 4); \
-                        uint8x16_t va0_bot = vandq_u8(va0, vec_mask); \
-                        uint8x16_t va1_bot = vandq_u8(va1, vec_mask); \
-                        uint8x16x2_t va0_unp = vzipq_u8(va0_top, va0_bot); \
-                        uint8x16x2_t va1_unp = vzipq_u8(va1_top, va1_bot); \
-                        int8x16_t r0_0h = vqtbl1q_s8(vh0, va0_unp.val[0]); \
-                        int8x16_t r0_0l = vqtbl1q_s8(vl0, va0_unp.val[0]); \
-                        int8x16_t r1_0h = vqtbl1q_s8(vh1, va1_unp.val[1]); \
-                        int8x16_t r1_0l = vqtbl1q_s8(vl1, va1_unp.val[1]); \
-                        int8x16_t r0_1h = vqtbl1q_s8(vh0, va0_unp.val[1]); \
-                        int8x16_t r0_1l = vqtbl1q_s8(vl0, va0_unp.val[1]); \
-                        int8x16_t r1_1h = vqtbl1q_s8(vh1, va1_unp.val[0]); \
-                        int8x16_t r1_1l = vqtbl1q_s8(vl1, va1_unp.val[0]); \
+#define PROCESS_32_ROWS(a_ptr, accl0, accl1, acch0, acch1) { \
+                        uint8x16_t vec_a = vld1q_u8(a_ptr); \
+                        uint8x16_t vec_a_top = vshrq_n_u8(vec_a, 4); \
+                        uint8x16_t vec_a_bot = vandq_u8(vec_a, vec_mask); \
+                        uint8x16x2_t vec_a_unpacked = vzipq_u8(vec_a_top, vec_a_bot); \
+                        int8x16_t r0h = vqtbl1q_s8(vh, vec_a_unpacked.val[0]); \
+                        int8x16_t r0l = vqtbl1q_s8(vl, vec_a_unpacked.val[0]); \
+                        int8x16_t r1h = vqtbl1q_s8(vh, vec_a_unpacked.val[1]); \
+                        int8x16_t r1l = vqtbl1q_s8(vl, vec_a_unpacked.val[1]); \
                         int16x8_t o0, o1, o2, o3; \
-                        reconstruct_int16_pair(r0_0h, r0_0l, o0, o1); \
-                        acl0 = vaddq_s16(acl0, o0); ach0 = vaddq_s16(ach0, o1); \
-                        reconstruct_int16_pair(r1_1h, r1_1l, o2, o3); \
-                        acl0 = vaddq_s16(acl0, o2); ach0 = vaddq_s16(ach0, o3); \
-                        reconstruct_int16_pair(r0_1h, r0_1l, o0, o1); \
-                        acl1 = vaddq_s16(acl1, o0); ach1 = vaddq_s16(ach1, o1); \
-                        reconstruct_int16_pair(r1_0h, r1_0l, o2, o3); \
-                        acl1 = vaddq_s16(acl1, o2); ach1 = vaddq_s16(ach1, o3); \
+                        reconstruct_int16_pair(r0h, r0l, o0, o1); \
+                        reconstruct_int16_pair(r1h, r1l, o2, o3); \
+                        accl0 = vaddq_s16(accl0, o0); \
+                        accl1 = vaddq_s16(accl1, o1); \
+                        acch0 = vaddq_s16(acch0, o2); \
+                        acch1 = vaddq_s16(acch1, o3); \
                     }
 
-                    PROCESS_32_ROWS_K2(0,  acc0, acc1, acc2, acc3);
-                    PROCESS_32_ROWS_K2(16, acc4, acc5, acc6, acc7);
-#undef PROCESS_32_ROWS_K2
+                    PROCESS_32_ROWS(A + k * M / 2 + i_packed,      acc0, acc1, acc2, acc3);
+                    PROCESS_32_ROWS(A + k * M / 2 + i_packed + 16, acc4, acc5, acc6, acc7);
+#undef PROCESS_32_ROWS
                 }
 
                 // Write-back with FMA
