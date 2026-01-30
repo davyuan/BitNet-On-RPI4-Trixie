@@ -139,7 +139,7 @@ void matmul_tiled_weight_scale(uint8_t* A, float32_t* B, float32_t* C, float32_t
    C(MxN)
    This version natively implements the LUT-based matmul without SIMD optimizations.   
 */
-void matmul_lut_naive(int8_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
+void matmul_lut_naive(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
     int KK = K / 2;
     int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
     float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
@@ -151,7 +151,7 @@ void matmul_lut_naive(int8_t* A, float32_t* B, float32_t* C, float32_t* ws, int 
     for (int i = 0; i < M; i++) {
         printf("A[%2d]: ", i);
         for (int k = 0; k < KK; k++) {
-            printf("%2d ", (int)A[i*KK + k]);
+            printf("%2u ", (unsigned)A[i*KK + k]);
         }
         printf("\n");
     }
