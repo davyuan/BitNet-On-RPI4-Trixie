@@ -181,8 +181,7 @@ void matmul_lut_tiled(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int
    QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
         each K represents 2 activations in B. 
    C(NxM)
-   This version doesn't use SIMD optimizations either, but focus on one LUT table at once to avoid
-   overhead of reconstructing LUTs in the same tile. 
+   This version uses SIMD optimizations.
 */
 void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
     int KK = K / 2;
@@ -195,52 +194,76 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int 
         const float32_t lut_scale = ((float32_t*)LUT_Scales)[0];
         const float32x4_t v_rescale = vdupq_n_f32(scale / lut_scale);
        
-        // Parallelize over row blocks
         #pragma omp parallel for num_threads(4)
         for (int ii = 0; ii < M; ii += BM) {          
             for (int kk = 0; kk < KK; kk += BK) {
-                int8x16_t vec_lut_high[BK];
-                int8x16_t vec_lut_low[BK];
+                // We don't pre-load all BK LUTs to registers to avoid spilling.
+                // Instead we unroll the row dimension i to reuse LUT registers more efficiently.
+                for (int i = ii; i < ii + BM; i += 32) {
+                    int16x8_t acc0_0 = vdupq_n_s16(0);
+                    int16x8_t acc0_1 = vdupq_n_s16(0);
+                    int16x8_t acc1_0 = vdupq_n_s16(0);
+                    int16x8_t acc1_1 = vdupq_n_s16(0);
 
-                // LUT layout per index: [16 high_bytes] [16 low_bytes] = 32 bytes
-#pragma unroll
-                for (int k = 0; k < BK; k++) {
-                    vec_lut_high[k] = vld1q_s8(QLUT + (kk + k) * 32);      // Load high bytes
-                    vec_lut_low[k] = vld1q_s8(QLUT + (kk + k) * 32 + 16);   // Load low bytes
-                }
-                
-#pragma unroll
-                for (int i = ii; i < ii + BM; i += 16) {
-                    int16x8_t vec_c[2] = {vdupq_n_s16(0), vdupq_n_s16(0)};
-#pragma unroll
-                    for (int k = kk; k < kk + BK; k++) {
-                        // Load 16 weights from same k, different rows (from transposed A)
-                        uint8x16_t vec_a0 = vld1q_u8(A + k * M + i);
-                        
-                        // Lookup on high and low tables (same LUT table for all 16 indices)
-                        int8x16_t vec_c0_h = vqtbl1q_s8(vec_lut_high[k - kk], vec_a0);
-                        int8x16_t vec_c0_l = vqtbl1q_s8(vec_lut_low[k - kk], vec_a0);
-                                               
-                        // Reconstruct int16 from high/low bytes: (high << 8) | low
-                        int16x8_t out00, out01;
-                        reconstruct_int16_pair(vec_c0_h, vec_c0_l, out00, out01);
-                        
-                        vec_c[0] = vaddq_s16(vec_c[0], out00);
-                        vec_c[1] = vaddq_s16(vec_c[1], out01);
+                    for (int k = kk; k < kk + BK; k += 2) {
+                        // Load two LUT pairs (64 bytes)
+                        int8x16_t v_lut0_h = vld1q_s8(QLUT + k * 32);
+                        int8x16_t v_lut0_l = vld1q_s8(QLUT + k * 32 + 16);
+                        int8x16_t v_lut1_h = vld1q_s8(QLUT + (k + 1) * 32);
+                        int8x16_t v_lut1_l = vld1q_s8(QLUT + (k + 1) * 32 + 16);
+
+                        // Process 2 blocks of 16 rows from A for first k
+                        uint8x16_t vec_a0_0 = vld1q_u8(A + k * M + i);
+                        uint8x16_t vec_a0_1 = vld1q_u8(A + k * M + i + 16);
+
+                        // Lookups for k
+                        int8x16_t res00_h = vqtbl1q_s8(v_lut0_h, vec_a0_0);
+                        int8x16_t res00_l = vqtbl1q_s8(v_lut0_l, vec_a0_0);
+                        int16x8_t out00_0, out00_1;
+                        reconstruct_int16_pair(res00_h, res00_l, out00_0, out00_1);
+                        acc0_0 = vaddq_s16(acc0_0, out00_0);
+                        acc0_1 = vaddq_s16(acc0_1, out00_1);
+
+                        int8x16_t res01_h = vqtbl1q_s8(v_lut0_h, vec_a0_1);
+                        int8x16_t res01_l = vqtbl1q_s8(v_lut0_l, vec_a0_1);
+                        int16x8_t out01_0, out01_1;
+                        reconstruct_int16_pair(res01_h, res01_l, out01_0, out01_1);
+                        acc1_0 = vaddq_s16(acc1_0, out01_0);
+                        acc1_1 = vaddq_s16(acc1_1, out01_1);
+
+                        // Process for second k
+                        uint8x16_t vec_a1_0 = vld1q_u8(A + (k+1) * M + i);
+                        uint8x16_t vec_a1_1 = vld1q_u8(A + (k+1) * M + i + 16);
+
+                        int8x16_t res10_h = vqtbl1q_s8(v_lut1_h, vec_a1_0);
+                        int8x16_t res10_l = vqtbl1q_s8(v_lut1_l, vec_a1_0);
+                        int16x8_t out10_0, out10_1;
+                        reconstruct_int16_pair(res10_h, res10_l, out10_0, out10_1);
+                        acc0_0 = vaddq_s16(acc0_0, out10_0);
+                        acc0_1 = vaddq_s16(acc0_1, out10_1);
+
+                        int8x16_t res11_h = vqtbl1q_s8(v_lut1_h, vec_a1_1);
+                        int8x16_t res11_l = vqtbl1q_s8(v_lut1_l, vec_a1_1);
+                        int16x8_t out11_0, out11_1;
+                        reconstruct_int16_pair(res11_h, res11_l, out11_0, out11_1);
+                        acc1_0 = vaddq_s16(acc1_0, out11_0);
+                        acc1_1 = vaddq_s16(acc1_1, out11_1);
                     }
 
-                    float32_t* pC = (float32_t*) &(C[j*M + i]);
+                    // Store results back to C using FMA
+                    float32_t* pC0 = &(C[j * M + i]);
 
-                    // Convert and scale results using SIMD FMA
-                    float32x4_t f_low0 = vcvtq_f32_s32(vmovl_s16(vget_low_s16(vec_c[0])));
-                    float32x4_t f_high0 = vcvtq_f32_s32(vmovl_s16(vget_high_s16(vec_c[0])));
-                    vst1q_f32(pC + 0, vfmaq_f32(vld1q_f32(pC + 0), f_low0, v_rescale));
-                    vst1q_f32(pC + 4, vfmaq_f32(vld1q_f32(pC + 4), f_high0, v_rescale));
+                    // Block 0
+                    vst1q_f32(pC0 + 0, vfmaq_f32(vld1q_f32(pC0 + 0), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acc0_0))), v_rescale));
+                    vst1q_f32(pC0 + 4, vfmaq_f32(vld1q_f32(pC0 + 4), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acc0_0))), v_rescale));
+                    vst1q_f32(pC0 + 8, vfmaq_f32(vld1q_f32(pC0 + 8), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acc0_1))), v_rescale));
+                    vst1q_f32(pC0 + 12, vfmaq_f32(vld1q_f32(pC0 + 12), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acc0_1))), v_rescale));
 
-                    float32x4_t f_low1 = vcvtq_f32_s32(vmovl_s16(vget_low_s16(vec_c[1])));
-                    float32x4_t f_high1 = vcvtq_f32_s32(vmovl_s16(vget_high_s16(vec_c[1])));
-                    vst1q_f32(pC + 8, vfmaq_f32(vld1q_f32(pC + 8), f_low1, v_rescale));
-                    vst1q_f32(pC + 12, vfmaq_f32(vld1q_f32(pC + 12), f_high1, v_rescale));
+                    // Block 1
+                    vst1q_f32(pC0 + 0, vfmaq_f32(vld1q_f32(pC0 + 0), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acc1_0))), v_rescale));
+                    vst1q_f32(pC0 + 4, vfmaq_f32(vld1q_f32(pC0 + 4), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acc1_0))), v_rescale));
+                    vst1q_f32(pC0 + 8, vfmaq_f32(vld1q_f32(pC0 + 8), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acc1_1))), v_rescale));
+                    vst1q_f32(pC0 + 12, vfmaq_f32(vld1q_f32(pC0 + 12), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acc1_1))), v_rescale));
                 }
             }
         }
@@ -249,6 +272,7 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int 
     aligned_free(QLUT);
     aligned_free(LUT_Scales);
 }
+
 
 /* A(K/2 x M), B(N x K)
    QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
