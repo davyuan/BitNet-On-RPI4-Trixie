@@ -1061,7 +1061,6 @@ int main() {
     printf("\n");*/
 
     // Print performance comparison
-    double speedup_naive2 = (double)naive_duration.count() / (double)lut_duration.count();
     double speedup_lut = (double)naive_duration.count() / (double)avg_lut_time;
     double speedup_simd = (double)naive_duration.count() / (double)avg_simd_time;
     double speedup_packed = (double)naive_duration.count() / (double)avg_packed_time;
