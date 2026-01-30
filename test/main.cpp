@@ -573,10 +573,6 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, in
     aligned_free(LUT_Scales);
 }
 
-    aligned_free(QLUT);
-    aligned_free(LUT_Scales);
-}
-
 /* A(K/2 x M), B(N x K)
    QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
         each K represents 2 activations in B. 
