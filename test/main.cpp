@@ -252,6 +252,7 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int 
 
                     // Store results back to C using FMA
                     float32_t* pC0 = &(C[j * M + i]);
+                    float32_t* pC1 = &(C[j * M + i + 16]);
 
                     // Block 0
                     vst1q_f32(pC0 + 0, vfmaq_f32(vld1q_f32(pC0 + 0), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acc0_0))), v_rescale));
@@ -260,10 +261,10 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int 
                     vst1q_f32(pC0 + 12, vfmaq_f32(vld1q_f32(pC0 + 12), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acc0_1))), v_rescale));
 
                     // Block 1
-                    vst1q_f32(pC0 + 0, vfmaq_f32(vld1q_f32(pC0 + 0), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acc1_0))), v_rescale));
-                    vst1q_f32(pC0 + 4, vfmaq_f32(vld1q_f32(pC0 + 4), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acc1_0))), v_rescale));
-                    vst1q_f32(pC0 + 8, vfmaq_f32(vld1q_f32(pC0 + 8), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acc1_1))), v_rescale));
-                    vst1q_f32(pC0 + 12, vfmaq_f32(vld1q_f32(pC0 + 12), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acc1_1))), v_rescale));
+                    vst1q_f32(pC1 + 0, vfmaq_f32(vld1q_f32(pC1 + 0), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acc1_0))), v_rescale));
+                    vst1q_f32(pC1 + 4, vfmaq_f32(vld1q_f32(pC1 + 4), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acc1_0))), v_rescale));
+                    vst1q_f32(pC1 + 8, vfmaq_f32(vld1q_f32(pC1 + 8), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acc1_1))), v_rescale));
+                    vst1q_f32(pC1 + 12, vfmaq_f32(vld1q_f32(pC1 + 12), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acc1_1))), v_rescale));
                 }
             }
         }
