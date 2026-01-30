@@ -145,51 +145,15 @@ void matmul_lut_tiled(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int
     int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
     float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
     *LUT_Scales = 1.0f;
-
-    // Debug: Print full A matrix
-    /*printf("\n=== DEBUG: Full A matrix (M=%d, KK=%d) ===\n", M, KK);
-    for (int i = 0; i < M; i++) {
-        printf("A[%2d]: ", i);
-        for (int k = 0; k < KK; k++) {
-            printf("%2u ", (unsigned)A[i*KK + k]);
-        }
-        printf("\n");
-    }
-
-    // Debug: Print full B matrix (first row only for sanity)
-    printf("\n=== DEBUG: Full B matrix (N=%d, K=%d) ===\n", N, K);
-    for (int i = 0; i < N; i++) {
-        printf("B[%2d]: ", i);
-        for (int k = 0; k < K; k++) {
-            printf("%3.0f ", B[i*K + k]);
-        }
-        printf("\n");
-    }
-
-    // Debug counter for first few iterations
-    int debug_count = 0;*/
-
+        
     // Partition rows among 4 cores
-    #pragma omp parallel for num_threads(4) 
-    for (int j = 0; j < N; j++) {                        
+    for (int j = 0; j < N; j++) {
         ggml_preprocessor(M, K, (void*)(B + j * K), (void*)LUT_Scales, (void*)QLUT);  
-        printf("j:%d, LUT_Scale: %f\n, Weight scale: %f\n", j, (*LUT_Scales), ws[0]);                
+        // printf("j:%d, LUT_Scale: %f, Weight scale: %f\n", j, (*LUT_Scales), ws[0]);                
+        #pragma omp parallel for num_threads(4) 
         for (int ii = 0; ii < M; ii += BM) {          
             for (int kk = 0; kk < KK; kk += BK) {                
                 for (int i = ii; i < ii + BM; i++) {
-                        
-                    // Debug: Print QLUT after construction (first iteration only)
-                    /*if (debug_count == 0) {
-                        printf("\n=== DEBUG: QLUT values for %2dth row in B ===\n", j);
-                        for (int idx = 0; idx < K * 16; idx++) {
-                            if ((idx) % 16 == 0) {
-                                printf("\nLUT[%2d]: ", idx/32);
-                            }
-                            printf("%4d ", (int)QLUT[idx]);
-                        }
-                        printf("\n");
-                    }*/
-
                     int32_t local_sum = 0; 
                     
                     for (int k = kk; k < kk + BK; k++) {
@@ -200,11 +164,6 @@ void matmul_lut_tiled(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int
                         int16_t combined = (int16_t)(((uint16_t)high_byte << 8) | (uint16_t)low_byte);
                         
                         local_sum += (int32_t)combined;
-                        /*if (debug_count < 64) {
-                            printf("DEBUG [%d]: i=%d, j=%d, k=%d, lut_index=%d, high_byte=%u, low_byte=%u, combined=%d, sum=%d\n",
-                                    debug_count, i, j, k, lut_index, (unsigned)high_byte, (unsigned)low_byte, (int)combined, (int)local_sum);
-                            debug_count++;
-                        }*/                            
                     }
 
                     // Add to result (C is pre-initialized to 0)
@@ -213,7 +172,7 @@ void matmul_lut_tiled(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int
             }
         }
     }
-
+    
     aligned_free(QLUT);
     aligned_free(LUT_Scales);
 }
