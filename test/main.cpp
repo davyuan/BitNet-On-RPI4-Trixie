@@ -465,8 +465,7 @@ void matmul_lut_simd2(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int 
    QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
         each K represents 2 activations in B. 
    C(N x M)
-   This version doesn't use SIMD optimizations either, but focus on one LUT table at once to avoid
-   overhead of reconstructing LUTs in the same tile. 
+   This version uses SIMD optimizations and process 2 columns of B at once. 
 */
 void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
     int KK = K / 2;
