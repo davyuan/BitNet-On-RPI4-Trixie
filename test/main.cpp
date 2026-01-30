@@ -1007,30 +1007,28 @@ int main() {
         [&]() { matmul_lut_tiled(A, B_T, C_simd, weight_scale, M, N, K); },
         C_simd, M, N, num_iterations
     );
-
     printf("\nComparing kernel output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_lut_tiled comparison");
     
     long long avg_simd_time = benchmark_matmul(
-        "\nStep 2: Running LUT SIMD(10 iterations for average)\n",
+        "\nStep 3: Running LUT SIMD(10 iterations for average)\n",
         "Matmul_lut_simd",
         [&]() { matmul_lut_simd(A_T, B_T, C_simd, weight_scale, M, N, K); },
         C_simd, M, N, num_iterations
     );
-
     printf("\nComparing kernel output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_lut_simd comparison");
     
     long long avg_packed_time = benchmark_matmul(
-        "\nStep 3: Running LUT Packed SIMD(10 iterations for average)\n",
+        "\nStep 4: Running LUT Packed SIMD(10 iterations for average)\n",
         "Matmul_lut_packed",
         [&]() { matmul_lut_packed(A_packed_T, B_T, C_simd, weight_scale, M, N, K); },
         C_simd, M, N, num_iterations
     );
-
     printf("\nComparing kernel output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_lut_packed comparison");
-
+    
+    
     // Debug: Print first 16 rows of C_ and C_simd
     printf("\n=== DEBUG: First 16 rows of C_ (float32_t, 16 elements each) ===\n");
     for (int i = 0; i < 16; i++) {
