@@ -202,27 +202,35 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int 
                 int16x8_t acc4 = vdupq_n_s16(0), acc5 = vdupq_n_s16(0);
                 int16x8_t acc6 = vdupq_n_s16(0), acc7 = vdupq_n_s16(0);
 
-                for (int k = 0; k < KK; k++) {
-                    // Load LUT once for all 64 rows
-                    int8x16_t vh = vld1q_s8(QLUT + k * 32);
-                    int8x16_t vl = vld1q_s8(QLUT + k * 32 + 16);
+                for (int k = 0; k < KK; k += 2) {
+                    // Load LUTs for k and k+1
+                    int8x16_t vh0 = vld1q_s8(QLUT + k * 32);
+                    int8x16_t vl0 = vld1q_s8(QLUT + k * 32 + 16);
+                    int8x16_t vh1 = vld1q_s8(QLUT + (k + 1) * 32);
+                    int8x16_t vl1 = vld1q_s8(QLUT + (k + 1) * 32 + 16);
 
-                    // Process 4 blocks of 16 rows
-#define CORE_WORK(a_ptr, accl, acch) { \
-                        uint8x16_t va = vld1q_u8(a_ptr); \
-                        int8x16_t rh = vqtbl1q_s8(vh, va); \
-                        int8x16_t rl = vqtbl1q_s8(vl, va); \
-                        int16x8_t o0, o1; \
-                        reconstruct_int16_pair(rh, rl, o0, o1); \
-                        accl = vaddq_s16(accl, o0); \
-                        acch = vaddq_s16(acch, o1); \
+                    // Process 4 blocks of 16 rows, interleaving k and k+1 to hide latency
+#define CORE_WORK_K2(offset, accl, acch) { \
+                        uint8x16_t va0 = vld1q_u8(A + k * M + i + offset); \
+                        uint8x16_t va1 = vld1q_u8(A + (k + 1) * M + i + offset); \
+                        int8x16_t r0h = vqtbl1q_s8(vh0, va0); \
+                        int8x16_t r0l = vqtbl1q_s8(vl0, va0); \
+                        int8x16_t r1h = vqtbl1q_s8(vh1, va1); \
+                        int8x16_t r1l = vqtbl1q_s8(vl1, va1); \
+                        int16x8_t o0h, o0l, o1h, o1l; \
+                        reconstruct_int16_pair(r0h, r0l, o0l, o0h); \
+                        reconstruct_int16_pair(r1h, r1l, o1l, o1h); \
+                        accl = vaddq_s16(accl, o0l); \
+                        acch = vaddq_s16(acch, o0h); \
+                        accl = vaddq_s16(accl, o1l); \
+                        acch = vaddq_s16(acch, o1h); \
                     }
 
-                    CORE_WORK(A + k * M + i,      acc0, acc1);
-                    CORE_WORK(A + k * M + i + 16, acc2, acc3);
-                    CORE_WORK(A + k * M + i + 32, acc4, acc5);
-                    CORE_WORK(A + k * M + i + 48, acc6, acc7);
-#undef CORE_WORK
+                    CORE_WORK_K2(0,  acc0, acc1);
+                    CORE_WORK_K2(16, acc2, acc3);
+                    CORE_WORK_K2(32, acc4, acc5);
+                    CORE_WORK_K2(48, acc6, acc7);
+#undef CORE_WORK_K2
                 }
 
                 // Write-back ONLY once at the end of K loop
