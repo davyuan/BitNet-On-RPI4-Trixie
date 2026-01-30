@@ -475,34 +475,46 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, in
                 int16x8_t acc4 = vdupq_n_s16(0), acc5 = vdupq_n_s16(0);
                 int16x8_t acc6 = vdupq_n_s16(0), acc7 = vdupq_n_s16(0);
 
-                for (int k = 0; k < KK; k++) {
-                    int8x16_t vh = vld1q_s8(QLUT + k * 32);
-                    int8x16_t vl = vld1q_s8(QLUT + k * 32 + 16);
+                for (int k = 0; k < KK; k += 2) {
+                    int8x16_t vh0 = vld1q_s8(QLUT + k * 32);
+                    int8x16_t vl0 = vld1q_s8(QLUT + k * 32 + 16);
+                    int8x16_t vh1 = vld1q_s8(QLUT + (k + 1) * 32);
+                    int8x16_t vl1 = vld1q_s8(QLUT + (k + 1) * 32 + 16);
 
                     // Process 64 rows (two 16-byte chunks from packed A)
                     int i_packed = i / 2;
                     
-#define PROCESS_32_ROWS(a_ptr, accl0, accl1, acch0, acch1) { \
-                        uint8x16_t vec_a = vld1q_u8(a_ptr); \
-                        uint8x16_t vec_a_top = vshrq_n_u8(vec_a, 4); \
-                        uint8x16_t vec_a_bot = vandq_u8(vec_a, vec_mask); \
-                        uint8x16x2_t vec_a_unpacked = vzipq_u8(vec_a_top, vec_a_bot); \
-                        int8x16_t r0h = vqtbl1q_s8(vh, vec_a_unpacked.val[0]); \
-                        int8x16_t r0l = vqtbl1q_s8(vl, vec_a_unpacked.val[0]); \
-                        int8x16_t r1h = vqtbl1q_s8(vh, vec_a_unpacked.val[1]); \
-                        int8x16_t r1l = vqtbl1q_s8(vl, vec_a_unpacked.val[1]); \
+#define PROCESS_32_ROWS_K2(offset, acl0, ach0, acl1, ach1) { \
+                        uint8x16_t va0 = vld1q_u8(A + k * M / 2 + i_packed + offset); \
+                        uint8x16_t va1 = vld1q_u8(A + (k + 1) * M / 2 + i_packed + offset); \
+                        uint8x16_t va0_top = vshrq_n_u8(va0, 4); \
+                        uint8x16_t va1_top = vshrq_n_u8(va1, 4); \
+                        uint8x16_t va0_bot = vandq_u8(va0, vec_mask); \
+                        uint8x16_t va1_bot = vandq_u8(va1, vec_mask); \
+                        uint8x16x2_t va0_unp = vzipq_u8(va0_top, va0_bot); \
+                        uint8x16x2_t va1_unp = vzipq_u8(va1_top, va1_bot); \
+                        int8x16_t r0_0h = vqtbl1q_s8(vh0, va0_unp.val[0]); \
+                        int8x16_t r0_0l = vqtbl1q_s8(vl0, va0_unp.val[0]); \
+                        int8x16_t r1_0h = vqtbl1q_s8(vh1, va1_unp.val[1]); \
+                        int8x16_t r1_0l = vqtbl1q_s8(vl1, va1_unp.val[1]); \
+                        int8x16_t r0_1h = vqtbl1q_s8(vh0, va0_unp.val[1]); \
+                        int8x16_t r0_1l = vqtbl1q_s8(vl0, va0_unp.val[1]); \
+                        int8x16_t r1_1h = vqtbl1q_s8(vh1, va1_unp.val[0]); \
+                        int8x16_t r1_1l = vqtbl1q_s8(vl1, va1_unp.val[0]); \
                         int16x8_t o0, o1, o2, o3; \
-                        reconstruct_int16_pair(r0h, r0l, o0, o1); \
-                        reconstruct_int16_pair(r1h, r1l, o2, o3); \
-                        accl0 = vaddq_s16(accl0, o0); \
-                        accl1 = vaddq_s16(accl1, o1); \
-                        acch0 = vaddq_s16(acch0, o2); \
-                        acch1 = vaddq_s16(acch1, o3); \
+                        reconstruct_int16_pair(r0_0h, r0_0l, o0, o1); \
+                        acl0 = vaddq_s16(acl0, o0); ach0 = vaddq_s16(ach0, o1); \
+                        reconstruct_int16_pair(r1_1h, r1_1l, o2, o3); \
+                        acl0 = vaddq_s16(acl0, o2); ach0 = vaddq_s16(ach0, o3); \
+                        reconstruct_int16_pair(r0_1h, r0_1l, o0, o1); \
+                        acl1 = vaddq_s16(acl1, o0); ach1 = vaddq_s16(ach1, o1); \
+                        reconstruct_int16_pair(r1_0h, r1_0l, o2, o3); \
+                        acl1 = vaddq_s16(acl1, o2); ach1 = vaddq_s16(ach1, o3); \
                     }
 
-                    PROCESS_32_ROWS(A + k * M / 2 + i_packed,      acc0, acc1, acc2, acc3);
-                    PROCESS_32_ROWS(A + k * M / 2 + i_packed + 16, acc4, acc5, acc6, acc7);
-#undef PROCESS_32_ROWS
+                    PROCESS_32_ROWS_K2(0,  acc0, acc1, acc2, acc3);
+                    PROCESS_32_ROWS_K2(16, acc4, acc5, acc6, acc7);
+#undef PROCESS_32_ROWS_K2
                 }
 
                 // Write-back with FMA
