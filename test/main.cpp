@@ -191,70 +191,55 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int 
 
     for (int j = 0; j < N; j++) {
         ggml_preprocessor(M, K, (void*)(B + j * K), (void*)LUT_Scales, (void*)QLUT);                  
-        const float32_t lut_scale = ((float32_t*)LUT_Scales)[0];
-        const float32x4_t v_rescale = vdupq_n_f32(scale / lut_scale);
+        const float32_t scale_val = scale / (*LUT_Scales);
+        const float32x4_t v_rescale = vdupq_n_f32(scale_val);
        
-        // Swapping kk and ii loops to maximize A matrix reuse in L2 cache.
-        // For a fixed feature block kk, the corresponding slice of A (size BK x M)
-        // is reused across all row blocks ii and all threads.
-        for (int kk = 0; kk < KK; kk += BK) {
-            #pragma omp parallel for num_threads(4)
-            for (int ii = 0; ii < M; ii += BM) {          
-                // Accumulate in 16 registers for a block of 128 rows (BM)
+        #pragma omp parallel for num_threads(4)
+        for (int ii = 0; ii < M; ii += BM) {          
+            for (int i = ii; i < ii + BM; i += 64) {
                 int16x8_t acc0 = vdupq_n_s16(0), acc1 = vdupq_n_s16(0);
                 int16x8_t acc2 = vdupq_n_s16(0), acc3 = vdupq_n_s16(0);
                 int16x8_t acc4 = vdupq_n_s16(0), acc5 = vdupq_n_s16(0);
                 int16x8_t acc6 = vdupq_n_s16(0), acc7 = vdupq_n_s16(0);
-                int16x8_t acc8 = vdupq_n_s16(0), acc9 = vdupq_n_s16(0);
-                int16x8_t accA = vdupq_n_s16(0), accB = vdupq_n_s16(0);
-                int16x8_t accC = vdupq_n_s16(0), accD = vdupq_n_s16(0);
-                int16x8_t accE = vdupq_n_s16(0), accF = vdupq_n_s16(0);
 
-                for (int k = kk; k < kk + BK; k++) {
-                    int8x16_t v_lut_h = vld1q_s8(QLUT + k * 32);
-                    int8x16_t v_lut_l = vld1q_s8(QLUT + k * 32 + 16);
+                for (int kk = 0; kk < KK; kk += BK) {
+                    for (int k = kk; k < kk + BK; k++) {
+                        // Load LUT once for all 64 rows
+                        int8x16_t vh = vld1q_s8(QLUT + k * 32);
+                        int8x16_t vl = vld1q_s8(QLUT + k * 32 + 16);
 
-                    // Row block 0-7 (128 rows total)
-                    uint8x16_t va;
-                    int8x16_t rh, rl;
-                    int16x8_t o0, o1;
+                        // Process 4 blocks of 16 rows
+#define CORE_WORK(a_ptr, accl, acch) { \
+                            uint8x16_t va = vld1q_u8(a_ptr); \
+                            int8x16_t rh = vqtbl1q_s8(vh, va); \
+                            int8x16_t rl = vqtbl1q_s8(vl, va); \
+                            int16x8_t o0, o1; \
+                            reconstruct_int16_pair(rh, rl, o0, o1); \
+                            accl = vaddq_s16(accl, o0); \
+                            acch = vaddq_s16(acch, o1); \
+                        }
 
-#define PROCESS_ROW_BLOCK(acc_low, acc_high, offset) \
-                    va = vld1q_u8(A + k * M + ii + offset); \
-                    rh = vqtbl1q_s8(v_lut_h, va); \
-                    rl = vqtbl1q_s8(v_lut_l, va); \
-                    reconstruct_int16_pair(rh, rl, o0, o1); \
-                    acc_low = vaddq_s16(acc_low, o0); \
-                    acc_high = vaddq_s16(acc_high, o1);
-
-                    PROCESS_ROW_BLOCK(acc0, acc1, 0);
-                    PROCESS_ROW_BLOCK(acc2, acc3, 16);
-                    PROCESS_ROW_BLOCK(acc4, acc5, 32);
-                    PROCESS_ROW_BLOCK(acc6, acc7, 48);
-                    PROCESS_ROW_BLOCK(acc8, acc9, 64);
-                    PROCESS_ROW_BLOCK(accA, accB, 80);
-                    PROCESS_ROW_BLOCK(accC, accD, 96);
-                    PROCESS_ROW_BLOCK(accE, accF, 112);
-#undef PROCESS_ROW_BLOCK
+                        CORE_WORK(A + k * M + i,      acc0, acc1);
+                        CORE_WORK(A + k * M + i + 16, acc2, acc3);
+                        CORE_WORK(A + k * M + i + 32, acc4, acc5);
+                        CORE_WORK(A + k * M + i + 48, acc6, acc7);
+#undef CORE_WORK
+                    }
                 }
 
-                float32_t* pC = &(C[j * M + ii]);
-                
-#define STORE_ROW_BLOCK(acc_low, acc_high, offset) \
-                vst1q_f32(pC + offset + 0, vfmaq_f32(vld1q_f32(pC + offset + 0), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acc_low))), v_rescale)); \
-                vst1q_f32(pC + offset + 4, vfmaq_f32(vld1q_f32(pC + offset + 4), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acc_low))), v_rescale)); \
-                vst1q_f32(pC + offset + 8, vfmaq_f32(vld1q_f32(pC + offset + 8), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acc_high))), v_rescale)); \
-                vst1q_f32(pC + offset + 12, vfmaq_f32(vld1q_f32(pC + offset + 12), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acc_high))), v_rescale));
-
-                STORE_ROW_BLOCK(acc0, acc1, 0);
-                STORE_ROW_BLOCK(acc2, acc3, 16);
-                STORE_ROW_BLOCK(acc4, acc5, 32);
-                STORE_ROW_BLOCK(acc6, acc7, 48);
-                STORE_ROW_BLOCK(acc8, acc9, 64);
-                STORE_ROW_BLOCK(accA, accB, 80);
-                STORE_ROW_BLOCK(accC, accD, 96);
-                STORE_ROW_BLOCK(accE, accF, 112);
-#undef STORE_ROW_BLOCK
+                // Write-back ONLY once at the end of K loop
+                float32_t* pC = &(C[j * M + i]);
+#define WRITE_BACK(out_ptr, accl, acch) { \
+                    vst1q_f32(out_ptr + 0, vfmaq_f32(vld1q_f32(out_ptr + 0), vcvtq_f32_s32(vmovl_s16(vget_low_s16(accl))), v_rescale)); \
+                    vst1q_f32(out_ptr + 4, vfmaq_f32(vld1q_f32(out_ptr + 4), vcvtq_f32_s32(vmovl_s16(vget_high_s16(accl))), v_rescale)); \
+                    vst1q_f32(out_ptr + 8, vfmaq_f32(vld1q_f32(out_ptr + 8), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acch))), v_rescale)); \
+                    vst1q_f32(out_ptr + 12, vfmaq_f32(vld1q_f32(out_ptr + 12), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acch))), v_rescale)); \
+                }
+                WRITE_BACK(pC,      acc0, acc1);
+                WRITE_BACK(pC + 16, acc2, acc3);
+                WRITE_BACK(pC + 32, acc4, acc5);
+                WRITE_BACK(pC + 48, acc6, acc7);
+#undef WRITE_BACK
             }
         }
     }
