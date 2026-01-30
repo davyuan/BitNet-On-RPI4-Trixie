@@ -188,9 +188,12 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int 
     int KK = K / 2;
     int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
     float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
+    const float32_t scale = ws[0];
 
     for (int j = 0; j < N; j++) {
         ggml_preprocessor(M, K, (void*)(B + j * K), (void*)LUT_Scales, (void*)QLUT);                  
+        const float32_t lut_scale = ((float32_t*)LUT_Scales)[0];
+        const float32x4_t v_rescale = vdupq_n_f32(scale / lut_scale);
        
         // Parallelize over row blocks
         #pragma omp parallel for num_threads(4)
@@ -227,17 +230,17 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int 
                     }
 
                     float32_t* pC = (float32_t*) &(C[j*M + i]);
-                    const float32_t lut_scale = ((float32_t*)LUT_Scales)[0];
-                    const float32_t scale = ws[0];
-                    int16_t tmp_vals[8];
-#pragma unroll
-                    for (int block = 0; block < 2; ++block) {
-                        vst1q_s16(tmp_vals, vec_c[block]);
-                        for (int lane = 0; lane < 8; ++lane, pC ++) {
-                            float32_t val = (tmp_vals[lane] / lut_scale) * scale;
-                            (*pC) += val;
-                        }
-                    }
+
+                    // Convert and scale results using SIMD FMA
+                    float32x4_t f_low0 = vcvtq_f32_s32(vmovl_s16(vget_low_s16(vec_c[0])));
+                    float32x4_t f_high0 = vcvtq_f32_s32(vmovl_s16(vget_high_s16(vec_c[0])));
+                    vst1q_f32(pC + 0, vfmaq_f32(vld1q_f32(pC + 0), f_low0, v_rescale));
+                    vst1q_f32(pC + 4, vfmaq_f32(vld1q_f32(pC + 4), f_high0, v_rescale));
+
+                    float32x4_t f_low1 = vcvtq_f32_s32(vmovl_s16(vget_low_s16(vec_c[1])));
+                    float32x4_t f_high1 = vcvtq_f32_s32(vmovl_s16(vget_high_s16(vec_c[1])));
+                    vst1q_f32(pC + 8, vfmaq_f32(vld1q_f32(pC + 8), f_low1, v_rescale));
+                    vst1q_f32(pC + 12, vfmaq_f32(vld1q_f32(pC + 12), f_high1, v_rescale));
                 }
             }
         }
@@ -502,14 +505,25 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, in
                     float32_t* pC = (float32_t*) &(C[(i+0)*N + j]);
                     const float32_t lut_scale = ((float32_t*)LUT_Scales)[0];
                     const float32_t weight_scale = *ws;
-                    int16_t tmp_vals[8];                
+                    const float32x4_t v_rescale = vdupq_n_f32(weight_scale / lut_scale);
+
 #pragma unroll
                     for (int block = 0; block < 4; ++block) {
-                        vst1q_s16(tmp_vals, vec_c[block]);
-                        for (int lane = 0; lane < 8; ++lane, pC += N) {
-                            float32_t val = (tmp_vals[lane] / lut_scale) * weight_scale;
-                            (*pC) += val;
-                        }
+                        float32x4_t f_low = vcvtq_f32_s32(vmovl_s16(vget_low_s16(vec_c[block])));
+                        float32x4_t f_high = vcvtq_f32_s32(vmovl_s16(vget_high_s16(vec_c[block])));
+                        
+                        float32x4_t res0 = vmulq_f32(f_low, v_rescale);
+                        float32x4_t res1 = vmulq_f32(f_high, v_rescale);
+                        
+                        // Store lane by lane since the output layout is non-contiguous (pC += N)
+                        C[(i + block * 8 + 0) * N + j] += vgetq_lane_f32(res0, 0);
+                        C[(i + block * 8 + 1) * N + j] += vgetq_lane_f32(res0, 1);
+                        C[(i + block * 8 + 2) * N + j] += vgetq_lane_f32(res0, 2);
+                        C[(i + block * 8 + 3) * N + j] += vgetq_lane_f32(res0, 3);
+                        C[(i + block * 8 + 4) * N + j] += vgetq_lane_f32(res1, 0);
+                        C[(i + block * 8 + 5) * N + j] += vgetq_lane_f32(res1, 1);
+                        C[(i + block * 8 + 6) * N + j] += vgetq_lane_f32(res1, 2);
+                        C[(i + block * 8 + 7) * N + j] += vgetq_lane_f32(res1, 3);
                     }
                 }
             }

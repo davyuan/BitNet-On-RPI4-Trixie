@@ -142,14 +142,16 @@ void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT,
             float32_t* pC = (float32_t*) &(C[j*M + i]);
             const float32_t lut_scale = ((float32_t*)LUT_Scales)[0];
             const float32_t scale = ((float32_t*)Scales)[0];
-            int16_t tmp_vals[8];                
+            const float32x4_t v_rescale = vdupq_n_f32(scale / lut_scale);
+
 #pragma unroll
             for (int block = 0; block < 4; ++block) {
-                vst1q_s16(tmp_vals, vec_c[block]);
-                for (int lane = 0; lane < 8; ++lane, pC ++) {
-                    float32_t val = (tmp_vals[lane] / lut_scale) * scale;
-                    (*pC) += val;
-                }
+                float32x4_t f_low = vcvtq_f32_s32(vmovl_s16(vget_low_s16(vec_c[block])));
+                float32x4_t f_high = vcvtq_f32_s32(vmovl_s16(vget_high_s16(vec_c[block])));
+                
+                vst1q_f32(pC, vfmaq_f32(vld1q_f32(pC), f_low, v_rescale));
+                vst1q_f32(pC + 4, vfmaq_f32(vld1q_f32(pC + 4), f_high, v_rescale));
+                pC += 8;
             }
         }
     }
