@@ -214,7 +214,6 @@ void matmul_lut_tiled(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int
 
     aligned_free(QLUT);
     aligned_free(LUT_Scales);
-    aligned_free(Scales);
 }
 
 /* A(MxK/2), B(NxK)
@@ -1088,7 +1087,7 @@ int main() {
     auto naive_duration = std::chrono::duration_cast<std::chrono::milliseconds>(naive_end - naive_start);   
     printf("Reference matmul complete. Time: %ld ms\n", naive_duration.count());
 
-    const int num_iterations = 10;
+    const int num_iterations = 1;
     long long avg_simd_time = benchmark_matmul(
         "\nStep 2: Running LUT Naive(50 iterations for average)\n",
         "Matmul_lut_tiled",
