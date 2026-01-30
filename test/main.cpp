@@ -194,78 +194,67 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int 
         const float32_t lut_scale = ((float32_t*)LUT_Scales)[0];
         const float32x4_t v_rescale = vdupq_n_f32(scale / lut_scale);
        
-        #pragma omp parallel for num_threads(4)
-        for (int ii = 0; ii < M; ii += BM) {          
-            for (int kk = 0; kk < KK; kk += BK) {
-                // We don't pre-load all BK LUTs to registers to avoid spilling.
-                // Instead we unroll the row dimension i to reuse LUT registers more efficiently.
-                for (int i = ii; i < ii + BM; i += 32) {
-                    int16x8_t acc0_0 = vdupq_n_s16(0);
-                    int16x8_t acc0_1 = vdupq_n_s16(0);
-                    int16x8_t acc1_0 = vdupq_n_s16(0);
-                    int16x8_t acc1_1 = vdupq_n_s16(0);
+        // Swapping kk and ii loops to maximize A matrix reuse in L2 cache.
+        // For a fixed feature block kk, the corresponding slice of A (size BK x M)
+        // is reused across all row blocks ii and all threads.
+        for (int kk = 0; kk < KK; kk += BK) {
+            #pragma omp parallel for num_threads(4)
+            for (int ii = 0; ii < M; ii += BM) {          
+                // Accumulate in 16 registers for a block of 128 rows (BM)
+                int16x8_t acc0 = vdupq_n_s16(0), acc1 = vdupq_n_s16(0);
+                int16x8_t acc2 = vdupq_n_s16(0), acc3 = vdupq_n_s16(0);
+                int16x8_t acc4 = vdupq_n_s16(0), acc5 = vdupq_n_s16(0);
+                int16x8_t acc6 = vdupq_n_s16(0), acc7 = vdupq_n_s16(0);
+                int16x8_t acc8 = vdupq_n_s16(0), acc9 = vdupq_n_s16(0);
+                int16x8_t accA = vdupq_n_s16(0), accB = vdupq_n_s16(0);
+                int16x8_t accC = vdupq_n_s16(0), accD = vdupq_n_s16(0);
+                int16x8_t accE = vdupq_n_s16(0), accF = vdupq_n_s16(0);
 
-                    for (int k = kk; k < kk + BK; k += 2) {
-                        // Load two LUT pairs (64 bytes)
-                        int8x16_t v_lut0_h = vld1q_s8(QLUT + k * 32);
-                        int8x16_t v_lut0_l = vld1q_s8(QLUT + k * 32 + 16);
-                        int8x16_t v_lut1_h = vld1q_s8(QLUT + (k + 1) * 32);
-                        int8x16_t v_lut1_l = vld1q_s8(QLUT + (k + 1) * 32 + 16);
+                for (int k = kk; k < kk + BK; k++) {
+                    int8x16_t v_lut_h = vld1q_s8(QLUT + k * 32);
+                    int8x16_t v_lut_l = vld1q_s8(QLUT + k * 32 + 16);
 
-                        // Process 2 blocks of 16 rows from A for first k
-                        uint8x16_t vec_a0_0 = vld1q_u8(A + k * M + i);
-                        uint8x16_t vec_a0_1 = vld1q_u8(A + k * M + i + 16);
+                    // Row block 0-7 (128 rows total)
+                    uint8x16_t va;
+                    int8x16_t rh, rl;
+                    int16x8_t o0, o1;
 
-                        // Lookups for k
-                        int8x16_t res00_h = vqtbl1q_s8(v_lut0_h, vec_a0_0);
-                        int8x16_t res00_l = vqtbl1q_s8(v_lut0_l, vec_a0_0);
-                        int16x8_t out00_0, out00_1;
-                        reconstruct_int16_pair(res00_h, res00_l, out00_0, out00_1);
-                        acc0_0 = vaddq_s16(acc0_0, out00_0);
-                        acc0_1 = vaddq_s16(acc0_1, out00_1);
+#define PROCESS_ROW_BLOCK(acc_low, acc_high, offset) \
+                    va = vld1q_u8(A + k * M + ii + offset); \
+                    rh = vqtbl1q_s8(v_lut_h, va); \
+                    rl = vqtbl1q_s8(v_lut_l, va); \
+                    reconstruct_int16_pair(rh, rl, o0, o1); \
+                    acc_low = vaddq_s16(acc_low, o0); \
+                    acc_high = vaddq_s16(acc_high, o1);
 
-                        int8x16_t res01_h = vqtbl1q_s8(v_lut0_h, vec_a0_1);
-                        int8x16_t res01_l = vqtbl1q_s8(v_lut0_l, vec_a0_1);
-                        int16x8_t out01_0, out01_1;
-                        reconstruct_int16_pair(res01_h, res01_l, out01_0, out01_1);
-                        acc1_0 = vaddq_s16(acc1_0, out01_0);
-                        acc1_1 = vaddq_s16(acc1_1, out01_1);
-
-                        // Process for second k
-                        uint8x16_t vec_a1_0 = vld1q_u8(A + (k+1) * M + i);
-                        uint8x16_t vec_a1_1 = vld1q_u8(A + (k+1) * M + i + 16);
-
-                        int8x16_t res10_h = vqtbl1q_s8(v_lut1_h, vec_a1_0);
-                        int8x16_t res10_l = vqtbl1q_s8(v_lut1_l, vec_a1_0);
-                        int16x8_t out10_0, out10_1;
-                        reconstruct_int16_pair(res10_h, res10_l, out10_0, out10_1);
-                        acc0_0 = vaddq_s16(acc0_0, out10_0);
-                        acc0_1 = vaddq_s16(acc0_1, out10_1);
-
-                        int8x16_t res11_h = vqtbl1q_s8(v_lut1_h, vec_a1_1);
-                        int8x16_t res11_l = vqtbl1q_s8(v_lut1_l, vec_a1_1);
-                        int16x8_t out11_0, out11_1;
-                        reconstruct_int16_pair(res11_h, res11_l, out11_0, out11_1);
-                        acc1_0 = vaddq_s16(acc1_0, out11_0);
-                        acc1_1 = vaddq_s16(acc1_1, out11_1);
-                    }
-
-                    // Store results back to C using FMA
-                    float32_t* pC0 = &(C[j * M + i]);
-                    float32_t* pC1 = &(C[j * M + i + 16]);
-
-                    // Block 0
-                    vst1q_f32(pC0 + 0, vfmaq_f32(vld1q_f32(pC0 + 0), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acc0_0))), v_rescale));
-                    vst1q_f32(pC0 + 4, vfmaq_f32(vld1q_f32(pC0 + 4), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acc0_0))), v_rescale));
-                    vst1q_f32(pC0 + 8, vfmaq_f32(vld1q_f32(pC0 + 8), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acc0_1))), v_rescale));
-                    vst1q_f32(pC0 + 12, vfmaq_f32(vld1q_f32(pC0 + 12), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acc0_1))), v_rescale));
-
-                    // Block 1
-                    vst1q_f32(pC1 + 0, vfmaq_f32(vld1q_f32(pC1 + 0), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acc1_0))), v_rescale));
-                    vst1q_f32(pC1 + 4, vfmaq_f32(vld1q_f32(pC1 + 4), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acc1_0))), v_rescale));
-                    vst1q_f32(pC1 + 8, vfmaq_f32(vld1q_f32(pC1 + 8), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acc1_1))), v_rescale));
-                    vst1q_f32(pC1 + 12, vfmaq_f32(vld1q_f32(pC1 + 12), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acc1_1))), v_rescale));
+                    PROCESS_ROW_BLOCK(acc0, acc1, 0);
+                    PROCESS_ROW_BLOCK(acc2, acc3, 16);
+                    PROCESS_ROW_BLOCK(acc4, acc5, 32);
+                    PROCESS_ROW_BLOCK(acc6, acc7, 48);
+                    PROCESS_ROW_BLOCK(acc8, acc9, 64);
+                    PROCESS_ROW_BLOCK(accA, accB, 80);
+                    PROCESS_ROW_BLOCK(accC, accD, 96);
+                    PROCESS_ROW_BLOCK(accE, accF, 112);
+#undef PROCESS_ROW_BLOCK
                 }
+
+                float32_t* pC = &(C[j * M + ii]);
+                
+#define STORE_ROW_BLOCK(acc_low, acc_high, offset) \
+                vst1q_f32(pC + offset + 0, vfmaq_f32(vld1q_f32(pC + offset + 0), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acc_low))), v_rescale)); \
+                vst1q_f32(pC + offset + 4, vfmaq_f32(vld1q_f32(pC + offset + 4), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acc_low))), v_rescale)); \
+                vst1q_f32(pC + offset + 8, vfmaq_f32(vld1q_f32(pC + offset + 8), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acc_high))), v_rescale)); \
+                vst1q_f32(pC + offset + 12, vfmaq_f32(vld1q_f32(pC + offset + 12), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acc_high))), v_rescale));
+
+                STORE_ROW_BLOCK(acc0, acc1, 0);
+                STORE_ROW_BLOCK(acc2, acc3, 16);
+                STORE_ROW_BLOCK(acc4, acc5, 32);
+                STORE_ROW_BLOCK(acc6, acc7, 48);
+                STORE_ROW_BLOCK(acc8, acc9, 64);
+                STORE_ROW_BLOCK(accA, accB, 80);
+                STORE_ROW_BLOCK(accC, accD, 96);
+                STORE_ROW_BLOCK(accE, accF, 112);
+#undef STORE_ROW_BLOCK
             }
         }
     }
@@ -977,7 +966,7 @@ int main() {
     }
 
     // Debug: Print first 16 rows of A_, A_packed, and A_packed_T
-    printf("\n=== DEBUG: First 16 rows of A_ (float32_t, 16 elements each) ===\n");
+    /*printf("\n=== DEBUG: First 16 rows of A_ (float32_t, 16 elements each) ===\n");
     for (int i = 0; i < 16; i++) {
         printf("A_[%2d]: ", i);
         for (int j = 0; j < 16; j++) {
@@ -1021,7 +1010,7 @@ int main() {
             printf("%8.3f ", B_T[i * K + j]);
         }
         printf("\n");
-    }
+    }*/
 
     printf("Running LUT construction and inference...\n");
     printf("Matrix dimensions:  A(2560x2560), B(2560x640), C(2560x160)\n");
