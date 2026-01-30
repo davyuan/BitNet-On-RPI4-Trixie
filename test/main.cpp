@@ -69,6 +69,7 @@ void matmul_naive(float32_t* A, float32_t* B, float32_t* C, int M, int N, int K)
 }
 
 // A is (M x K/2) uint8_t, B is (K x N) float32_t
+// C is (N x M) float32_t
 void matmul_naive_weight_scale(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
     float32_t scale = ws[0];
     for (int i = 0; i < M; i++) {
@@ -136,8 +137,8 @@ void matmul_tiled_weight_scale(uint8_t* A, float32_t* B, float32_t* C, float32_t
 /* A(MxK/2), B(NxK)
    QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
         each K represents 2 activations in B. 
-   C(MxN)
-   This version natively implements the LUT-based matmul without SIMD optimizations.   
+   C(NxM)
+   This version implements a tiled based LUT-lookup matmul without SIMD optimizations.   
 */
 void matmul_lut_tiled(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
     int KK = K / 2;
@@ -171,7 +172,8 @@ void matmul_lut_tiled(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int
     // Partition rows among 4 cores
     #pragma omp parallel for num_threads(4) 
     for (int j = 0; j < N; j++) {                        
-        ggml_preprocessor(M, K, (void*)(B + j * K), (void*)LUT_Scales, (void*)QLUT);                  
+        ggml_preprocessor(M, K, (void*)(B + j * K), (void*)LUT_Scales, (void*)QLUT);  
+        printf("j:%d, LUT_Scale: %f\n, Weight scale: %f\n", j, (*LUT_Scales), ws[0]);                
         for (int ii = 0; ii < M; ii += BM) {          
             for (int kk = 0; kk < KK; kk += BK) {                
                 for (int i = ii; i < ii + BM; i++) {
