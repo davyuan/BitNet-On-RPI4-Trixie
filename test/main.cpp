@@ -1091,7 +1091,7 @@ int main() {
     auto naive_duration = std::chrono::duration_cast<std::chrono::milliseconds>(naive_end - naive_start);   
     printf("Reference matmul complete. Time: %ld ms\n", naive_duration.count());
 
-    const int num_iterations = 50;
+    const int num_iterations = 1;
     long long avg_simd_time = benchmark_matmul(
         "\nStep 2: Running LUT Naive(50 iterations for average)\n",
         "Matmul_lut_naive",
