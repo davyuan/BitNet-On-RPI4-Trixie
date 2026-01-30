@@ -172,61 +172,15 @@ void matmul_lut_tiled(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int
             }
         }
     }
-    
-    aligned_free(QLUT);
-    aligned_free(LUT_Scales);
-}
-
-/* A(MxK/2), B(NxK)
-   QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
-        each K represents 2 activations in B. 
-   C(MxN)
-   This version doesn't use SIMD optimizations either, but focus on one LUT table at once to avoid
-   overhead of reconstructing LUTs in the same tile. 
-*/
-void matmul_lut_naive2(int8_t* A, float32_t* B, int32_t* C, int M, int N, int K) {
-    int KK = K / 2;
-    int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
-    float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
-    float32_t* Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
-    *Scales = 1.0f;
-    *LUT_Scales = 1.0f;
-
-    for (int j = 0; j < N; j++) {                        
-        lut_ctor(K, QLUT, (float32_t*)(B + j* K), LUT_Scales);    
-        
-        #pragma omp parallel for num_threads(4)
-        for (int ii = 0; ii < M; ii += BM) {          
-            for (int kk = 0; kk < KK; kk += BK) {                
-                for (int i = ii; i < ii + BM; i++) {
-                    int32_t local_sum = 0; 
-                    
-                    for (int k = kk; k < kk + BK; k++) {
-                        int lut_index = A[i*KK + k];
-                        uint8_t high_byte = (uint8_t)QLUT[k * 32 + lut_index];
-                        uint8_t low_byte = (uint8_t)QLUT[k * 32 + 16 + lut_index];
-                        // Combine as unsigned first, then cast to signed int16
-                        int16_t combined = (int16_t)(((uint16_t)high_byte << 8) | (uint16_t)low_byte);
-                        
-                        local_sum += (int32_t)combined;                          
-                    }
-
-                    // Add to result (C is pre-initialized to 0)
-                    C[i*N + j] += local_sum;
-                }
-            }
-        }
-    }
 
     aligned_free(QLUT);
     aligned_free(LUT_Scales);
-    aligned_free(Scales);
 }
 
 /* A(K/2 x M), B(N x K)
    QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
         each K represents 2 activations in B. 
-   C(MxN)
+   C(NxM)
    This version doesn't use SIMD optimizations either, but focus on one LUT table at once to avoid
    overhead of reconstructing LUTs in the same tile. 
 */
@@ -1048,8 +1002,8 @@ int main() {
     auto naive_duration = std::chrono::duration_cast<std::chrono::milliseconds>(naive_end - naive_start);   
     printf("Reference matmul complete. Time: %ld ms\n", naive_duration.count());
 
-    const int num_iterations = 1;
-    long long avg_simd_time = benchmark_matmul(
+    const int num_iterations = 10;
+    long long avg_lut_time = benchmark_matmul(
         "\nStep 2: Running LUT Tiled(50 iterations for average)\n",
         "Matmul_lut_tiled",
         [&]() { matmul_lut_tiled(A, B_T, C_simd, weight_scale, M, N, K); },
@@ -1057,7 +1011,17 @@ int main() {
     );
 
     printf("\nComparing kernel output (C) with reference (C_)...\n");
-    compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_lut_naive comparison");
+    compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_lut_tiled comparison");
+    
+    long long avg_simd_time = benchmark_matmul(
+        "\nStep 2: Running LUT SIMD(10 iterations for average)\n",
+        "Matmul_lut_simd",
+        [&]() { matmul_lut_simd(A_T, B_T, C_simd, weight_scale, M, N, K); },
+        C_simd, M, N, num_iterations
+    );
+
+    printf("\nComparing kernel output (C) with reference (C_)...\n");
+    compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_lut_simd comparison");
     
     // Debug: Print first 16 rows of C_ and C_simd
     printf("\n=== DEBUG: First 16 rows of C_ (float32_t, 16 elements each) ===\n");
