@@ -584,26 +584,24 @@ void matmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, float32_t* 
     int ne01 = M;
     int ne10 = K;
     int ne11 = N;
-    int8_t* QLUT0 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
-    int8_t* QLUT1 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
-    float32_t* LUT_Scales = (float32_t*)aligned_malloc(2 * sizeof(float32_t));
+    int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
+    float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
 
     #pragma omp parallel num_threads(4)
     {    
         int ith = omp_get_thread_num();
         int nth = omp_get_num_threads();
     
-        for (int j = 0; j < ne11; j += 2) {
+        for (int j = 0; j < ne11; j += 1) {
             if (ith == 0) {
-                ggml_preprocessor(ne01, ne00, B + ((j + 0) * ne10), &LUT_Scales[0], QLUT0);
-                ggml_preprocessor(ne01, ne00, B + ((j + 1) * ne10), &LUT_Scales[1], QLUT1);
+                ggml_preprocessor(ne01, ne00, B + (j * ne10), &LUT_Scales[0], QLUT);
             }
 #pragma omp barrier
 
             const int range_per_thread_ii = ne01 / nth;
             for (int ii = ith * range_per_thread_ii; ii < (ith + 1) * range_per_thread_ii; ii += BM) {          
-                ggml_qgemm_lut_2col(ne01, ne11, ne10, ii, j, A, 
-                                     QLUT0, QLUT1,
+                ggml_qgemm_lut(ne01, ne11, ne10, ii, j, A, 
+                                     QLUT,
                                      ws, 
                                      LUT_Scales, 
                                      C);
@@ -612,8 +610,7 @@ void matmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, float32_t* 
         }
     }
 
-    aligned_free(QLUT0);
-    aligned_free(QLUT1);
+    aligned_free(QLUT);
     aligned_free(LUT_Scales);
 }
 
