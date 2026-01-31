@@ -33,8 +33,8 @@ static float f16_to_f32(uint16_t v) {
 
 int main() {
     const char *file = "../models/bitnet-b1.58-2B-4T-bf16/model.safetensors";
-    const std::string tensor_name = "model.layers.0.self_attn.q_proj.weight";
-    const char *save_to_file = "q_proj_weights.bin";
+    const std::string tensor_name = "model.layers.0.self_attn.k_proj.weight";
+    const char *save_to_file = "k_proj_weights.bin";
 
     safetensors::safetensors_t st;
     std::string err, warn;
