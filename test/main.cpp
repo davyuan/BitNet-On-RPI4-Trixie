@@ -330,7 +330,7 @@ void matmul_lut_simd2(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int 
     float32_t* Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
     *Scales = 1.0f;
 
-    for (int j = 0; j < N; j+=4) {                      
+    for (int j = 0; j < N - 3; j+=4) {                      
         ggml_preprocessor(M, K, (void*)(B + j * K), (void*)(&(LUT_Scales[0])), (void*)QLUT0);                  
         ggml_preprocessor(M, K, (void*)(B + (j+1) * K), (void*)(&(LUT_Scales[1])), (void*)QLUT1);                  
         ggml_preprocessor(M, K, (void*)(B + (j+2) * K), (void*)(&(LUT_Scales[2])), (void*)QLUT2);                  
@@ -693,7 +693,7 @@ void matmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, float32_t* 
         const int tile_start = (n_tiles * ith) / nth;
         const int tile_end = (n_tiles * (ith + 1)) / nth;
 
-        for (int j = 0; j < ne11; j += 2) {
+        for (int j = 0; j < ne11 - 1; j += 2) {
             if (ith == 0) {
                 ggml_preprocessor(ne01, ne00, B + (j * ne10), &LUT_Scales[0], QLUT0);
                 ggml_preprocessor(ne01, ne00, B + ((j + 1) * ne10), &LUT_Scales[1], QLUT1);
