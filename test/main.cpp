@@ -228,132 +228,134 @@ void matmul_lut_tiled2(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, in
 */
 void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
     int KK = K / 2;
-    int8_t* QLUT0 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
-    int8_t* QLUT1 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
-    float32_t* LUT_Scales = (float32_t*)aligned_malloc(2 * sizeof(float32_t));
     const float32_t weight_scale = ws[0];
 
-    for (int j = 0; j < N; j += 2) {
-        if (j + 1 < N) {
-            ggml_preprocessor(M, K, (void*)(B + j * K), (void*)(&LUT_Scales[0]), (void*)QLUT0);                  
-            ggml_preprocessor(M, K, (void*)(B + (j + 1) * K), (void*)(&LUT_Scales[1]), (void*)QLUT1);                  
+    #pragma omp parallel for num_threads(4)
+    {
+        int8_t* QLUT0 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
+        int8_t* QLUT1 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
+        float32_t* LUT_Scales = (float32_t*)aligned_malloc(2 * sizeof(float32_t));
+
+        #pragma omp for
+        for (int j = 0; j < N; j += 2) {
+            if (j + 1 < N) {
+                ggml_preprocessor(M, K, (void*)(B + j * K), (void*)(&LUT_Scales[0]), (void*)QLUT0);                  
+                ggml_preprocessor(M, K, (void*)(B + (j + 1) * K), (void*)(&LUT_Scales[1]), (void*)QLUT1);                  
+                
+                const float32x4_t v_rescale0 = vdupq_n_f32(weight_scale / LUT_Scales[0]);
+                const float32x4_t v_rescale1 = vdupq_n_f32(weight_scale / LUT_Scales[1]);
             
-            const float32x4_t v_rescale0 = vdupq_n_f32(weight_scale / LUT_Scales[0]);
-            const float32x4_t v_rescale1 = vdupq_n_f32(weight_scale / LUT_Scales[1]);
-        
-            #pragma omp parallel for num_threads(4)
-            for (int ii = 0; ii < M; ii += BM) {          
-                for (int i = ii; i < ii + BM; i += 64) {
-                    int16x8_t acc0_j0 = vdupq_n_s16(0), acc1_j0 = vdupq_n_s16(0);
-                    int16x8_t acc2_j0 = vdupq_n_s16(0), acc3_j0 = vdupq_n_s16(0);
-                    int16x8_t acc4_j0 = vdupq_n_s16(0), acc5_j0 = vdupq_n_s16(0);
-                    int16x8_t acc6_j0 = vdupq_n_s16(0), acc7_j0 = vdupq_n_s16(0);
+                for (int ii = 0; ii < M; ii += BM) {          
+                    for (int i = ii; i < ii + BM; i += 64) {
+                        int16x8_t acc0_j0 = vdupq_n_s16(0), acc1_j0 = vdupq_n_s16(0);
+                        int16x8_t acc2_j0 = vdupq_n_s16(0), acc3_j0 = vdupq_n_s16(0);
+                        int16x8_t acc4_j0 = vdupq_n_s16(0), acc5_j0 = vdupq_n_s16(0);
+                        int16x8_t acc6_j0 = vdupq_n_s16(0), acc7_j0 = vdupq_n_s16(0);
 
-                    int16x8_t acc0_j1 = vdupq_n_s16(0), acc1_j1 = vdupq_n_s16(0);
-                    int16x8_t acc2_j1 = vdupq_n_s16(0), acc3_j1 = vdupq_n_s16(0);
-                    int16x8_t acc4_j1 = vdupq_n_s16(0), acc5_j1 = vdupq_n_s16(0);
-                    int16x8_t acc6_j1 = vdupq_n_s16(0), acc7_j1 = vdupq_n_s16(0);
+                        int16x8_t acc0_j1 = vdupq_n_s16(0), acc1_j1 = vdupq_n_s16(0);
+                        int16x8_t acc2_j1 = vdupq_n_s16(0), acc3_j1 = vdupq_n_s16(0);
+                        int16x8_t acc4_j1 = vdupq_n_s16(0), acc5_j1 = vdupq_n_s16(0);
+                        int16x8_t acc6_j1 = vdupq_n_s16(0), acc7_j1 = vdupq_n_s16(0);
 
-                    for (int k = 0; k < KK; k++) {
-                        int8x16_t vh0 = vld1q_s8(QLUT0 + k * 32);
-                        int8x16_t vl0 = vld1q_s8(QLUT0 + k * 32 + 16);
-                        int8x16_t vh1 = vld1q_s8(QLUT1 + k * 32);
-                        int8x16_t vl1 = vld1q_s8(QLUT1 + k * 32 + 16);
+                        for (int k = 0; k < KK; k++) {
+                            int8x16_t vh0 = vld1q_s8(QLUT0 + k * 32);
+                            int8x16_t vl0 = vld1q_s8(QLUT0 + k * 32 + 16);
+                            int8x16_t vh1 = vld1q_s8(QLUT1 + k * 32);
+                            int8x16_t vl1 = vld1q_s8(QLUT1 + k * 32 + 16);
 
-#define CORE_WORK_2COL(offset, accl0, acch0, accl1, acch1) { \
-                            uint8x16_t va = vld1q_u8(A + k * M + i + offset); \
-                            int8x16_t rh0 = vqtbl1q_s8(vh0, va); \
-                            int8x16_t rl0 = vqtbl1q_s8(vl0, va); \
-                            int8x16_t rh1 = vqtbl1q_s8(vh1, va); \
-                            int8x16_t rl1 = vqtbl1q_s8(vl1, va); \
-                            int16x8_t o0l, o0h, o1l, o1h; \
-                            reconstruct_int16_pair(rh0, rl0, o0l, o0h); \
-                            reconstruct_int16_pair(rh1, rl1, o1l, o1h); \
-                            accl0 = vaddq_s16(accl0, o0l); \
-                            acch0 = vaddq_s16(acch0, o0h); \
-                            accl1 = vaddq_s16(accl1, o1l); \
-                            acch1 = vaddq_s16(acch1, o1h); \
+    #define CORE_WORK_2COL(offset, accl0, acch0, accl1, acch1) { \
+                                uint8x16_t va = vld1q_u8(A + k * M + i + offset); \
+                                int8x16_t rh0 = vqtbl1q_s8(vh0, va); \
+                                int8x16_t rl0 = vqtbl1q_s8(vl0, va); \
+                                int8x16_t rh1 = vqtbl1q_s8(vh1, va); \
+                                int8x16_t rl1 = vqtbl1q_s8(vl1, va); \
+                                int16x8_t o0l, o0h, o1l, o1h; \
+                                reconstruct_int16_pair(rh0, rl0, o0l, o0h); \
+                                reconstruct_int16_pair(rh1, rl1, o1l, o1h); \
+                                accl0 = vaddq_s16(accl0, o0l); \
+                                acch0 = vaddq_s16(acch0, o0h); \
+                                accl1 = vaddq_s16(accl1, o1l); \
+                                acch1 = vaddq_s16(acch1, o1h); \
+                            }
+
+                            CORE_WORK_2COL(0,  acc0_j0, acc1_j0, acc0_j1, acc1_j1);
+                            CORE_WORK_2COL(16, acc2_j0, acc3_j0, acc2_j1, acc3_j1);
+                            CORE_WORK_2COL(32, acc4_j0, acc5_j0, acc4_j1, acc5_j1);
+                            CORE_WORK_2COL(48, acc6_j0, acc7_j0, acc6_j1, acc7_j1);
+    #undef CORE_WORK_2COL
                         }
 
-                        CORE_WORK_2COL(0,  acc0_j0, acc1_j0, acc0_j1, acc1_j1);
-                        CORE_WORK_2COL(16, acc2_j0, acc3_j0, acc2_j1, acc3_j1);
-                        CORE_WORK_2COL(32, acc4_j0, acc5_j0, acc4_j1, acc5_j1);
-                        CORE_WORK_2COL(48, acc6_j0, acc7_j0, acc6_j1, acc7_j1);
-#undef CORE_WORK_2COL
+                        // Write-back
+                        float32_t* pC0 = &(C[j * M + i]);
+                        float32_t* pC1 = &(C[(j + 1) * M + i]);
+
+    #define WRITE_BACK(out_ptr, accl, acch, rescale) { \
+                            vst1q_f32(out_ptr + 0, vfmaq_f32(vld1q_f32(out_ptr + 0), vcvtq_f32_s32(vmovl_s16(vget_low_s16(accl))), rescale)); \
+                            vst1q_f32(out_ptr + 4, vfmaq_f32(vld1q_f32(out_ptr + 4), vcvtq_f32_s32(vmovl_s16(vget_high_s16(accl))), rescale)); \
+                            vst1q_f32(out_ptr + 8, vfmaq_f32(vld1q_f32(out_ptr + 8), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acch))), rescale)); \
+                            vst1q_f32(out_ptr + 12, vfmaq_f32(vld1q_f32(out_ptr + 12), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acch))), rescale)); \
+                        }
+
+                        WRITE_BACK(pC0,      acc0_j0, acc1_j0, v_rescale0);
+                        WRITE_BACK(pC0 + 16, acc2_j0, acc3_j0, v_rescale0);
+                        WRITE_BACK(pC0 + 32, acc4_j0, acc5_j0, v_rescale0);
+                        WRITE_BACK(pC0 + 48, acc6_j0, acc7_j0, v_rescale0);
+
+                        WRITE_BACK(pC1,      acc0_j1, acc1_j1, v_rescale1);
+                        WRITE_BACK(pC1 + 16, acc2_j1, acc3_j1, v_rescale1);
+                        WRITE_BACK(pC1 + 32, acc4_j1, acc5_j1, v_rescale1);
+                        WRITE_BACK(pC1 + 48, acc6_j1, acc7_j1, v_rescale1);
+    #undef WRITE_BACK
                     }
-
-                    // Write-back
-                    float32_t* pC0 = &(C[j * M + i]);
-                    float32_t* pC1 = &(C[(j + 1) * M + i]);
-
-#define WRITE_BACK(out_ptr, accl, acch, rescale) { \
-                        vst1q_f32(out_ptr + 0, vfmaq_f32(vld1q_f32(out_ptr + 0), vcvtq_f32_s32(vmovl_s16(vget_low_s16(accl))), rescale)); \
-                        vst1q_f32(out_ptr + 4, vfmaq_f32(vld1q_f32(out_ptr + 4), vcvtq_f32_s32(vmovl_s16(vget_high_s16(accl))), rescale)); \
-                        vst1q_f32(out_ptr + 8, vfmaq_f32(vld1q_f32(out_ptr + 8), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acch))), rescale)); \
-                        vst1q_f32(out_ptr + 12, vfmaq_f32(vld1q_f32(out_ptr + 12), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acch))), rescale)); \
-                    }
-
-                    WRITE_BACK(pC0,      acc0_j0, acc1_j0, v_rescale0);
-                    WRITE_BACK(pC0 + 16, acc2_j0, acc3_j0, v_rescale0);
-                    WRITE_BACK(pC0 + 32, acc4_j0, acc5_j0, v_rescale0);
-                    WRITE_BACK(pC0 + 48, acc6_j0, acc7_j0, v_rescale0);
-
-                    WRITE_BACK(pC1,      acc0_j1, acc1_j1, v_rescale1);
-                    WRITE_BACK(pC1 + 16, acc2_j1, acc3_j1, v_rescale1);
-                    WRITE_BACK(pC1 + 32, acc4_j1, acc5_j1, v_rescale1);
-                    WRITE_BACK(pC1 + 48, acc6_j1, acc7_j1, v_rescale1);
-#undef WRITE_BACK
                 }
-            }
-        } else {
-            ggml_preprocessor(M, K, (void*)(B + j * K), (void*)(&LUT_Scales[0]), (void*)QLUT0);
-            const float32x4_t v_rescale0 = vdupq_n_f32(weight_scale / LUT_Scales[0]);
-            
-            #pragma omp parallel for num_threads(4)
-            for (int ii = 0; ii < M; ii += BM) {
-                for (int i = ii; i < ii + BM; i += 64) {
-                    int16x8_t acc0 = vdupq_n_s16(0), acc1 = vdupq_n_s16(0), acc2 = vdupq_n_s16(0), acc3 = vdupq_n_s16(0);
-                    int16x8_t acc4 = vdupq_n_s16(0), acc5 = vdupq_n_s16(0), acc6 = vdupq_n_s16(0), acc7 = vdupq_n_s16(0);
+            } else {
+                ggml_preprocessor(M, K, (void*)(B + j * K), (void*)(&LUT_Scales[0]), (void*)QLUT0);
+                const float32x4_t v_rescale0 = vdupq_n_f32(weight_scale / LUT_Scales[0]);
+                
+                for (int ii = 0; ii < M; ii += BM) {
+                    for (int i = ii; i < ii + BM; i += 64) {
+                        int16x8_t acc0 = vdupq_n_s16(0), acc1 = vdupq_n_s16(0), acc2 = vdupq_n_s16(0), acc3 = vdupq_n_s16(0);
+                        int16x8_t acc4 = vdupq_n_s16(0), acc5 = vdupq_n_s16(0), acc6 = vdupq_n_s16(0), acc7 = vdupq_n_s16(0);
 
-                    for (int k = 0; k < KK; k++) {
-                        int8x16_t vh = vld1q_s8(QLUT0 + k * 32);
-                        int8x16_t vl = vld1q_s8(QLUT0 + k * 32 + 16);
+                        for (int k = 0; k < KK; k++) {
+                            int8x16_t vh = vld1q_s8(QLUT0 + k * 32);
+                            int8x16_t vl = vld1q_s8(QLUT0 + k * 32 + 16);
 
-#define CORE_WORK_1COL(offset, accl, acch) { \
-                            uint8x16_t va = vld1q_u8(A + k * M + i + offset); \
-                            int8x16_t rh = vqtbl1q_s8(vh, va); \
-                            int8x16_t rl = vqtbl1q_s8(vl, va); \
-                            int16x8_t ol, oh; \
-                            reconstruct_int16_pair(rh, rl, ol, oh); \
-                            accl = vaddq_s16(accl, ol); acch = vaddq_s16(acch, oh); \
+    #define CORE_WORK_1COL(offset, accl, acch) { \
+                                uint8x16_t va = vld1q_u8(A + k * M + i + offset); \
+                                int8x16_t rh = vqtbl1q_s8(vh, va); \
+                                int8x16_t rl = vqtbl1q_s8(vl, va); \
+                                int16x8_t ol, oh; \
+                                reconstruct_int16_pair(rh, rl, ol, oh); \
+                                accl = vaddq_s16(accl, ol); acch = vaddq_s16(acch, oh); \
+                            }
+                            CORE_WORK_1COL(0,  acc0, acc1);
+                            CORE_WORK_1COL(16, acc2, acc3);
+                            CORE_WORK_1COL(32, acc4, acc5);
+                            CORE_WORK_1COL(48, acc6, acc7);
+    #undef CORE_WORK_1COL
                         }
-                        CORE_WORK_1COL(0,  acc0, acc1);
-                        CORE_WORK_1COL(16, acc2, acc3);
-                        CORE_WORK_1COL(32, acc4, acc5);
-                        CORE_WORK_1COL(48, acc6, acc7);
-#undef CORE_WORK_1COL
-                    }
 
-                    float32_t* pC = &(C[j * M + i]);
-#define WRITE_BACK_1COL(out_ptr, accl, acch) { \
-                        vst1q_f32(out_ptr + 0, vfmaq_f32(vld1q_f32(out_ptr + 0), vcvtq_f32_s32(vmovl_s16(vget_low_s16(accl))), v_rescale0)); \
-                        vst1q_f32(out_ptr + 4, vfmaq_f32(vld1q_f32(out_ptr + 4), vcvtq_f32_s32(vmovl_s16(vget_high_s16(accl))), v_rescale0)); \
-                        vst1q_f32(out_ptr + 8, vfmaq_f32(vld1q_f32(out_ptr + 8), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acch))), v_rescale0)); \
-                        vst1q_f32(out_ptr + 12, vfmaq_f32(vld1q_f32(out_ptr + 12), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acch))), v_rescale0)); \
+                        float32_t* pC = &(C[j * M + i]);
+    #define WRITE_BACK_1COL(out_ptr, accl, acch) { \
+                            vst1q_f32(out_ptr + 0, vfmaq_f32(vld1q_f32(out_ptr + 0), vcvtq_f32_s32(vmovl_s16(vget_low_s16(accl))), v_rescale0)); \
+                            vst1q_f32(out_ptr + 4, vfmaq_f32(vld1q_f32(out_ptr + 4), vcvtq_f32_s32(vmovl_s16(vget_high_s16(accl))), v_rescale0)); \
+                            vst1q_f32(out_ptr + 8, vfmaq_f32(vld1q_f32(out_ptr + 8), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acch))), v_rescale0)); \
+                            vst1q_f32(out_ptr + 12, vfmaq_f32(vld1q_f32(out_ptr + 12), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acch))), v_rescale0)); \
+                        }
+                        WRITE_BACK_1COL(pC,      acc0, acc1);
+                        WRITE_BACK_1COL(pC + 16, acc2, acc3);
+                        WRITE_BACK_1COL(pC + 32, acc4, acc5);
+                        WRITE_BACK_1COL(pC + 48, acc6, acc7);
+    #undef WRITE_BACK_1COL
                     }
-                    WRITE_BACK_1COL(pC,      acc0, acc1);
-                    WRITE_BACK_1COL(pC + 16, acc2, acc3);
-                    WRITE_BACK_1COL(pC + 32, acc4, acc5);
-                    WRITE_BACK_1COL(pC + 48, acc6, acc7);
-#undef WRITE_BACK_1COL
                 }
             }
         }
+        aligned_free(QLUT0);
+        aligned_free(QLUT1);
+        aligned_free(LUT_Scales);
     }
-
-    aligned_free(QLUT0);
-    aligned_free(QLUT1);
-    aligned_free(LUT_Scales);
 }
 
 /* A(K/2 x M), B(N x K)
