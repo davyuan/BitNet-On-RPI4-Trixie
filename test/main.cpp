@@ -719,7 +719,7 @@ void matmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, float32_t* 
 #pragma omp barrier
             for (int tile = tile_start; tile < tile_end; tile++) {
                 const int ii = tile * BM;
-                ggml_qgemm_lut( ne01, ne11, ne10, ii, j, A, 
+                ggml_qgemm_lut( ne01, ne11, ne10, ii, (ne11 -1), A, 
                                 QLUT0, 
                                 ws, 
                                 LUT_Scales, 
