@@ -730,58 +730,43 @@ void matmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, float32_t* 
     int ne01 = M;
     int ne10 = K;
     int ne11 = N;
-    int8_t* QLUT0 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
-    int8_t* QLUT1 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
-    float32_t* LUT_Scales = (float32_t*)aligned_malloc(2 * sizeof(float32_t));
 
     #pragma omp parallel num_threads(4)
     {    
-        int ith = omp_get_thread_num();
-        int nth = omp_get_num_threads();
-    
-        const int n_tiles = (ne01 + BM - 1) / BM;
-        const int tile_start = (n_tiles * ith) / nth;
-        const int tile_end = (n_tiles * (ith + 1)) / nth;
+        int8_t* QLUT0 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
+        int8_t* QLUT1 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
+        float32_t* LUT_Scales = (float32_t*)aligned_malloc(2 * sizeof(float32_t));
 
-        for (int j = 0; j < ne11 - 1; j += 2) {
-            if (ith == 0) {
+        #pragma omp for
+        for (int j = 0; j < ne11; j += 2) {
+            if (j + 1 < ne11) {
                 ggml_preprocessor(ne01, ne10, B + (j * ne10), &LUT_Scales[0], QLUT0);
                 ggml_preprocessor(ne01, ne10, B + ((j + 1) * ne10), &LUT_Scales[1], QLUT1);
-            }
-#pragma omp barrier
 
-            for (int tile = tile_start; tile < tile_end; tile++) {
-                const int ii = tile * BM;
-                ggml_qgemm_lut_2col(ne01, ne11, ne10, ii, j, A, 
-                                QLUT0, 
-                                QLUT1,
-                                ws, 
-                                LUT_Scales, 
-                                C);
-            } 
-#pragma omp barrier
+                for (int ii = 0; ii < ne01; ii += BM) {
+                    ggml_qgemm_lut_2col(ne01, ne11, ne10, ii, j, A, 
+                                    QLUT0, 
+                                    QLUT1,
+                                    ws, 
+                                    LUT_Scales, 
+                                    C);
+                } 
+            } else {
+                ggml_preprocessor(ne01, ne10, B + (j * ne10), &LUT_Scales[0], QLUT0);
+                for (int ii = 0; ii < ne01; ii += BM) {
+                    ggml_qgemm_lut( ne01, ne11, ne10, ii, j, A, 
+                                    QLUT0, 
+                                    ws, 
+                                    LUT_Scales, 
+                                    C);
+                }
+            }
         }
 
-        if(ne11 % 2 == 1) {
-            if (ith == 0) {
-                ggml_preprocessor(ne01, ne10, B + ((ne11 -1) * ne10), &LUT_Scales[0], QLUT0);
-            }
-#pragma omp barrier
-            for (int tile = tile_start; tile < tile_end; tile++) {
-                const int ii = tile * BM;
-                ggml_qgemm_lut( ne01, ne11, ne10, ii, (ne11 -1), A, 
-                                QLUT0, 
-                                ws, 
-                                LUT_Scales, 
-                                C);
-            } 
-        }
-#pragma omp barrier
+        aligned_free(QLUT0);
+        aligned_free(QLUT1);
+        aligned_free(LUT_Scales);
     }
-
-    aligned_free(QLUT0);
-    aligned_free(QLUT1);
-    aligned_free(LUT_Scales);
 }
 
 double calculate_sqnr(const float32_t* C, const float32_t* C_hat, int M, int N) {
