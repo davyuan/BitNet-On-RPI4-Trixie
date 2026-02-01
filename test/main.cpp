@@ -313,21 +313,6 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int 
     aligned_free(LUT_Scales);
 }
 
-                WRITE_BACK(pC1,      acc0_j1, acc1_j1, v_rescale1);
-                WRITE_BACK(pC1 + 16, acc2_j1, acc3_j1, v_rescale1);
-                WRITE_BACK(pC1 + 32, acc4_j1, acc5_j1, v_rescale1);
-                WRITE_BACK(pC1 + 48, acc6_j1, acc7_j1, v_rescale1);
-#undef WRITE_BACK
-            }
-        }
-    }
-
-    aligned_free(QLUT0);
-    aligned_free(QLUT1);
-    aligned_free(LUT_Scales);
-}
-
-
 /* A(K/2 x M), B(N x K)
    QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
         each K represents 2 activations in B. 
