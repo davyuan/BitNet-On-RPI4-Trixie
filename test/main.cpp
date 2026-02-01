@@ -177,6 +177,49 @@ void matmul_lut_tiled(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int
     aligned_free(LUT_Scales);
 }
 
+/* A(MxK/2), B(NxK)
+   QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
+        each K represents 2 activations in B. 
+   C(NxM)
+   This version implements a tiled based LUT-lookup matmul without SIMD optimizations.   
+*/
+void matmul_lut_tiled2(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
+    int KK = K / 2;
+        
+    // Partition rows among 4 cores
+    #pragma omp parallel for num_threads(4) 
+    for (int j = 0; j < N; j++) {
+        int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
+        float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
+        *LUT_Scales = 1.0f;
+        ggml_preprocessor(M, K, (void*)(B + j * K), (void*)LUT_Scales, (void*)QLUT);  
+        // printf("j:%d, LUT_Scale: %f, Weight scale: %f\n", j, (*LUT_Scales), ws[0]);                
+        for (int ii = 0; ii < M; ii += BM) {          
+            for (int kk = 0; kk < KK; kk += BK) {                
+                for (int i = ii; i < ii + BM; i++) {
+                    int32_t local_sum = 0; 
+                    
+                    for (int k = kk; k < kk + BK; k++) {
+                        int lut_index = A[i*KK + k];
+                        uint8_t high_byte = (uint8_t)QLUT[k * 32 + lut_index];
+                        uint8_t low_byte = (uint8_t)QLUT[k * 32 + 16 + lut_index];
+                        // Combine as unsigned first, then cast to signed int16
+                        int16_t combined = (int16_t)(((uint16_t)high_byte << 8) | (uint16_t)low_byte);
+                        
+                        local_sum += (int32_t)combined;
+                    }
+
+                    // Add to result (C is pre-initialized to 0)
+                    C[j*M + i] += local_sum * ws[0] / (*LUT_Scales);
+                }
+            }
+        }
+
+        aligned_free(QLUT);
+        aligned_free(LUT_Scales);        
+    }
+}
+
 /* A(K/2 x M), B(N x K)
    QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
         each K represents 2 activations in B. 
@@ -1176,7 +1219,7 @@ int main() {
 
     const int num_iterations = 10;
     long long avg_lut_time = benchmark_matmul(
-        "\nStep 2: Running LUT Tiled(50 iterations for average)\n",
+        "\nStep 2: Running LUT Tiled(10 iterations for average)\n",
         "Matmul_lut_tiled",
         [&]() { matmul_lut_tiled(A, B_T, C_simd, weight_scale, M, N, K); },
         C_simd, M, N, num_iterations
@@ -1184,6 +1227,15 @@ int main() {
     printf("\nComparing kernel output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_lut_tiled comparison");
     
+    long long avg_lut_time2 = benchmark_matmul(
+        "\nStep 2: Running LUT Tiled v2(10 iterations for average)\n",
+        "Matmul_lut_tiled",
+        [&]() { matmul_lut_tiled2(A, B_T, C_simd, weight_scale, M, N, K); },
+        C_simd, M, N, num_iterations
+    );
+    printf("\nComparing kernel output (C) with reference (C_)...\n");
+    compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_lut_tiled comparison");
+
     long long avg_simd_time = benchmark_matmul(
         "\nStep 3: Running LUT SIMD(10 iterations for average)\n",
         "Matmul_lut_simd",
@@ -1244,6 +1296,7 @@ int main() {
 
     // Print performance comparison
     double speedup_lut = (double)naive_duration.count() / (double)avg_lut_time;
+    double speedup_lut2 = (double)naive_duration.count() / (double)avg_lut_time2;
     double speedup_simd = (double)naive_duration.count() / (double)avg_simd_time;
     double speedup_packed = (double)naive_duration.count() / (double)avg_packed_time;
     double speedup_microkernel = (double)naive_duration.count() / (double)avg_microkernel_time;
@@ -1252,6 +1305,7 @@ int main() {
     printf("\n=== PERFORMANCE COMPARISON ===\n");
     printf("matmul naive:   %ld ms\n", naive_duration.count());
     printf("Speedup (naive / lut)):   %.2fx\n", speedup_lut);
+    printf("Speedup (naive / lut2)):   %.2fx\n", speedup_lut2);
     printf("Speedup (naive / SIMD): %.2fx\n\n", speedup_simd);
     printf("LUT matmul_lut_unpacked (avg):   %lld ms\n", avg_packed_time);
     printf("Speedup (naive / lut_packed): %.2fx\n\n", speedup_packed);
