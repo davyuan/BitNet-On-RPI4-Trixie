@@ -562,24 +562,26 @@ void matmul_lut_simd2(uint8_t* A, float32_t* B, float32_t* C, int M, int N, int 
 */
 void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
     int KK = K / 2;
-    int8_t* QLUT0 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
-    int8_t* QLUT1 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
     const uint8x16_t vec_mask = vdupq_n_u8(0x0f);
-    float32_t* LUT_Scales = (float32_t*)aligned_malloc(2 * sizeof(float32_t));
     const float32_t weight_scale = ws[0];
 
-    for (int j = 0; j < N; j += 2) {
-        if (j + 1 < N) {
-            ggml_preprocessor(M, K, (void*)(B + j * K), (void*)(&LUT_Scales[0]), (void*)QLUT0);                  
-            ggml_preprocessor(M, K, (void*)(B + (j + 1) * K), (void*)(&LUT_Scales[1]), (void*)QLUT1);                  
-            
-            const float32x4_t v_rescale0 = vdupq_n_f32(weight_scale / LUT_Scales[0]);
-            const float32x4_t v_rescale1 = vdupq_n_f32(weight_scale / LUT_Scales[1]);
-            
-            // Parallelize over row blocks
-            #pragma omp parallel for num_threads(4)
-            for (int ii = 0; ii < M; ii += BM) {          
-                for (int i = ii; i < ii + BM; i += 64) {
+    #pragma omp parallel num_threads(4)
+    {
+        int8_t* QLUT0 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
+        int8_t* QLUT1 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
+        float32_t* LUT_Scales = (float32_t*)aligned_malloc(2 * sizeof(float32_t));
+
+        #pragma omp for
+        for (int j = 0; j < N; j += 2) {
+            if (j + 1 < N) {
+                ggml_preprocessor(M, K, (void*)(B + j * K), (void*)(&LUT_Scales[0]), (void*)QLUT0);                  
+                ggml_preprocessor(M, K, (void*)(B + (j + 1) * K), (void*)(&LUT_Scales[1]), (void*)QLUT1);                  
+                
+                const float32x4_t v_rescale0 = vdupq_n_f32(weight_scale / LUT_Scales[0]);
+                const float32x4_t v_rescale1 = vdupq_n_f32(weight_scale / LUT_Scales[1]);
+                
+                for (int ii = 0; ii < M; ii += BM) {          
+                    for (int i = ii; i < ii + BM; i += 64) {
                     int16x8_t acc0_j0 = vdupq_n_s16(0), acc1_j0 = vdupq_n_s16(0);
                     int16x8_t acc2_j0 = vdupq_n_s16(0), acc3_j0 = vdupq_n_s16(0);
                     int16x8_t acc4_j0 = vdupq_n_s16(0), acc5_j0 = vdupq_n_s16(0);
@@ -664,7 +666,6 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, in
             ggml_preprocessor(M, K, (void*)(B + j * K), (void*)(&LUT_Scales[0]), (void*)QLUT0);
             const float32x4_t v_rescale0 = vdupq_n_f32(weight_scale / LUT_Scales[0]);
             
-            #pragma omp parallel for num_threads(4)
             for (int ii = 0; ii < M; ii += BM) {
                 for (int i = ii; i < ii + BM; i += 64) {
                     int16x8_t acc[8] = {vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0),
@@ -712,10 +713,10 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, in
             }
         }
     }
-
-    aligned_free(QLUT0);
-    aligned_free(QLUT1);
-    aligned_free(LUT_Scales);
+        aligned_free(QLUT0);
+        aligned_free(QLUT1);
+        aligned_free(LUT_Scales);
+    }
 }
 
 /* A(K/2 x M), B(N x K)
