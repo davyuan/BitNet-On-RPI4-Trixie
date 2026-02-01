@@ -1,10 +1,14 @@
 # Port bitnet.cpp to RPI4 on Trixie (Debian 13)
-Bitnet has been a promising direction in inference optimization. It shrinks the model size, memory consumption to leveles never-seen before, while preserving accuracy and actually incresing inference speed. The main contribution of my repo are:
+Bitnet has been a promising direction in inference optimization. It shrinks the model size, memory consumption to leveles never-seen before, while preserving accuracy and actually incresing inference speed. It makes the impossible possible. Now we can run 2B parameter or even bigger models on edge devices, such as my Rasperry Pi 4 (Cortex-A72). 
 
-- A custom [micro kernel](./src/bitnet-lut-kernels.cpp) for TL1 encoding. Hande coded to achieve max perfomrance on very limited resources.
-- A customized [GGML lib](./3rdparty/llama.cpp/ggml/src/ggml.c) to drive this micro kernel. 
+The main contribution of my repo are:
+
+- A custom [micro kernel](./src/bitnet-lut-kernels.cpp) for TL1 LUT inference. Hande coded to achieve max perfomrance on very limited resources (Cortex-A72 with 4GB memory).
+- A customized [GGML lib](./3rdparty/llama.cpp/ggml/src/ggml.c) that drives this micro kernel. 
 - [Tools](./utils/convert-hf-to-gguf-bitnet.py) to convert a BF16 model to .gguf file with TL1 encoding and packing. Various scripts and tools are developed along the way to debug and verify the file is correctly encoded, such as [gguf_dump.py](./3rdparty/llama.cpp/gguf-py/scripts/gguf_dump.py)
-- Last but not least, a step by step guidance to install, compile and run it on Trixie (Debian 13). The similiar guides I found online is for previous OS and are a little dated. They don't really work on Trixie. 
+- Last but not least, an detailed explanation of how TL1 LUT inference works, and a step by step guidance to install, compile and run it on Trixie (Debian 13). The similiar guides I found online is for previous OS and are a little dated. They don't really work on Trixie. 
+
+## Architecture
 
 ## 	Installing Prerequisites
 Run these commands to install tools required by the build process.
