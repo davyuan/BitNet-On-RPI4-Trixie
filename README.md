@@ -9,6 +9,34 @@ The main contribution of my repo are:
 - Last but not least, an detailed explanation of how TL1 LUT inference works, and a step by step guidance to install, compile and run it on Trixie (Debian 13). The similiar guides I found online is for previous OS and are a little dated. They don't really work on Trixie. 
 
 ## Architecture
+First let's look at the overall architecutre of the LUT inference without diving into the details such as NEON/SIMD. 
+
+![TL1 LUT MatMul](./assets/tl1_LUT_MatMul.png)
+
+Walkthrough the architecture:
+
+- Start with the Weight matrix from the top left corner. This is the ternery weight in {-1, 0, 1}. You can convert a BF model to this using absmean(), as pointed out by the [Microsoft paper](https://arxiv.org/pdf/2504.12285). 
+- This ternary weight is packed into weight pairs, which is in [0..8]. These weight pairs will be used as indices in LUT lookup. The encoding table is below: 
+![here](./assets/tl1_LUT_Packing.png)
+- Now with the weight ready, let's look at the Activation. Activation is usually in float, but in BitNet these are quantized into int8 using absmax(). 
+- Activation is transposed into N x K, so the fastest changing dimension (column) is K (usually is also the dimension of the transformer). 
+- We need to construct a LUT table that is N x K/2 x 16, using the activation. 
+  - The fomula we use is: LUT[n,k,i] = Unpack[i](A[n,2k],A[n,2k + 1])
+  - The Unpack[i] function is defined in the encoding table above. For example for i=0000, Unpack[0000] is the nagative A[n,2k] minus A[n, 2k+1]
+- Now with both weight and LUT ready, we can do our LUT based matmul for TL1 models. This is the formula we use, for each element in the output matrix C, we just need to use the weight pairs as indices and look them up in the LUT table and add them up. This is the genius of the TL encoding. It avoids expensive float multiplication and convert them into table lookup, which is much cheaper to execute on edge devices. 
+
+![formula](./assets/tl1_LUT_Formula.png)
+
+## LUT with SIMD
+On ARM chips NEON instructions are provided to execute a single instruction on multple data. It is very useful for our micro LUT kernel that compute intensive. It would be a shame if we don't make full use of it. 
+
+To take full advantage of SIMD, I have to change the architecture a little bit. 
+
+![architecture for SIMD](./assets/tl1_LUT_MatMul_SIMd.png)
+
+- The key instruction we use for LUT lookup is vqtbl1q_s8, which takes 16 indics, and lookup them in a 16 bytes table. 
+- To read weight matrix efficiently, in alignment of 128-bit (16-bytes), I transpose the weight matrix, so 16-byte read from contingous memoery can be fed into the vqtbl1q_s8 directly. This speeds up the model inference significantly. 
+- To save on the storage, and also on memory footprint, I also pack 2 adjacent weight pairs into a byte, in big endian order. These 4-bit weight pair can be packed into a 8-bit byte. That's why the weight matrix dimension becomes K/2 x M/2.
 
 ## 	Installing Prerequisites
 Run these commands to install tools required by the build process.
