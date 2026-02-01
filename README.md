@@ -1,9 +1,9 @@
-# Port bitnet.cpp to RPI4 on Trixie (Debian 13)
-Bitnet has been a promising direction in inference optimization. It shrinks the model size, memory consumption to leveles never-seen before, while preserving accuracy and actually incresing inference speed. It makes the impossible possible. Now we can run 2B parameter or even bigger models on edge devices, such as my Rasperry Pi 4 (Cortex-A72). 
+# Bitnet.cpp on TL1 kernel
+Bitnet has been a promising direction in inference optimization. It shrinks the model size, memory consumption to leveles never-seen before, while preserving accuracy and actually incresing inference speed. It makes the impossible possible. Now with this TL1 kernel we can run 2B parameter or even bigger models on edge devices, such as my Rasperry Pi 4 (Cortex-A72). 
 
 The main contribution of my repo are as below. I believe it can be used on many edge devices with ARM chips/NEON capability. 
 
-- A custom [micro kernel](./src/bitnet-lut-kernels.cpp) for TL1 LUT inference. Hand-coded to achieve max perfomrance on very limited resources (Cortex-A72 with 4GB memory).
+- A custom TL1 [micro kernel](./src/bitnet-lut-kernels.cpp) for LUT inference. Hand-coded to achieve max perfomrance on very limited resources (Cortex-A72 with 4GB memory). The original Microsoft paper comes with a I2_S model, but not TL1. This repo fixed that. 
 - A customized [GGML lib](https://github.com/davyuan/llama.cpp/blob/81a1940c8cfc83b22a1b49f7790585c8ae5cfdeb/ggml/src/ggml.c) that drives this micro kernel. 
 - [Tools](./utils/convert-hf-to-gguf-bitnet.py) to convert a BF16 model to .gguf file with TL1 encoding and packing. Various scripts and tools are developed along the way to debug and verify the file is correctly encoded, such as [gguf_dump.py](https://github.com/davyuan/llama.cpp/blob/81a1940c8cfc83b22a1b49f7790585c8ae5cfdeb/gguf-py/scripts/gguf_dump.py)
 - Last but not least, an detailed explanation of how TL1 LUT inference works, and a step by step guidance to install, compile and run it on Trixie (Debian 13).
