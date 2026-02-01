@@ -209,7 +209,7 @@ void matmul_lut_tiled2(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, in
                 }
 
                 // Add to result (C is pre-initialized to 0)
-                C[j*M + i] += local_sum * ws[0] / (*LUT_Scales);
+                C[j*M + i] = local_sum * ws[0] / (*LUT_Scales);
             }
         }
 
