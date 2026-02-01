@@ -187,30 +187,34 @@ void matmul_lut_tiled2(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, in
     int KK = K / 2;
         
     // Partition rows among 4 cores
-    #pragma omp parallel for num_threads(4) 
-    for (int j = 0; j < N; j++) {
+    #pragma omp parallel num_threads(4) 
+    {
         int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
         float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
-        *LUT_Scales = 1.0f;
-        ggml_preprocessor(M, K, (void*)(B + j * K), (void*)LUT_Scales, (void*)QLUT);  
-        // printf("j:%d, LUT_Scale: %f, Weight scale: %f\n", j, (*LUT_Scales), ws[0]);                
-        for (int ii = 0; ii < M; ii += BM) {          
-            for (int kk = 0; kk < KK; kk += BK) {                
-                for (int i = ii; i < ii + BM; i++) {
-                    int32_t local_sum = 0; 
-                    
-                    for (int k = kk; k < kk + BK; k++) {
-                        int lut_index = A[i*KK + k];
-                        uint8_t high_byte = (uint8_t)QLUT[k * 32 + lut_index];
-                        uint8_t low_byte = (uint8_t)QLUT[k * 32 + 16 + lut_index];
-                        // Combine as unsigned first, then cast to signed int16
-                        int16_t combined = (int16_t)(((uint16_t)high_byte << 8) | (uint16_t)low_byte);
+        
+        #pragma omp for
+        for (int j = 0; j < N; j++) {
+            *LUT_Scales = 1.0f;
+            ggml_preprocessor(M, K, (void*)(B + j * K), (void*)LUT_Scales, (void*)QLUT);  
+            // printf("j:%d, LUT_Scale: %f, Weight scale: %f\n", j, (*LUT_Scales), ws[0]);                
+            for (int ii = 0; ii < M; ii += BM) {          
+                for (int kk = 0; kk < KK; kk += BK) {                
+                    for (int i = ii; i < ii + BM; i++) {
+                        int32_t local_sum = 0; 
                         
-                        local_sum += (int32_t)combined;
-                    }
+                        for (int k = kk; k < kk + BK; k++) {
+                            int lut_index = A[i*KK + k];
+                            uint8_t high_byte = (uint8_t)QLUT[k * 32 + lut_index];
+                            uint8_t low_byte = (uint8_t)QLUT[k * 32 + 16 + lut_index];
+                            // Combine as unsigned first, then cast to signed int16
+                            int16_t combined = (int16_t)(((uint16_t)high_byte << 8) | (uint16_t)low_byte);
+                            
+                            local_sum += (int32_t)combined;
+                        }
 
-                    // Add to result (C is pre-initialized to 0)
-                    C[j*M + i] += local_sum * ws[0] / (*LUT_Scales);
+                        // Add to result (C is pre-initialized to 0)
+                        C[j*M + i] += local_sum * ws[0] / (*LUT_Scales);
+                    }
                 }
             }
         }
@@ -230,7 +234,7 @@ void matmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int 
     int KK = K / 2;
     const float32_t weight_scale = ws[0];
 
-    #pragma omp parallel for num_threads(4)
+    #pragma omp parallel num_threads(4)
     {
         int8_t* QLUT0 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
         int8_t* QLUT1 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
