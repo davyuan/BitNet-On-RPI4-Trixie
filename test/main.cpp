@@ -702,7 +702,7 @@ void matmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, float32_t* 
 
             for (int tile = tile_start; tile < tile_end; tile++) {
                 const int ii = tile * BM;
-                ggml_qgemm_lut_2col( ne01, ne11, ne10, ii, j, A, 
+                ggml_qgemm_lut_2col(ne01, ne11, ne10, ii, j, A, 
                                 QLUT0, 
                                 QLUT1,
                                 ws, 
