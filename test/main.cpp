@@ -695,8 +695,8 @@ void matmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, float32_t* 
 
         for (int j = 0; j < ne11 - 1; j += 2) {
             if (ith == 0) {
-                ggml_preprocessor(ne01, ne00, B + (j * ne10), &LUT_Scales[0], QLUT0);
-                ggml_preprocessor(ne01, ne00, B + ((j + 1) * ne10), &LUT_Scales[1], QLUT1);
+                ggml_preprocessor(ne01, ne10, B + (j * ne10), &LUT_Scales[0], QLUT0);
+                ggml_preprocessor(ne01, ne10, B + ((j + 1) * ne10), &LUT_Scales[1], QLUT1);
             }
 #pragma omp barrier
 
@@ -714,7 +714,7 @@ void matmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, float32_t* 
 
         if(ne11 % 2 == 1) {
             if (ith == 0) {
-                ggml_preprocessor(ne01, ne00, B + ((ne11 -1) * ne10), &LUT_Scales[0], QLUT0);
+                ggml_preprocessor(ne01, ne10, B + ((ne11 -1) * ne10), &LUT_Scales[0], QLUT0);
             }
 #pragma omp barrier
             for (int tile = tile_start; tile < tile_end; tile++) {
