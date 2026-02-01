@@ -17,6 +17,7 @@ Walkthrough the architecture:
 
 - Start with the Weight matrix from the top left corner. This is the ternery weight in {-1, 0, 1}. You can convert a BF model to this using absmean(), as pointed out by the [Microsoft paper](https://arxiv.org/pdf/2504.12285). 
 - This ternary weight is packed into weight pairs, which is in [0..8]. These weight pairs will be used as indices in LUT lookup. The encoding table is below: 
+
 ![here](./assets/tl1_LUT_Packing.png)
 - Now with the weight ready, let's look at the Activation. Activation is usually in float, but in BitNet these are quantized into int8 using absmax(). 
 - Activation is transposed into N x K, so the fastest changing dimension (column) is K (usually is also the dimension of the transformer). 
