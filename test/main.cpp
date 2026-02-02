@@ -1161,11 +1161,11 @@ void init_Bs(float32_t* B, float32_t* B_T, int N, int K) {
     transpose_matrix(B, B_T, N, K);
 }
 
-long long benchmark_matmul(const char* step_info, const char* kernel_name, 
+double benchmark_matmul(const char* step_info, const char* kernel_name, 
                           std::function<void()> matmul_func, 
                           float32_t* C, int M, int N, int num_iterations) {
     if (step_info) printf("%s", step_info);
-    long long total_time = 0;
+    double total_time = 0;
     for (int iter = 0; iter < num_iterations; iter++) {
         memset(C, 0, M * N * sizeof(float32_t));
         auto start = std::chrono::high_resolution_clock::now();
@@ -1174,8 +1174,8 @@ long long benchmark_matmul(const char* step_info, const char* kernel_name,
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
         total_time += duration.count();
     }
-    long long avg_time = total_time / num_iterations;
-    printf("%s complete. Average time over %d runs: %lld ms\n", kernel_name, num_iterations, avg_time);
+    double avg_time = (double)total_time / num_iterations;
+    printf("%s complete. Average time over %d runs: %.2f ms\n", kernel_name, num_iterations, avg_time);
     return avg_time;
 }
 
@@ -1263,7 +1263,7 @@ int main() {
     printf("Reference matmul complete. Time: %ld ms\n", naive_duration.count());
 
     const int num_iterations = 10;
-    long long avg_vec_simd_time = benchmark_matmul(
+    double avg_vec_simd_time = benchmark_matmul(
         "\nStep 4: Running LUT Vec SIMD(10 iterations for average)\n",
         "Vecmul_lut_simd",
         [&]() { vecmul_lut_simd(A_T, B_T, C_simd, weight_scale, M, N, K); },
@@ -1272,7 +1272,7 @@ int main() {
     printf("\nComparing kernel output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-1, "Vecmul_lut_simd comparison");
 
-    /*long long avg_lut_time = benchmark_matmul(
+    /*double avg_lut_time = benchmark_matmul(
         "\nStep 2: Running LUT Tiled(10 iterations for average)\n",
         "Matmul_lut_tiled",
         [&]() { matmul_lut_tiled(A, B_T, C_simd, weight_scale, M, N, K); },
@@ -1281,7 +1281,7 @@ int main() {
     printf("\nComparing kernel output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_lut_tiled comparison");
     
-    long long avg_lut_time2 = benchmark_matmul(
+    double avg_lut_time2 = benchmark_matmul(
         "\nStep 2: Running LUT Tiled v2(10 iterations for average)\n",
         "Matmul_lut_tiled",
         [&]() { matmul_lut_tiled2(A, B_T, C_simd, weight_scale, M, N, K); },
@@ -1290,7 +1290,7 @@ int main() {
     printf("\nComparing kernel output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_lut_tiled comparison");
 
-    long long avg_simd_time = benchmark_matmul(
+    double avg_simd_time = benchmark_matmul(
         "\nStep 3: Running LUT SIMD(10 iterations for average)\n",
         "Matmul_lut_simd",
         [&]() { matmul_lut_simd(A_T, B_T, C_simd, weight_scale, M, N, K); },
@@ -1299,7 +1299,7 @@ int main() {
     printf("\nComparing kernel output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_lut_simd comparison");
     
-    long long avg_packed_time = benchmark_matmul(
+    double avg_packed_time = benchmark_matmul(
         "\nStep 4: Running LUT Packed SIMD(10 iterations for average)\n",
         "Matmul_lut_packed",
         [&]() { matmul_lut_packed(A_packed_T, B_T, C_simd, weight_scale, M, N, K); },
@@ -1308,7 +1308,7 @@ int main() {
     printf("\nComparing kernel output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_lut_packed comparison");
     
-    long long avg_microkernel_time = benchmark_matmul(
+    double avg_microkernel_time = benchmark_matmul(
         "\nStep 4: Running Microkernel(10 iterations for average)\n",
         "Matmul_microkernel",
         [&]() { matmul_lut_micro_kernel(A_packed_T, B_T, C_simd, weight_scale, M, N, K); },
@@ -1358,15 +1358,15 @@ int main() {
     //double speedup_simd2 = (double)naive_duration.count() / (double)avg_simd_time2;
     //double speedup_microkernel = (double)naive_duration.count() / (double)avg_microkernel_time;
     printf("\n=== PERFORMANCE COMPARISON ===\n");
-    printf("matmul naive:   %ld ms\n", naive_duration.count());
+    printf("matmul naive:   %.2f ms\n", (double)naive_duration.count());
     /*printf("Speedup (naive / lut)):   %.2fx\n", speedup_lut);
     printf("Speedup (naive / lut2)):   %.2fx\n", speedup_lut2);
     printf("Speedup (naive / SIMD): %.2fx\n\n", speedup_simd);
-    printf("LUT matmul_lut_unpacked (avg):   %lld ms\n", avg_packed_time);
+    printf("LUT matmul_lut_unpacked (avg):   %.2f ms\n", avg_packed_time);
     printf("Speedup (naive / lut_packed): %.2fx\n\n", speedup_packed);
-    printf("LUT matmul_microkernel (avg):   %lld ms\n", avg_microkernel_time);
+    printf("LUT matmul_microkernel (avg):   %.2f ms\n", avg_microkernel_time);
     printf("Speedup (naive / microkernel): %.2fx\n\n", speedup_microkernel);*/
-    printf("LUT vecmul_lut_simd (avg):   %lld ms\n", avg_vec_simd_time);
+    printf("LUT vecmul_lut_simd (avg):   %.2f ms\n", avg_vec_simd_time);
     printf("Speedup (naive / vecmul_lut_simd): %.2fx\n\n", speedup_vec_simd);
     // Cleanup
     aligned_free(C_);
