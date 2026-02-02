@@ -1082,7 +1082,7 @@ std::vector<int8_t> bitnet_158_quantize_32x64(const std::vector<float>& weight_a
 */
 void init_As(float32_t* A_, uint8_t* A, uint8_t* A_T, uint8_t* A_packed_T, float32_t* weight_scale, int M, int K) {
     // Load weights from binary file
-    const char *weight_file = "k_proj_weights.bin";
+    const char *weight_file = "q_proj_weights.bin";
     std::ifstream infile(weight_file, std::ios::binary);
     if (!infile) {
         std::cerr << "Failed to open weight file: " << weight_file << "\n";
