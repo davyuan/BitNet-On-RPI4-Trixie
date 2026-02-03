@@ -75,15 +75,15 @@ void lut_ctor(int act_k, int8_t* qlut, bitnet_float_type* b, bitnet_float_type* 
         int16x4_t vec_b16_3 = vmovn_s32(vec_b_3);
         int16x8_t vec_bs_0 = vcombine_s16(vec_b16_0, vec_b16_2);
         int16x8_t vec_bs_1 = vcombine_s16(vec_b16_1, vec_b16_3);
-        vec_lut[0] = vdupq_n_s16(0);
+#pragma unroll
+        for (int i = 0; i < 16; i++) {
+            vec_lut[i] = vdupq_n_s16(0);
+        }
         vec_lut[0] = vec_lut[0] - vec_bs_0;
         vec_lut[0] = vec_lut[0] - vec_bs_1;
-        vec_lut[1] = vdupq_n_s16(0);
         vec_lut[1] = vec_lut[1] - vec_bs_0;
-        vec_lut[2] = vdupq_n_s16(0);
         vec_lut[2] = vec_lut[2] - vec_bs_0;
         vec_lut[2] = vec_lut[2] + vec_bs_1;
-        vec_lut[3] = vdupq_n_s16(0);
         vec_lut[3] = vec_lut[3] - vec_bs_1;
         vec_lut[4] = vdupq_n_s16(0);
         vec_lut[5] = vec_bs_1;
