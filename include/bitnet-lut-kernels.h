@@ -15,7 +15,7 @@ extern size_t bitnet_tensor_extras_index;
 extern void * aligned_malloc(size_t size);
 extern void aligned_free(void * ptr);
 extern bool is_type_supported(enum ggml_type type);
-f
+
 inline float get_tensor_max(int k, void* b_) {
     bitnet_float_type* b = (bitnet_float_type*)b_;
 #ifdef __ARM_NEON
