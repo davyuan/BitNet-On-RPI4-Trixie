@@ -18,7 +18,7 @@
 #define TILE_SIZE 32
 #define WM 32 // Weight block is shape (WM x BK), we use BK = 64, so each scale covers 2 K indices
 
-const int M = 2560;           // Weight rows (A rows)
+const int M = 25600;           // Weight rows (A rows)
 const int K = 2560;        // Shared dimension
 const int N = 1;         // Activation rows (B rows) = output size
 
