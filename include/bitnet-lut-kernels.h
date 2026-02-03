@@ -77,3 +77,4 @@ inline void reconstruct_int16_pair(int8x16_t high, int8x16_t low, int16x8_t& out
 
 }
 #endif
+#endif
