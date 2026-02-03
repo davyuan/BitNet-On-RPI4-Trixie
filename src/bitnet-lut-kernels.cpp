@@ -37,6 +37,8 @@ void aligned_free(void * ptr) {
 #endif
 }
 
+extern "C" {
+
 float ggml_get_tensor_max(int k, void* b_) {
     bitnet_float_type* b = (bitnet_float_type*)b_;
 #ifdef __ARM_NEON
@@ -48,6 +50,8 @@ float ggml_get_tensor_max(int k, void* b_) {
     }
     float32_t max_val = vmaxvq_f32(temp_max);
     return max_val;
+#else
+    return 0.0f;
 #endif
 }
 
@@ -92,7 +96,7 @@ static void partial_max_reset(void* lut_scales_) {
     *lut_scales = 0.0;
 }
 
-static void ggml_lut_ctor(int act_k, int8_t* qlut, bitnet_float_type* b, bitnet_float_type* lut_scales) {
+void ggml_lut_ctor(int act_k, int8_t* qlut, bitnet_float_type* b, bitnet_float_type* lut_scales) {
 #ifdef __ARM_NEON
     int16x8_t vec_lut[16];
     // Initialization to avoid uninitialized warnings and zero out any potential garbage
@@ -430,4 +434,6 @@ void ggml_bitnet_transform_tensor(struct ggml_tensor * tensor) {
         /* .scales          = */ scales
     };
 }
+
+} // extern "C"
 #endif

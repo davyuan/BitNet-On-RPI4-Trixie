@@ -1061,7 +1061,7 @@ void vecmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, float32_t* 
         const int k_start = b_start * 16;
         const int k_len   = (b_end - b_start) * 16;
 
-        float32_t local_max = (k_len > 0) ? get_tensor_max(k_len, B + k_start) : 0.0f;
+        float32_t local_max = (k_len > 0) ? ggml_get_tensor_max(k_len, B + k_start) : 0.0f;
         #pragma omp critical
         {
             if (local_max > LUT_Scales[0]) LUT_Scales[0] = local_max;
@@ -1077,7 +1077,7 @@ void vecmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, float32_t* 
         const float32x4_t v_rescale = vdupq_n_f32(weight_scale / LUT_Scales[0]);
         
         if (k_len > 0) {
-            lut_ctor(k_len, QLUT + k_start * 16, B + k_start, LUT_Scales);
+            ggml_lut_ctor(k_len, QLUT + k_start * 16, B + k_start, LUT_Scales);
         }
         #pragma omp barrier
 
