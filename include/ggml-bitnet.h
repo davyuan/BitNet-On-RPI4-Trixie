@@ -35,14 +35,13 @@ GGML_API void ggml_bitnet_mul_mat_task_compute(void * src0, void * scales, void 
 GGML_API void ggml_bitnet_transform_tensor(struct ggml_tensor * tensor);
 GGML_API int ggml_bitnet_get_type_bits(enum ggml_type type);
 GGML_API void ggml_bitnet_set_n_threads(int n_threads);
-GGML_API float get_tensor_max(int k, void* b_);
-GGML_API void  lut_ctor(int act_k, int8_t* qlut, bitnet_float_type* b, bitnet_float_type* lut_scales);
-GGML_API void  ggml_vec_dot_tl1(int n, float * s, size_t bs, const void * vx, size_t bx, const void * vy, size_t by, int nrc);
 
 #if defined(GGML_BITNET_ARM_TL1)
 GGML_API void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT, void* Scales, void* LUT_Scales, float32_t* C);
 GGML_API void ggml_qgemm_lut_2col(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT0, int8_t* LUT1, void* Scales, void* LUT_Scales, float32_t* C);
 GGML_API void ggml_preprocessor(int m, int k, void* B, void* LUT_Scales, void* QLUT);
+GGML_API void ggml_vec_dot_tl1(int n, float * s, size_t bs, const void * vx, size_t bx, const void * vy, size_t by, int nrc);
+
 #endif
 #if defined(GGML_BITNET_X86_TL2)
 GGML_API void ggml_qgemm_lut(int bs, int m, int k, int BK, void* A, void* sign, void* LUT, void* Scales, void* LUT_Scales, void* C);
