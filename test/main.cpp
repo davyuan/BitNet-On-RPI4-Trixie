@@ -1083,7 +1083,7 @@ void vecmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, float32_t* 
 
         #pragma omp for
         for (int ii = 0; ii < ne01; ii += BM) {
-            ggml_qgemm_lut( ne01, ne11, ne10, ii, j, A, 
+            ggml_qgemm_lut( ne01, ne11, ne10, ii, 0, A, 
                             QLUT, 
                             ws, 
                             LUT_Scales, 
@@ -1648,6 +1648,7 @@ int main() {
     double speedup_microkernel = (double)naive_duration.count() / (double)avg_microkernel_time;*/
     double speedup_vec_simd = (double)naive_duration.count() / (double)avg_vec_simd_time;
     double speedup_vec_simd2 = (double)naive_duration.count() / (double)avg_vec_simd2_time;
+    double speedup_vec_packed = (double)naive_duration.count() / (double)avg_vec_packed_time;
     double speedup_vec_micro_kernel = (double)naive_duration.count() / (double)avg_vec_micro_kernel_time;
     
     //double speedup_simd2 = (double)naive_duration.count() / (double)avg_simd_time2;
