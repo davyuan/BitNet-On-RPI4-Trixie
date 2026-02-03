@@ -14,13 +14,13 @@ typedef float bitnet_float_type;
 extern "C" {
 #endif
 
-struct bitnet_tensor_extra {
+typedef struct bitnet_tensor_extra {
     int lut_scales_size;
     int BK;
     int n_tile_num;
     uint8_t * qweights;
     bitnet_float_type * scales;
-};
+} bitnet_tensor_extra;
 
 GGML_API void ggml_bitnet_init(void);
 GGML_API void ggml_bitnet_free(void);

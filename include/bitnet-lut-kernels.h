@@ -2,9 +2,14 @@
 #ifdef __cplusplus
 #include <cstdio>
 #include <cstring>
+#include <cstdint>
+#include <cstddef>
 #else
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <stdbool.h>
 #endif
 #include <arm_neon.h>
 #include "ggml-bitnet.h"
@@ -12,6 +17,10 @@
 #define GGML_BITNET_MAX_NODES 8192
 #define BM 128
 #define BK 64
+
+#ifdef  __cplusplus
+extern "C" {
+#endif
 
 extern bool initialized;
 extern bitnet_tensor_extra * bitnet_tensor_extras;
@@ -26,15 +35,27 @@ inline float get_tensor_max(int k, void* b_) {
 #ifdef __ARM_NEON
     float32x4_t temp_max = vdupq_n_f32(0);
     for (int i=0; i < k / 4; i++) {
-      float32x4_t vec_bs = vld1q_f32(b + 4 * i);
-      float32x4_t abssum = vabsq_f32(vec_bs);
-      temp_max = vmaxq_f32(abssum, temp_max);
+        float32x4_t vec_bs = vld1q_f32(b + 4 * i);
+        float32x4_t abssum = vabsq_f32(vec_bs);
+        temp_max = vmaxq_f32(abssum, temp_max);
     }
     float32_t max_val = vmaxvq_f32(temp_max);
+    return max_val;
+#else
+    float max_val = 0.0f;
+    for (int i = 0; i < k; i++) {
+        float abs_val = b[i] > 0 ? b[i] : -b[i];
+        if (abs_val > max_val) max_val = abs_val;
+    }
     return max_val;
 #endif
 }
 
+void lut_ctor(int act_k, int8_t* qlut, bitnet_float_type* b, bitnet_float_type* lut_scales);
+
+#ifdef  __cplusplus
+}
+#endif
 
 // Inline helpers
 #ifdef __ARM_NEON
@@ -74,8 +95,7 @@ inline void Transpose_8_8(
 }
 #endif
 
-void lut_ctor(int act_k, int8_t* qlut, bitnet_float_type* b, bitnet_float_type* lut_scales);
-
+#ifdef __cplusplus
 inline void reconstruct_int16_pair(int8x16_t high, int8x16_t low, int16x8_t& out_lo, int16x8_t& out_hi) {
 #ifdef __ARM_NEON
     int16x8_t high_lo = vshlq_n_s16(vmovl_s8(vget_low_s8(high)), 8);
@@ -86,5 +106,6 @@ inline void reconstruct_int16_pair(int8x16_t high, int8x16_t low, int16x8_t& out
     out_hi = vorrq_s16(high_hi, low_hi);
 #endif
 }
+#endif
 
 #endif
