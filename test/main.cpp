@@ -925,6 +925,108 @@ void vecmul_lut_simd2(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int
     aligned_free(LUT_Scales);
 }
 
+/* A(K/2 x M/2), B(1 x K)
+   QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
+        each K represents 2 activations in B. 
+   C(1 x M)
+   This version uses SIMD optimizations, parition the LUT construction among threads.
+*/
+void vecmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
+    int KK = K / 2;
+    const uint8x16_t vec_mask = vdupq_n_u8(0x0f);
+    const float32_t weight_scale = ws[0];
+    float32_t epsilon = 1e-7f;
+
+    // N=1 for vector multiplication. Build LUT once and share across all threads.
+    int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
+    float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
+    LUT_Scales[0] = 0.0f;
+
+    #pragma omp parallel num_threads(4)
+    {
+        const int ith = omp_get_thread_num();
+        const int nth = omp_get_num_threads();
+
+        // 1. Partition K in units of 16 to ensure SIMD alignment (16 activations per block)
+        const int n_blocks = K / 16;
+        const int b_start  = (n_blocks * ith) / nth;
+        const int b_end    = (n_blocks * (ith + 1)) / nth;
+        
+        const int k_start = b_start * 16;
+        const int k_len   = (b_end - b_start) * 16;
+
+        float32_t local_max = (k_len > 0) ? get_tensor_max(k_len, B + k_start) : 0.0f;
+        #pragma omp critical
+        {
+            if (local_max > LUT_Scales[0]) LUT_Scales[0] = local_max;
+        }
+        #pragma omp barrier
+        
+        if(ith == 0) {
+            float32_t global_max = LUT_Scales[0];
+            LUT_Scales[0] = (global_max > epsilon) ? (127.0f / global_max) : 1.0f;
+        }
+        #pragma omp barrier
+
+        const float32x4_t v_rescale = vdupq_n_f32(weight_scale / LUT_Scales[0]);
+        
+        if (k_len > 0) {
+            lut_ctor(k_len, QLUT + k_start * 16, B + k_start, LUT_Scales);
+        }
+        #pragma omp barrier
+
+        #pragma omp for
+        for (int ii = 0; ii < M; ii += BM) {
+            for (int i = ii; i < ii + BM; i += 64) {
+                int16x8_t acc[8] = {vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0),
+                                    vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0)};
+
+                const int i_packed = i / 2;
+                for (int k = 0; k < KK; k++) {
+                    const int8x16_t vh = vld1q_s8(QLUT + k * 32);
+                    const int8x16_t vl = vld1q_s8(QLUT + k * 32 + 16);
+
+#define PROCESS_32_ROWS(a_ptr, accl_0, acch_0, accl_1, acch_1) { \
+                        uint8x16_t vec_a = vld1q_u8(a_ptr); \
+                        uint8x16_t vec_a_top = vshrq_n_u8(vec_a, 4); \
+                        uint8x16_t vec_a_bot = vandq_u8(vec_a, vec_mask); \
+                        uint8x16x2_t vec_unp = vzipq_u8(vec_a_top, vec_a_bot); \
+                        int8x16_t rh0 = vqtbl1q_s8(vh, vec_unp.val[0]); \
+                        int8x16_t rl0 = vqtbl1q_s8(vl, vec_unp.val[0]); \
+                        int8x16_t rh1 = vqtbl1q_s8(vh, vec_unp.val[1]); \
+                        int8x16_t rl1 = vqtbl1q_s8(vl, vec_unp.val[1]); \
+                        int16x8_t o0, o1, o2, o3; \
+                        reconstruct_int16_pair(rh0, rl0, o0, o1); \
+                        reconstruct_int16_pair(rh1, rl1, o2, o3); \
+                        accl_0 = vaddq_s16(accl_0, o0); acch_0 = vaddq_s16(acch_0, o1); \
+                        accl_1 = vaddq_s16(accl_1, o2); acch_1 = vaddq_s16(acch_1, o3); \
+                    }
+
+                    PROCESS_32_ROWS(A + k * M / 2 + i_packed,      acc[0], acc[1], acc[2], acc[3]);
+                    PROCESS_32_ROWS(A + k * M / 2 + i_packed + 16, acc[4], acc[5], acc[6], acc[7]);
+#undef PROCESS_32_ROWS
+                }
+
+                float32_t* pC = &(C[i]);
+#define WRITE_BACK_SINGLE(out_ptr, accl, acch) { \
+                    vst1q_f32(out_ptr + 0, vfmaq_f32(vld1q_f32(out_ptr + 0), vcvtq_f32_s32(vmovl_s16(vget_low_s16(accl))), v_rescale0)); \
+                    vst1q_f32(out_ptr + 4, vfmaq_f32(vld1q_f32(out_ptr + 4), vcvtq_f32_s32(vmovl_s16(vget_high_s16(accl))), v_rescale0)); \
+                    vst1q_f32(out_ptr + 8, vfmaq_f32(vld1q_f32(out_ptr + 8), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acch))), v_rescale0)); \
+                    vst1q_f32(out_ptr + 12, vfmaq_f32(vld1q_f32(out_ptr + 12), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acch))), v_rescale0)); \
+                }
+                WRITE_BACK_SINGLE(pC,      acc[0], acc[1]);
+                WRITE_BACK_SINGLE(pC + 16, acc[2], acc[3]);
+                WRITE_BACK_SINGLE(pC + 32, acc[4], acc[5]);
+                WRITE_BACK_SINGLE(pC + 48, acc[6], acc[7]);
+#undef WRITE_BACK_SINGLE
+            }
+        }
+    }
+
+    aligned_free(QLUT);
+    aligned_free(LUT_Scales);
+}
+
 double calculate_sqnr(const float32_t* C, const float32_t* C_hat, int M, int N) {
     double signal_power = 0.0;
     double noise_power = 0.0;
