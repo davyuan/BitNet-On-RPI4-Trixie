@@ -851,9 +851,13 @@ void vecmul_lut_simd2(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int
         const int ith = omp_get_thread_num();
         const int nth = omp_get_num_threads();
 
-        const int k_start = (K * ith) / nth;
-        const int k_end   = (K * (ith + 1)) / nth;
-        const int k_len   = k_end - k_start;
+        // 1. Partition K in units of 16 to ensure SIMD alignment (16 activations per block)
+        const int n_blocks = K / 16;
+        const int b_start  = (n_blocks * ith) / nth;
+        const int b_end    = (n_blocks * (ith + 1)) / nth;
+        
+        const int k_start = b_start * 16;
+        const int k_len   = (b_end - b_start) * 16;
 
         float32_t local_max = (k_len > 0) ? get_tensor_max(k_len, B + k_start) : 0.0f;
         #pragma omp critical
