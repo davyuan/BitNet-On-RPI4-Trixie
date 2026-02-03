@@ -1027,6 +1027,74 @@ void vecmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, in
     aligned_free(LUT_Scales);
 }
 
+/* A(K/2 x M), B(1 x K)
+   QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
+        each K represents 2 activations in B. 
+   C(1 x M)
+   This version call the micro kernel. 
+*/
+void vecmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
+    int ne00 = K;
+    int ne01 = M;
+    int ne10 = K;
+    int ne11 = N;
+    int KK = K / 2;
+    const uint8x16_t vec_mask = vdupq_n_u8(0x0f);
+    const float32_t weight_scale = ws[0];
+    float32_t epsilon = 1e-7f;
+
+    // N=1 for vector multiplication. Build LUT once and share across all threads.
+    int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
+    float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
+    LUT_Scales[0] = 0.0f;
+
+    #pragma omp parallel num_threads(4)
+    {    
+        const int ith = omp_get_thread_num();
+        const int nth = omp_get_num_threads();
+
+        // 1. Partition K in units of 16 to ensure SIMD alignment (16 activations per block)
+        const int n_blocks = K / 16;
+        const int b_start  = (n_blocks * ith) / nth;
+        const int b_end    = (n_blocks * (ith + 1)) / nth;
+        
+        const int k_start = b_start * 16;
+        const int k_len   = (b_end - b_start) * 16;
+
+        float32_t local_max = (k_len > 0) ? get_tensor_max(k_len, B + k_start) : 0.0f;
+        #pragma omp critical
+        {
+            if (local_max > LUT_Scales[0]) LUT_Scales[0] = local_max;
+        }
+        #pragma omp barrier
+        
+        if(ith == 0) {
+            float32_t global_max = LUT_Scales[0];
+            LUT_Scales[0] = (global_max > epsilon) ? (127.0f / global_max) : 1.0f;
+        }
+        #pragma omp barrier
+
+        const float32x4_t v_rescale = vdupq_n_f32(weight_scale / LUT_Scales[0]);
+        
+        if (k_len > 0) {
+            lut_ctor(k_len, QLUT + k_start * 16, B + k_start, LUT_Scales);
+        }
+        #pragma omp barrier
+
+        #pragma omp for
+        for (int ii = 0; ii < ne01; ii += BM) {
+            ggml_qgemm_lut( ne01, ne11, ne10, ii, j, A, 
+                            QLUT, 
+                            ws, 
+                            LUT_Scales, 
+                            C);
+        }
+    }
+
+    aligned_free(QLUT);
+    aligned_free(LUT_Scales);
+}
+
 double calculate_sqnr(const float32_t* C, const float32_t* C_hat, int M, int N) {
     double signal_power = 0.0;
     double noise_power = 0.0;
@@ -1487,6 +1555,15 @@ int main() {
     printf("\nComparing kernel output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-1, "Vecmul_lut_packed comparison");
 
+    double avg_vec_micro_kernel_time = benchmark_matmul(
+        "\nStep 4: Running LUT Vec micro kernel(10 iterations for average)\n",
+        "Vecmul_lut_micro_kernel",
+        [&]() { vecmul_lut_micro_kernel(A_packed_T, B_T, C_simd, weight_scale, M, N, K); },
+        C_simd, M, N, num_iterations
+    );
+    printf("\nComparing kernel output (C) with reference (C_)...\n");
+    compare_matrices(C_simd, C_, M, N, 1e-1, "Vecmul_lut_micro_kernel comparison");
+    
     /*double avg_lut_time = benchmark_matmul(
         "\nStep 2: Running LUT Tiled(10 iterations for average)\n",
         "Matmul_lut_tiled",
@@ -1571,7 +1648,8 @@ int main() {
     double speedup_microkernel = (double)naive_duration.count() / (double)avg_microkernel_time;*/
     double speedup_vec_simd = (double)naive_duration.count() / (double)avg_vec_simd_time;
     double speedup_vec_simd2 = (double)naive_duration.count() / (double)avg_vec_simd2_time;
-    double speedup_vec_packed = (double)naive_duration.count() / (double)avg_vec_packed_time;
+    double speedup_vec_micro_kernel = (double)naive_duration.count() / (double)avg_vec_micro_kernel_time;
+    
     //double speedup_simd2 = (double)naive_duration.count() / (double)avg_simd_time2;
     //double speedup_microkernel = (double)naive_duration.count() / (double)avg_microkernel_time;
     printf("\n=== PERFORMANCE COMPARISON ===\n");
@@ -1589,6 +1667,8 @@ int main() {
     printf("Speedup (naive / vecmul_lut_simd2): %.2fx\n\n", speedup_vec_simd2);
     printf("LUT vecmul_lut_packed (avg):   %.2f ms\n", avg_vec_packed_time);
     printf("Speedup (naive / vecmul_lut_packed): %.2fx\n\n", speedup_vec_packed);
+    printf("LUT vecmul_lut_micro_kernel (avg):   %.2f ms\n", avg_vec_micro_kernel_time);
+    printf("Speedup (naive / vecmul_lut_micro_kernel): %.2fx\n\n", speedup_vec_micro_kernel);
     
     // Cleanup
     aligned_free(C_);
