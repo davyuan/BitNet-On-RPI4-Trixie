@@ -37,6 +37,20 @@ void aligned_free(void * ptr) {
 #endif
 }
 
+float ggml_get_tensor_max(int k, void* b_) {
+    bitnet_float_type* b = (bitnet_float_type*)b_;
+#ifdef __ARM_NEON
+    float32x4_t temp_max = vdupq_n_f32(0);
+    for (int i=0; i < k / 4; i++) {
+      float32x4_t vec_bs = vld1q_f32(b + 4 * i);
+      float32x4_t abssum = vabsq_f32(vec_bs);
+      temp_max = vmaxq_f32(abssum, temp_max);
+    }
+    float32_t max_val = vmaxvq_f32(temp_max);
+    return max_val;
+#endif
+}
+
 static void per_tensor_quant(int k, void* lut_scales_, void* b_) {
     bitnet_float_type* lut_scales = (bitnet_float_type*)lut_scales_;
     bitnet_float_type* b = (bitnet_float_type*)b_;
@@ -76,6 +90,88 @@ static void per_tensor_quant(int k, void* lut_scales_, void* b_) {
 static void partial_max_reset(void* lut_scales_) {
     bitnet_float_type* lut_scales = (bitnet_float_type*)lut_scales_;
     *lut_scales = 0.0;
+}
+
+static void ggml_lut_ctor(int act_k, int8_t* qlut, bitnet_float_type* b, bitnet_float_type* lut_scales) {
+#ifdef __ARM_NEON
+    int16x8_t vec_lut[16];
+    // Initialization to avoid uninitialized warnings and zero out any potential garbage
+    for (int i = 0; i < 16; i++) vec_lut[i] = vdupq_n_s16(0);
+
+    float32_t scales = *lut_scales;
+    uint8_t tbl_mask[16];
+    tbl_mask[0] = 0;
+    tbl_mask[1] = 2;
+    tbl_mask[2] = 4;
+    tbl_mask[3] = 6;
+    tbl_mask[4] = 8;
+    tbl_mask[5] = 10;
+    tbl_mask[6] = 12;
+    tbl_mask[7] = 14;
+    tbl_mask[8] = 1;
+    tbl_mask[9] = 3;
+    tbl_mask[10] = 5;
+    tbl_mask[11] = 7;
+    tbl_mask[12] = 9;
+    tbl_mask[13] = 11;
+    tbl_mask[14] = 13;
+    tbl_mask[15] = 15;
+    uint8x16_t tbl_mask_q = vld1q_u8(tbl_mask);
+
+    for (int k = 0; k < act_k / 16; ++k) {
+        float32x4x2_t vec_bs_x0 = vld2q_f32(b + k * 16);
+        float32x4x2_t vec_bs_x1 = vld2q_f32(b + k * 16 + 8);
+        float32x4_t vec_f_0 = vmulq_n_f32(vec_bs_x0.val[0], scales);
+        float32x4_t vec_f_1 = vmulq_n_f32(vec_bs_x0.val[1], scales);
+        float32x4_t vec_f_2 = vmulq_n_f32(vec_bs_x1.val[0], scales);
+        float32x4_t vec_f_3 = vmulq_n_f32(vec_bs_x1.val[1], scales);
+        int32x4_t vec_b_0 = vcvtnq_s32_f32(vec_f_0);
+        int32x4_t vec_b_1 = vcvtnq_s32_f32(vec_f_1);
+        int32x4_t vec_b_2 = vcvtnq_s32_f32(vec_f_2);
+        int32x4_t vec_b_3 = vcvtnq_s32_f32(vec_f_3);
+        int16x4_t vec_b16_0 = vmovn_s32(vec_b_0);
+        int16x4_t vec_b16_1 = vmovn_s32(vec_b_1);
+        int16x4_t vec_b16_2 = vmovn_s32(vec_b_2);
+        int16x4_t vec_b16_3 = vmovn_s32(vec_b_3);
+        int16x8_t vec_bs_0 = vcombine_s16(vec_b16_0, vec_b16_2);
+        int16x8_t vec_bs_1 = vcombine_s16(vec_b16_1, vec_b16_3);
+        vec_lut[0] = vdupq_n_s16(0);
+        vec_lut[0] = vsubq_s16(vec_lut[0], vec_bs_0);
+        vec_lut[0] = vsubq_s16(vec_lut[0], vec_bs_1);
+        vec_lut[1] = vdupq_n_s16(0);
+        vec_lut[1] = vsubq_s16(vec_lut[1], vec_bs_0);
+        vec_lut[2] = vdupq_n_s16(0);
+        vec_lut[2] = vsubq_s16(vec_lut[2], vec_bs_0);
+        vec_lut[2] = vaddq_s16(vec_lut[2], vec_bs_1);
+        vec_lut[3] = vdupq_n_s16(0);
+        vec_lut[3] = vsubq_s16(vec_lut[3], vec_bs_1);
+        vec_lut[4] = vdupq_n_s16(0);
+        vec_lut[5] = vec_bs_1;
+        vec_lut[6] = vsubq_s16(vec_bs_0, vec_bs_1);
+        vec_lut[7] = vec_bs_0;
+        vec_lut[8] = vaddq_s16(vec_bs_0, vec_bs_1);
+        
+        for(int idx = 9; idx < 16; idx++) vec_lut[idx] = vdupq_n_s16(0);
+
+        Transpose_8_8(&(vec_lut[0]), &(vec_lut[1]), &(vec_lut[2]), &(vec_lut[3]),
+                      &(vec_lut[4]), &(vec_lut[5]), &(vec_lut[6]), &(vec_lut[7]));
+        Transpose_8_8(&(vec_lut[8]), &(vec_lut[9]), &(vec_lut[10]), &(vec_lut[11]),
+                      &(vec_lut[12]), &(vec_lut[13]), &(vec_lut[14]), &(vec_lut[15]));
+
+        for (int idx = 0; idx < 8; idx++) {
+            int8x16_t q0_s = vqtbl1q_s8(vreinterpretq_s8_s16(vec_lut[idx]), tbl_mask_q);
+            int8x8_t q0_low = vget_low_s8(q0_s);
+            int8x8_t q0_high = vget_high_s8(q0_s);
+            int8x16_t q1_s = vqtbl1q_s8(vreinterpretq_s8_s16(vec_lut[idx + 8]), tbl_mask_q);
+            int8x8_t q1_low = vget_low_s8(q1_s);
+            int8x8_t q1_high = vget_high_s8(q1_s);
+            vst1_s8(qlut + k * 16 * 8 * 2 + idx * 16 * 2, q0_high);
+            vst1_s8(qlut + k * 16 * 8 * 2 + idx * 16 * 2 + 8, q1_high);
+            vst1_s8(qlut + k * 16 * 8 * 2 + idx * 16 * 2 + 16, q0_low);
+            vst1_s8(qlut + k * 16 * 8 * 2 + idx * 16 * 2 + 24, q1_low);
+        }
+    }
+#endif
 }
 
 bool is_type_supported(enum ggml_type type) {
