@@ -295,13 +295,8 @@ void ggml_qgemm_lut_2col(int M, int N, int K, int ii, int j, uint8_t* A, int8_t*
     const int i_packed = ii / 2;
     const int row_stride = M / 2;
 
-    for (int k = 0; k < KK; k++) {
-        int8x16_t vh0 = vld1q_s8(LUT0 + k * 32);
-        int8x16_t vl0 = vld1q_s8(LUT0 + k * 32 + 16);
-        int8x16_t vh1 = vld1q_s8(LUT1 + k * 32);
-        int8x16_t vl1 = vld1q_s8(LUT1 + k * 32 + 16);
-        
-#define PROCESS_32_ROWS_2COL(a_ptr, idx) { \
+    for (int k = 0; k < KK; k += 4) {
+#define PROCESS_32_ROWS_2COL(a_ptr, vh0, vl0, vh1, vl1, idx) { \
             uint8x16_t vec_a = vld1q_u8(a_ptr); \
             uint8x16_t vec_a_top = vshrq_n_u8(vec_a, 4); \
             uint8x16_t vec_a_bot = vandq_u8(vec_a, vec_mask); \
@@ -330,11 +325,50 @@ void ggml_qgemm_lut_2col(int M, int N, int K, int ii, int j, uint8_t* A, int8_t*
             acc_j1[idx+2] = vaddq_s16(acc_j1[idx+2], o2); acc_j1[idx+3] = vaddq_s16(acc_j1[idx+3], o3); \
         }
 
-        const uint8_t* pA = A + k * row_stride + i_packed;
-        PROCESS_32_ROWS_2COL(pA, 0);
-        PROCESS_32_ROWS_2COL(pA + 16, 4);
-        PROCESS_32_ROWS_2COL(pA + 32, 8);
-        PROCESS_32_ROWS_2COL(pA + 48, 12);
+        {
+            int8x16_t vh0 = vld1q_s8(LUT0 + k * 32);
+            int8x16_t vl0 = vld1q_s8(LUT0 + k * 32 + 16);
+            int8x16_t vh1 = vld1q_s8(LUT1 + k * 32);
+            int8x16_t vl1 = vld1q_s8(LUT1 + k * 32 + 16);
+            const uint8_t* pA = A + k * row_stride + i_packed;
+            PROCESS_32_ROWS_2COL(pA, vh0, vl0, vh1, vl1, 0);
+            PROCESS_32_ROWS_2COL(pA + 16, vh0, vl0, vh1, vl1, 4);
+            PROCESS_32_ROWS_2COL(pA + 32, vh0, vl0, vh1, vl1, 8);
+            PROCESS_32_ROWS_2COL(pA + 48, vh0, vl0, vh1, vl1, 12);
+        }
+        {
+            int8x16_t vh0 = vld1q_s8(LUT0 + (k + 1) * 32);
+            int8x16_t vl0 = vld1q_s8(LUT0 + (k + 1) * 32 + 16);
+            int8x16_t vh1 = vld1q_s8(LUT1 + (k + 1) * 32);
+            int8x16_t vl1 = vld1q_s8(LUT1 + (k + 1) * 32 + 16);
+            const uint8_t* pA = A + (k + 1) * row_stride + i_packed;
+            PROCESS_32_ROWS_2COL(pA, vh0, vl0, vh1, vl1, 0);
+            PROCESS_32_ROWS_2COL(pA + 16, vh0, vl0, vh1, vl1, 4);
+            PROCESS_32_ROWS_2COL(pA + 32, vh0, vl0, vh1, vl1, 8);
+            PROCESS_32_ROWS_2COL(pA + 48, vh0, vl0, vh1, vl1, 12);
+        }
+        {
+            int8x16_t vh0 = vld1q_s8(LUT0 + (k + 2) * 32);
+            int8x16_t vl0 = vld1q_s8(LUT0 + (k + 2) * 32 + 16);
+            int8x16_t vh1 = vld1q_s8(LUT1 + (k + 2) * 32);
+            int8x16_t vl1 = vld1q_s8(LUT1 + (k + 2) * 32 + 16);
+            const uint8_t* pA = A + (k + 2) * row_stride + i_packed;
+            PROCESS_32_ROWS_2COL(pA, vh0, vl0, vh1, vl1, 0);
+            PROCESS_32_ROWS_2COL(pA + 16, vh0, vl0, vh1, vl1, 4);
+            PROCESS_32_ROWS_2COL(pA + 32, vh0, vl0, vh1, vl1, 8);
+            PROCESS_32_ROWS_2COL(pA + 48, vh0, vl0, vh1, vl1, 12);
+        }
+        {
+            int8x16_t vh0 = vld1q_s8(LUT0 + (k + 3) * 32);
+            int8x16_t vl0 = vld1q_s8(LUT0 + (k + 3) * 32 + 16);
+            int8x16_t vh1 = vld1q_s8(LUT1 + (k + 3) * 32);
+            int8x16_t vl1 = vld1q_s8(LUT1 + (k + 3) * 32 + 16);
+            const uint8_t* pA = A + (k + 3) * row_stride + i_packed;
+            PROCESS_32_ROWS_2COL(pA, vh0, vl0, vh1, vl1, 0);
+            PROCESS_32_ROWS_2COL(pA + 16, vh0, vl0, vh1, vl1, 4);
+            PROCESS_32_ROWS_2COL(pA + 32, vh0, vl0, vh1, vl1, 8);
+            PROCESS_32_ROWS_2COL(pA + 48, vh0, vl0, vh1, vl1, 12);
+        }
 #undef PROCESS_32_ROWS_2COL
     }
 
