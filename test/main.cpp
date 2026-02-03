@@ -977,9 +977,9 @@ void vecmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, in
 
         #pragma omp for
         for (int ii = 0; ii < M; ii += BM) {
-            for (int i = ii; i < ii + BM; i += 64) {
-                int16x8_t acc[8] = {vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0),
-                                    vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0)};
+            for (int i = ii; i < ii + BM; i += 128) {
+                int16x8_t acc[16];
+                for (int b = 0; b < 16; b++) acc[b] = vdupq_n_s16(0);
 
                 const int i_packed = i / 2;
                 for (int k = 0; k < KK; k += 2) {
@@ -1007,10 +1007,14 @@ void vecmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, in
                     const uint8_t* pA0 = A + k * M / 2 + i_packed;
                     PROCESS_32_ROWS(pA0,      vh0, vl0, acc[0], acc[1], acc[2], acc[3]);
                     PROCESS_32_ROWS(pA0 + 16, vh0, vl0, acc[4], acc[5], acc[6], acc[7]);
+                    PROCESS_32_ROWS(pA0 + 32, vh0, vl0, acc[8], acc[9], acc[10], acc[11]);
+                    PROCESS_32_ROWS(pA0 + 48, vh0, vl0, acc[12], acc[13], acc[14], acc[15]);
 
                     const uint8_t* pA1 = A + (k + 1) * M / 2 + i_packed;
                     PROCESS_32_ROWS(pA1,      vh1, vl1, acc[0], acc[1], acc[2], acc[3]);
                     PROCESS_32_ROWS(pA1 + 16, vh1, vl1, acc[4], acc[5], acc[6], acc[7]);
+                    PROCESS_32_ROWS(pA1 + 32, vh1, vl1, acc[8], acc[9], acc[10], acc[11]);
+                    PROCESS_32_ROWS(pA1 + 48, vh1, vl1, acc[12], acc[13], acc[14], acc[15]);
 #undef PROCESS_32_ROWS
                 }
 
@@ -1025,6 +1029,10 @@ void vecmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, in
                 WRITE_BACK_SINGLE(pC + 16, acc[2], acc[3]);
                 WRITE_BACK_SINGLE(pC + 32, acc[4], acc[5]);
                 WRITE_BACK_SINGLE(pC + 48, acc[6], acc[7]);
+                WRITE_BACK_SINGLE(pC + 64, acc[8], acc[9]);
+                WRITE_BACK_SINGLE(pC + 80, acc[10], acc[11]);
+                WRITE_BACK_SINGLE(pC + 96, acc[12], acc[13]);
+                WRITE_BACK_SINGLE(pC + 112, acc[14], acc[15]);
 #undef WRITE_BACK_SINGLE
             }
         }
