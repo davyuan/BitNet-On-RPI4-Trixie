@@ -38,7 +38,6 @@ void aligned_free(void * ptr) {
 }
 
 static float32_t get_tensor_max(int k, void* b_) {
-    bitnet_float_type* lut_scales = (bitnet_float_type*)lut_scales_;
     bitnet_float_type* b = (bitnet_float_type*)b_;
 #ifdef __ARM_NEON
     float32x4_t temp_max = vdupq_n_f32(0);
