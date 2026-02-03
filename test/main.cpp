@@ -1009,10 +1009,10 @@ void vecmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, in
 
                 float32_t* pC = &(C[i]);
 #define WRITE_BACK_SINGLE(out_ptr, accl, acch) { \
-                    vst1q_f32(out_ptr + 0, vfmaq_f32(vld1q_f32(out_ptr + 0), vcvtq_f32_s32(vmovl_s16(vget_low_s16(accl))), v_rescale0)); \
-                    vst1q_f32(out_ptr + 4, vfmaq_f32(vld1q_f32(out_ptr + 4), vcvtq_f32_s32(vmovl_s16(vget_high_s16(accl))), v_rescale0)); \
-                    vst1q_f32(out_ptr + 8, vfmaq_f32(vld1q_f32(out_ptr + 8), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acch))), v_rescale0)); \
-                    vst1q_f32(out_ptr + 12, vfmaq_f32(vld1q_f32(out_ptr + 12), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acch))), v_rescale0)); \
+                    vst1q_f32(out_ptr + 0, vfmaq_f32(vld1q_f32(out_ptr + 0), vcvtq_f32_s32(vmovl_s16(vget_low_s16(accl))), v_rescale)); \
+                    vst1q_f32(out_ptr + 4, vfmaq_f32(vld1q_f32(out_ptr + 4), vcvtq_f32_s32(vmovl_s16(vget_high_s16(accl))), v_rescale)); \
+                    vst1q_f32(out_ptr + 8, vfmaq_f32(vld1q_f32(out_ptr + 8), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acch))), v_rescale)); \
+                    vst1q_f32(out_ptr + 12, vfmaq_f32(vld1q_f32(out_ptr + 12), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acch))), v_rescale)); \
                 }
                 WRITE_BACK_SINGLE(pC,      acc[0], acc[1]);
                 WRITE_BACK_SINGLE(pC + 16, acc[2], acc[3]);
