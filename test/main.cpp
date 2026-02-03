@@ -1199,73 +1199,75 @@ void vecmul_lut_packed3(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, i
         };
 
         #pragma omp for
-        for (int i = 0; i < M; i += 64) {
-            float32x4_t acc_f[16]; // 8 blocks * 2 (low/high)
-            for (int b = 0; b < 16; b++) acc_f[b] = vdupq_n_f32(0.0f);
+        for (int ii = 0; ii < M; ii += BM) {
+            for (int i = ii; i < ii + BM; i += 64) {
+                float32x4_t acc_f[16]; // 8 blocks * 2 (low/high)
+                for (int b = 0; b < 16; b++) acc_f[b] = vdupq_n_f32(0.0f);
 
-            const int i_packed = i / 2;
-            for (int t = 0; t < nth; t++) {
-                const int t_k_start = (n_blocks * t / nth) * 16;
-                const int t_k_end   = (n_blocks * (t + 1) / nth) * 16;
-                const float32x4_t v_rescale = v_rescale_array[t];
+                const int i_packed = i / 2;
+                for (int t = 0; t < nth; t++) {
+                    const int t_k_start = (n_blocks * t / nth) * 16;
+                    const int t_k_end   = (n_blocks * (t + 1) / nth) * 16;
+                    const float32x4_t v_rescale = v_rescale_array[t];
 
-                int16x8_t acc_s16[8];
-                for (int b = 0; b < 8; b++) acc_s16[b] = vdupq_n_s16(0);
+                    int16x8_t acc_s16[8];
+                    for (int b = 0; b < 8; b++) acc_s16[b] = vdupq_n_s16(0);
 
-                for (int k = t_k_start / 2; k < t_k_end / 2; k += 4) {
-                    const int8x16_t vh0 = vld1q_s8(QLUT + k * 32);
-                    const int8x16_t vl0 = vld1q_s8(QLUT + k * 32 + 16);
-                    const int8x16_t vh1 = vld1q_s8(QLUT + (k + 1) * 32);
-                    const int8x16_t vl1 = vld1q_s8(QLUT + (k + 1) * 32 + 16);
-                    const int8x16_t vh2 = vld1q_s8(QLUT + (k + 2) * 32);
-                    const int8x16_t vl2 = vld1q_s8(QLUT + (k + 2) * 32 + 16);
-                    const int8x16_t vh3 = vld1q_s8(QLUT + (k + 3) * 32);
-                    const int8x16_t vl3 = vld1q_s8(QLUT + (k + 3) * 32 + 16);
+                    for (int k = t_k_start / 2; k < t_k_end / 2; k += 4) {
+                        const int8x16_t vh0 = vld1q_s8(QLUT + k * 32);
+                        const int8x16_t vl0 = vld1q_s8(QLUT + k * 32 + 16);
+                        const int8x16_t vh1 = vld1q_s8(QLUT + (k + 1) * 32);
+                        const int8x16_t vl1 = vld1q_s8(QLUT + (k + 1) * 32 + 16);
+                        const int8x16_t vh2 = vld1q_s8(QLUT + (k + 2) * 32);
+                        const int8x16_t vl2 = vld1q_s8(QLUT + (k + 2) * 32 + 16);
+                        const int8x16_t vh3 = vld1q_s8(QLUT + (k + 3) * 32);
+                        const int8x16_t vl3 = vld1q_s8(QLUT + (k + 3) * 32 + 16);
 
 #define PROCESS_32_ROWS(a_ptr, v_h, v_l, accl_0, acch_0, accl_1, acch_1) { \
-                        uint8x16_t vec_a = vld1q_u8(a_ptr); \
-                        uint8x16_t vec_a_top = vshrq_n_u8(vec_a, 4); \
-                        uint8x16_t vec_a_bot = vandq_u8(vec_a, vec_mask); \
-                        uint8x16x2_t vec_unp = vzipq_u8(vec_a_top, vec_a_bot); \
-                        int8x16_t rh0 = vqtbl1q_s8(v_h, vec_unp.val[0]); \
-                        int8x16_t rl0 = vqtbl1q_s8(v_l, vec_unp.val[0]); \
-                        int8x16_t rh1 = vqtbl1q_s8(v_h, vec_unp.val[1]); \
-                        int8x16_t rl1 = vqtbl1q_s8(v_l, vec_unp.val[1]); \
-                        int16x8_t o0, o1, o2, o3; \
-                        reconstruct_int16_pair(rh0, rl0, o0, o1); \
-                        reconstruct_int16_pair(rh1, rl1, o2, o3); \
-                        accl_0 = vaddq_s16(accl_0, o0); acch_0 = vaddq_s16(acch_0, o1); \
-                        accl_1 = vaddq_s16(accl_1, o2); acch_1 = vaddq_s16(acch_1, o3); \
+                            uint8x16_t vec_a = vld1q_u8(a_ptr); \
+                            uint8x16_t vec_a_top = vshrq_n_u8(vec_a, 4); \
+                            uint8x16_t vec_a_bot = vandq_u8(vec_a, vec_mask); \
+                            uint8x16x2_t vec_unp = vzipq_u8(vec_a_top, vec_a_bot); \
+                            int8x16_t rh0 = vqtbl1q_s8(v_h, vec_unp.val[0]); \
+                            int8x16_t rl0 = vqtbl1q_s8(v_l, vec_unp.val[0]); \
+                            int8x16_t rh1 = vqtbl1q_s8(v_h, vec_unp.val[1]); \
+                            int8x16_t rl1 = vqtbl1q_s8(v_l, vec_unp.val[1]); \
+                            int16x8_t o0, o1, o2, o3; \
+                            reconstruct_int16_pair(rh0, rl0, o0, o1); \
+                            reconstruct_int16_pair(rh1, rl1, o2, o3); \
+                            accl_0 = vaddq_s16(accl_0, o0); acch_0 = vaddq_s16(acch_0, o1); \
+                            accl_1 = vaddq_s16(accl_1, o2); acch_1 = vaddq_s16(acch_1, o3); \
+                        }
+
+                        const uint8_t* pA0 = A + k * M / 2 + i_packed;
+                        PROCESS_32_ROWS(pA0,      vh0, vl0, acc_s16[0], acc_s16[1], acc_s16[2], acc_s16[3]);
+                        PROCESS_32_ROWS(pA0 + 16, vh0, vl0, acc_s16[4], acc_s16[5], acc_s16[6], acc_s16[7]);
+
+                        const uint8_t* pA1 = A + (k + 1) * M / 2 + i_packed;
+                        PROCESS_32_ROWS(pA1,      vh1, vl1, acc_s16[0], acc_s16[1], acc_s16[2], acc_s16[3]);
+                        PROCESS_32_ROWS(pA1 + 16, vh1, vl1, acc_s16[4], acc_s16[5], acc_s16[6], acc_s16[7]);
+
+                        const uint8_t* pA2 = A + (k + 2) * M / 2 + i_packed;
+                        PROCESS_32_ROWS(pA2,      vh2, vl2, acc_s16[0], acc_s16[1], acc_s16[2], acc_s16[3]);
+                        PROCESS_32_ROWS(pA2 + 16, vh2, vl2, acc_s16[4], acc_s16[5], acc_s16[6], acc_s16[7]);
+
+                        const uint8_t* pA3 = A + (k + 3) * M / 2 + i_packed;
+                        PROCESS_32_ROWS(pA3,      vh3, vl3, acc_s16[0], acc_s16[1], acc_s16[2], acc_s16[3]);
+                        PROCESS_32_ROWS(pA3 + 16, vh3, vl3, acc_s16[4], acc_s16[5], acc_s16[6], acc_s16[7]);
+#undef PROCESS_32_ROWS
                     }
 
-                    const uint8_t* pA0 = A + k * M / 2 + i_packed;
-                    PROCESS_32_ROWS(pA0,      vh0, vl0, acc_s16[0], acc_s16[1], acc_s16[2], acc_s16[3]);
-                    PROCESS_32_ROWS(pA0 + 16, vh0, vl0, acc_s16[4], acc_s16[5], acc_s16[6], acc_s16[7]);
-
-                    const uint8_t* pA1 = A + (k + 1) * M / 2 + i_packed;
-                    PROCESS_32_ROWS(pA1,      vh1, vl1, acc_s16[0], acc_s16[1], acc_s16[2], acc_s16[3]);
-                    PROCESS_32_ROWS(pA1 + 16, vh1, vl1, acc_s16[4], acc_s16[5], acc_s16[6], acc_s16[7]);
-
-                    const uint8_t* pA2 = A + (k + 2) * M / 2 + i_packed;
-                    PROCESS_32_ROWS(pA2,      vh2, vl2, acc_s16[0], acc_s16[1], acc_s16[2], acc_s16[3]);
-                    PROCESS_32_ROWS(pA2 + 16, vh2, vl2, acc_s16[4], acc_s16[5], acc_s16[6], acc_s16[7]);
-
-                    const uint8_t* pA3 = A + (k + 3) * M / 2 + i_packed;
-                    PROCESS_32_ROWS(pA3,      vh3, vl3, acc_s16[0], acc_s16[1], acc_s16[2], acc_s16[3]);
-                    PROCESS_32_ROWS(pA3 + 16, vh3, vl3, acc_s16[4], acc_s16[5], acc_s16[6], acc_s16[7]);
-#undef PROCESS_32_ROWS
+                    // Accumulate partial sum into float accumulators
+                    for (int b = 0; b < 8; b++) {
+                        acc_f[b*2]   = vfmaq_f32(acc_f[b*2],   vcvtq_f32_s32(vmovl_s16(vget_low_s16(acc_s16[b]))), v_rescale);
+                        acc_f[b*2+1] = vfmaq_f32(acc_f[b*2+1], vcvtq_f32_s32(vmovl_s16(vget_high_s16(acc_s16[b]))), v_rescale);
+                    }
                 }
 
-                // Accumulate partial sum into float accumulators
-                for (int b = 0; b < 8; b++) {
-                    acc_f[b*2]   = vfmaq_f32(acc_f[b*2],   vcvtq_f32_s32(vmovl_s16(vget_low_s16(acc_s16[b]))), v_rescale);
-                    acc_f[b*2+1] = vfmaq_f32(acc_f[b*2+1], vcvtq_f32_s32(vmovl_s16(vget_high_s16(acc_s16[b]))), v_rescale);
+                float32_t* pC = &(C[i]);
+                for (int b = 0; b < 16; b++) {
+                    vst1q_f32(pC + b * 4, acc_f[b]);
                 }
-            }
-
-            float32_t* pC = &(C[i]);
-            for (int b = 0; b < 16; b++) {
-                vst1q_f32(pC + b * 4, acc_f[b]);
             }
         }
     }
