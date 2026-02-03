@@ -1275,13 +1275,13 @@ void vecmul_lut_packed3(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, i
                 for (int b = 0; b < 32; b++) {
                     vst1q_f32(pC + b * 4, acc_f[b]);
                 }
-            }
         }
     }
 
     aligned_free(QLUT);
     aligned_free(LUT_Scales);
 }
+    
 
 /* A(K/2 x M), B(1 x K)
    QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
