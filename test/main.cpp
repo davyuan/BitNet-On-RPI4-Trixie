@@ -1481,7 +1481,7 @@ int main() {
     double avg_vec_packed_time = benchmark_matmul(
         "\nStep 4: Running LUT Vec Packed(10 iterations for average)\n",
         "Vecmul_lut_packed",
-        [&]() { vecmul_lut_packed(A_T, B_T, C_simd, weight_scale, M, N, K); },
+        [&]() { vecmul_lut_packed(A_packed_T, B_T, C_simd, weight_scale, M, N, K); },
         C_simd, M, N, num_iterations
     );
     printf("\nComparing kernel output (C) with reference (C_)...\n");
