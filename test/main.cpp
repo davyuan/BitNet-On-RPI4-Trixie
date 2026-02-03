@@ -849,16 +849,35 @@ void vecmul_lut_simd2(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int
     #pragma omp parallel num_threads(4)
     {
         const int ith = omp_get_thread_num();
+        const int nth = omp_get_num_threads();
 
-        // 1. Thread 0 builds the entire LUT serially to minimize barrier overhead
-        if (ith == 0) {
-            float32_t global_max = ggml_get_tensor_max(K, B);
+        // 1. Partition K in units of 16 to ensure SIMD alignment (16 activations per block)
+        const int n_blocks = K / 16;
+        const int b_start  = (n_blocks * ith) / nth;
+        const int b_end    = (n_blocks * (ith + 1)) / nth;
+        
+        const int k_start = b_start * 16;
+        const int k_len   = (b_end - b_start) * 16;
+
+        float32_t local_max = (k_len > 0) ? ggml_get_tensor_max(k_len, B + k_start) : 0.0f;
+        #pragma omp critical
+        {
+            if (local_max > LUT_Scales[0]) LUT_Scales[0] = local_max;
+        }
+        #pragma omp barrier
+        
+        if(ith == 0) {
+            float32_t global_max = LUT_Scales[0];
             LUT_Scales[0] = (global_max > epsilon) ? (127.0f / global_max) : 1.0f;
-            ggml_lut_ctor(K, QLUT, B, LUT_Scales);
         }
         #pragma omp barrier
 
         const float32x4_t v_rescale = vdupq_n_f32(weight_scale / LUT_Scales[0]);
+        
+        if (k_len > 0) {
+            ggml_lut_ctor(k_len, QLUT + k_start * 16, B + k_start, LUT_Scales);
+        }
+        #pragma omp barrier
 
         // Parallelize over row-blocks (ii) - REMOVED nested parallel for
         #pragma omp for
@@ -963,19 +982,21 @@ void vecmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, in
                                     vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0), vdupq_n_s16(0)};
 
                 const int i_packed = i / 2;
-                for (int k = 0; k < KK; k++) {
-                    const int8x16_t vh = vld1q_s8(QLUT + k * 32);
-                    const int8x16_t vl = vld1q_s8(QLUT + k * 32 + 16);
+                for (int k = 0; k < KK; k += 2) {
+                    const int8x16_t vh0 = vld1q_s8(QLUT + k * 32);
+                    const int8x16_t vl0 = vld1q_s8(QLUT + k * 32 + 16);
+                    const int8x16_t vh1 = vld1q_s8(QLUT + (k + 1) * 32);
+                    const int8x16_t vl1 = vld1q_s8(QLUT + (k + 1) * 32 + 16);
 
-#define PROCESS_32_ROWS(a_ptr, accl_0, acch_0, accl_1, acch_1) { \
+#define PROCESS_32_ROWS(a_ptr, v_h, v_l, accl_0, acch_0, accl_1, acch_1) { \
                         uint8x16_t vec_a = vld1q_u8(a_ptr); \
                         uint8x16_t vec_a_top = vshrq_n_u8(vec_a, 4); \
                         uint8x16_t vec_a_bot = vandq_u8(vec_a, vec_mask); \
                         uint8x16x2_t vec_unp = vzipq_u8(vec_a_top, vec_a_bot); \
-                        int8x16_t rh0 = vqtbl1q_s8(vh, vec_unp.val[0]); \
-                        int8x16_t rl0 = vqtbl1q_s8(vl, vec_unp.val[0]); \
-                        int8x16_t rh1 = vqtbl1q_s8(vh, vec_unp.val[1]); \
-                        int8x16_t rl1 = vqtbl1q_s8(vl, vec_unp.val[1]); \
+                        int8x16_t rh0 = vqtbl1q_s8(v_h, vec_unp.val[0]); \
+                        int8x16_t rl0 = vqtbl1q_s8(v_l, vec_unp.val[0]); \
+                        int8x16_t rh1 = vqtbl1q_s8(v_h, vec_unp.val[1]); \
+                        int8x16_t rl1 = vqtbl1q_s8(v_l, vec_unp.val[1]); \
                         int16x8_t o0, o1, o2, o3; \
                         reconstruct_int16_pair(rh0, rl0, o0, o1); \
                         reconstruct_int16_pair(rh1, rl1, o2, o3); \
@@ -983,8 +1004,13 @@ void vecmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, in
                         accl_1 = vaddq_s16(accl_1, o2); acch_1 = vaddq_s16(acch_1, o3); \
                     }
 
-                    PROCESS_32_ROWS(A + k * M / 2 + i_packed,      acc[0], acc[1], acc[2], acc[3]);
-                    PROCESS_32_ROWS(A + k * M / 2 + i_packed + 16, acc[4], acc[5], acc[6], acc[7]);
+                    const uint8_t* pA0 = A + k * M / 2 + i_packed;
+                    PROCESS_32_ROWS(pA0,      vh0, vl0, acc[0], acc[1], acc[2], acc[3]);
+                    PROCESS_32_ROWS(pA0 + 16, vh0, vl0, acc[4], acc[5], acc[6], acc[7]);
+
+                    const uint8_t* pA1 = A + (k + 1) * M / 2 + i_packed;
+                    PROCESS_32_ROWS(pA1,      vh1, vl1, acc[0], acc[1], acc[2], acc[3]);
+                    PROCESS_32_ROWS(pA1 + 16, vh1, vl1, acc[4], acc[5], acc[6], acc[7]);
 #undef PROCESS_32_ROWS
                 }
 
