@@ -862,8 +862,12 @@ void vecmul_lut_simd2(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int
         }
         #pragma omp barrier
         
-        float32_t global_max = LUT_Scales[0];
-        LUT_Scales[0] = (global_max > epsilon) ? (127.0f / global_max) : 1.0f;
+        if(ith == 0) {
+            float32_t global_max = LUT_Scales[0];
+            LUT_Scales[0] = (global_max > epsilon) ? (127.0f / global_max) : 1.0f;
+        }
+        #pragma omp barrier
+
         const float32x4_t v_rescale = vdupq_n_f32(weight_scale / LUT_Scales[0]);
         
         if (k_len > 0) {
