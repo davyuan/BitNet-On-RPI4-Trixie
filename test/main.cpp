@@ -1357,7 +1357,7 @@ int main() {
     auto naive_duration = std::chrono::duration_cast<std::chrono::milliseconds>(naive_end - naive_start);   
     printf("Reference matmul complete. Time: %ld ms\n", naive_duration.count());
 
-    const int num_iterations = 10;
+    const int num_iterations = 50;
     double avg_vec_simd_time = benchmark_matmul(
         "\nStep 4: Running LUT Vec SIMD(10 iterations for average)\n",
         "Vecmul_lut_simd",
