@@ -37,8 +37,6 @@ void aligned_free(void * ptr) {
 #endif
 }
 
-extern "C" {
-
 float ggml_get_tensor_max(int k, void* b_) {
     bitnet_float_type* b = (bitnet_float_type*)b_;
 #ifdef __ARM_NEON
@@ -50,8 +48,6 @@ float ggml_get_tensor_max(int k, void* b_) {
     }
     float32_t max_val = vmaxvq_f32(temp_max);
     return max_val;
-#else
-    return 0.0f;
 #endif
 }
 
@@ -96,7 +92,7 @@ static void partial_max_reset(void* lut_scales_) {
     *lut_scales = 0.0;
 }
 
-void ggml_lut_ctor(int act_k, int8_t* qlut, bitnet_float_type* b, bitnet_float_type* lut_scales) {
+static void ggml_lut_ctor(int act_k, int8_t* qlut, bitnet_float_type* b, bitnet_float_type* lut_scales) {
 #ifdef __ARM_NEON
     int16x8_t vec_lut[16];
     // Initialization to avoid uninitialized warnings and zero out any potential garbage
@@ -208,19 +204,21 @@ void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT,
     const int i_packed = ii / 2;
     const int row_stride = M / 2;
 
-    for (int k = 0; k < KK; k++) {
-        int8x16_t vh = vld1q_s8(LUT + k * 32);
-        int8x16_t vl = vld1q_s8(LUT + k * 32 + 16);
+    for (int k = 0; k < KK; k += 2) {
+        int8x16_t vh0 = vld1q_s8(LUT + k * 32);
+        int8x16_t vl0 = vld1q_s8(LUT + k * 32 + 16);
+        int8x16_t vh1 = vld1q_s8(LUT + (k + 1) * 32);
+        int8x16_t vl1 = vld1q_s8(LUT + (k + 1) * 32 + 16);
 
-#define PROCESS_32_ROWS(a_ptr, accl0, accl1, acch0, acch1) { \
+#define PROCESS_32_ROWS(a_ptr, v_h, v_l, accl0, accl1, acch0, acch1) { \
             uint8x16_t vec_a = vld1q_u8(a_ptr); \
             uint8x16_t vec_a_top = vshrq_n_u8(vec_a, 4); \
             uint8x16_t vec_a_bot = vandq_u8(vec_a, vec_mask); \
-            uint8x16x2_t vec_a_unpacked = vzipq_u8(vec_a_top, vec_a_bot); \
-            int8x16_t r0h = vqtbl1q_s8(vh, vec_a_unpacked.val[0]); \
-            int8x16_t r0l = vqtbl1q_s8(vl, vec_a_unpacked.val[0]); \
-            int8x16_t r1h = vqtbl1q_s8(vh, vec_a_unpacked.val[1]); \
-            int8x16_t r1l = vqtbl1q_s8(vl, vec_a_unpacked.val[1]); \
+            uint8x16x2_t vec_a_unp = vzipq_u8(vec_a_top, vec_a_bot); \
+            int8x16_t r0h = vqtbl1q_s8(v_h, vec_a_unp.val[0]); \
+            int8x16_t r0l = vqtbl1q_s8(v_l, vec_a_unp.val[0]); \
+            int8x16_t r1h = vqtbl1q_s8(v_h, vec_a_unp.val[1]); \
+            int8x16_t r1l = vqtbl1q_s8(v_l, vec_a_unp.val[1]); \
             int16x8_t o0, o1, o2, o3; \
             reconstruct_int16_pair(r0h, r0l, o0, o1); \
             reconstruct_int16_pair(r1h, r1l, o2, o3); \
@@ -230,11 +228,17 @@ void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT,
             acch1 = vaddq_s16(acch1, o3); \
         }
 
-        const uint8_t* pA = A + k * row_stride + i_packed;
-        PROCESS_32_ROWS(pA,      acc[0], acc[1], acc[2], acc[3]);
-        PROCESS_32_ROWS(pA + 16, acc[4], acc[5], acc[6], acc[7]);
-        PROCESS_32_ROWS(pA + 32, acc[8], acc[9], acc[10], acc[11]);
-        PROCESS_32_ROWS(pA + 48, acc[12], acc[13], acc[14], acc[15]);
+        const uint8_t* pA0 = A + k * row_stride + i_packed;
+        PROCESS_32_ROWS(pA0,      vh0, vl0, acc[0], acc[1], acc[2], acc[3]);
+        PROCESS_32_ROWS(pA0 + 16, vh0, vl0, acc[4], acc[5], acc[6], acc[7]);
+        PROCESS_32_ROWS(pA0 + 32, vh0, vl0, acc[8], acc[9], acc[10], acc[11]);
+        PROCESS_32_ROWS(pA0 + 48, vh0, vl0, acc[12], acc[13], acc[14], acc[15]);
+
+        const uint8_t* pA1 = A + (k + 1) * row_stride + i_packed;
+        PROCESS_32_ROWS(pA1,      vh1, vl1, acc[0], acc[1], acc[2], acc[3]);
+        PROCESS_32_ROWS(pA1 + 16, vh1, vl1, acc[4], acc[5], acc[6], acc[7]);
+        PROCESS_32_ROWS(pA1 + 32, vh1, vl1, acc[8], acc[9], acc[10], acc[11]);
+        PROCESS_32_ROWS(pA1 + 48, vh1, vl1, acc[12], acc[13], acc[14], acc[15]);
 #undef PROCESS_32_ROWS
     }
 
@@ -242,10 +246,10 @@ void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT,
     for (int block = 0; block < 4; block++) {
         float32_t* pC = &(C[j * M + ii + block * 32]);
 #define WRITE_BACK(out_ptr, accl, acch) { \
-            vst1q_f32(out_ptr + 0, vfmaq_f32(vld1q_f32(out_ptr + 0), vcvtq_f32_s32(vmovl_s16(vget_low_s16(accl))), v_rescale)); \
-            vst1q_f32(out_ptr + 4, vfmaq_f32(vld1q_f32(out_ptr + 4), vcvtq_f32_s32(vmovl_s16(vget_high_s16(accl))), v_rescale)); \
-            vst1q_f32(out_ptr + 8, vfmaq_f32(vld1q_f32(out_ptr + 8), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acch))), v_rescale)); \
-            vst1q_f32(out_ptr + 12, vfmaq_f32(vld1q_f32(out_ptr + 12), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acch))), v_rescale)); \
+            vst1q_f32(out_ptr + 0, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(accl))), v_rescale)); \
+            vst1q_f32(out_ptr + 4, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(accl))), v_rescale)); \
+            vst1q_f32(out_ptr + 8, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(acch))), v_rescale)); \
+            vst1q_f32(out_ptr + 12, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(acch))), v_rescale)); \
         }
         WRITE_BACK(pC,      acc[block*4 + 0], acc[block*4 + 1]);
         WRITE_BACK(pC + 16, acc[block*4 + 2], acc[block*4 + 3]);
@@ -324,10 +328,10 @@ void ggml_qgemm_lut_2col(int M, int N, int K, int ii, int j, uint8_t* A, int8_t*
         float32_t* pC1 = &(C[(j + 1) * M + ii + block * 32]);
 
 #define WRITE_BACK(out_ptr, accl, acch, rescale) { \
-            vst1q_f32(out_ptr + 0, vfmaq_f32(vld1q_f32(out_ptr + 0), vcvtq_f32_s32(vmovl_s16(vget_low_s16(accl))), rescale)); \
-            vst1q_f32(out_ptr + 4, vfmaq_f32(vld1q_f32(out_ptr + 4), vcvtq_f32_s32(vmovl_s16(vget_high_s16(accl))), rescale)); \
-            vst1q_f32(out_ptr + 8, vfmaq_f32(vld1q_f32(out_ptr + 8), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acch))), rescale)); \
-            vst1q_f32(out_ptr + 12, vfmaq_f32(vld1q_f32(out_ptr + 12), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acch))), rescale)); \
+            vst1q_f32(out_ptr + 0, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(accl))), rescale)); \
+            vst1q_f32(out_ptr + 4, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(accl))), rescale)); \
+            vst1q_f32(out_ptr + 8, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(acch))), rescale)); \
+            vst1q_f32(out_ptr + 12, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(acch))), rescale)); \
         }
 
         WRITE_BACK(pC0, acc_j0[block*4 + 0], acc_j0[block*4 + 1], v_rescale0);
@@ -434,6 +438,4 @@ void ggml_bitnet_transform_tensor(struct ggml_tensor * tensor) {
         /* .scales          = */ scales
     };
 }
-
-} // extern "C"
 #endif
