@@ -204,11 +204,15 @@ void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT,
     const int i_packed = ii / 2;
     const int row_stride = M / 2;
 
-    for (int k = 0; k < KK; k += 2) {
+    for (int k = 0; k < KK; k += 4) {
         int8x16_t vh0 = vld1q_s8(LUT + k * 32);
         int8x16_t vl0 = vld1q_s8(LUT + k * 32 + 16);
         int8x16_t vh1 = vld1q_s8(LUT + (k + 1) * 32);
         int8x16_t vl1 = vld1q_s8(LUT + (k + 1) * 32 + 16);
+        int8x16_t vh2 = vld1q_s8(LUT + (k + 2) * 32);
+        int8x16_t vl2 = vld1q_s8(LUT + (k + 2) * 32 + 16);
+        int8x16_t vh3 = vld1q_s8(LUT + (k + 3) * 32);
+        int8x16_t vl3 = vld1q_s8(LUT + (k + 3) * 32 + 16);
 
 #define PROCESS_32_ROWS(a_ptr, v_h, v_l, accl0, accl1, acch0, acch1) { \
             uint8x16_t vec_a = vld1q_u8(a_ptr); \
@@ -239,6 +243,18 @@ void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT,
         PROCESS_32_ROWS(pA1 + 16, vh1, vl1, acc[4], acc[5], acc[6], acc[7]);
         PROCESS_32_ROWS(pA1 + 32, vh1, vl1, acc[8], acc[9], acc[10], acc[11]);
         PROCESS_32_ROWS(pA1 + 48, vh1, vl1, acc[12], acc[13], acc[14], acc[15]);
+
+        const uint8_t* pA2 = A + (k + 2) * row_stride + i_packed;
+        PROCESS_32_ROWS(pA2,      vh2, vl2, acc[0], acc[1], acc[2], acc[3]);
+        PROCESS_32_ROWS(pA2 + 16, vh2, vl2, acc[4], acc[5], acc[6], acc[7]);
+        PROCESS_32_ROWS(pA2 + 32, vh2, vl2, acc[8], acc[9], acc[10], acc[11]);
+        PROCESS_32_ROWS(pA2 + 48, vh2, vl2, acc[12], acc[13], acc[14], acc[15]);
+
+        const uint8_t* pA3 = A + (k + 3) * row_stride + i_packed;
+        PROCESS_32_ROWS(pA3,      vh3, vl3, acc[0], acc[1], acc[2], acc[3]);
+        PROCESS_32_ROWS(pA3 + 16, vh3, vl3, acc[4], acc[5], acc[6], acc[7]);
+        PROCESS_32_ROWS(pA3 + 32, vh3, vl3, acc[8], acc[9], acc[10], acc[11]);
+        PROCESS_32_ROWS(pA3 + 48, vh3, vl3, acc[12], acc[13], acc[14], acc[15]);
 #undef PROCESS_32_ROWS
     }
 
