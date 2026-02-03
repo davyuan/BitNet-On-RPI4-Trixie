@@ -37,6 +37,21 @@ void aligned_free(void * ptr) {
 #endif
 }
 
+static float32_t get_tensor_max(int k, void* b_) {
+    bitnet_float_type* lut_scales = (bitnet_float_type*)lut_scales_;
+    bitnet_float_type* b = (bitnet_float_type*)b_;
+#ifdef __ARM_NEON
+    float32x4_t temp_max = vdupq_n_f32(0);
+    for (int i=0; i < k / 4; i++) {
+      float32x4_t vec_bs = vld1q_f32(b + 4 * i);
+      float32x4_t abssum = vabsq_f32(vec_bs);
+      temp_max = vmaxq_f32(abssum, temp_max);
+    }
+    float32_t max_val = vmaxvq_f32(temp_max);
+    return max_val;
+#endif
+}
+
 static void per_tensor_quant(int k, void* lut_scales_, void* b_) {
     bitnet_float_type* lut_scales = (bitnet_float_type*)lut_scales_;
     bitnet_float_type* b = (bitnet_float_type*)b_;
@@ -88,10 +103,10 @@ bool is_type_supported(enum ggml_type type) {
 }
 
 void ggml_preprocessor(int M, int K, void* B, void* LUT_Scales, void* QLUT) {
-  partial_max_reset((&(((bitnet_float_type*)LUT_Scales)[0])));
-  per_tensor_quant(K, (&(((bitnet_float_type*)LUT_Scales)[0])), (&(((bitnet_float_type*)B)[0])));
-  
-  lut_ctor(K, (&(((int8_t*)QLUT)[0])), (&(((bitnet_float_type*)B)[0])), (&(((bitnet_float_type*)LUT_Scales)[0])));
+    partial_max_reset((&(((bitnet_float_type*)LUT_Scales)[0])));
+    per_tensor_quant(K, (&(((bitnet_float_type*)LUT_Scales)[0])), (&(((bitnet_float_type*)B)[0])));
+
+    lut_ctor(K, (&(((int8_t*)QLUT)[0])), (&(((bitnet_float_type*)B)[0])), (&(((bitnet_float_type*)LUT_Scales)[0])));
 }
 
 void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT, void* Scales, void* LUT_Scales, float32_t* C) {

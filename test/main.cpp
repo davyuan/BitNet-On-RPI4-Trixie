@@ -830,6 +830,93 @@ void vecmul_lut_simd(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int 
     aligned_free(LUT_Scales);
 }
 
+/* A(K/2 x M), B(1 x K)
+   QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
+        each K represents 2 activations in B. 
+   C(1xM)
+   This version partition the work to construct the LUT and uses SIMD optimizations.
+*/
+void vecmul_lut_simd2(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
+    int KK = K / 2;
+    float32_t epsilon = 1e-7f;
+    const float32_t weight_scale = ws[0];
+
+    // N=1 for vector multiplication. Build LUT once and share across all threads.
+    int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
+    float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
+    LUT_Scales[0] = 0.0f;
+
+    #pragma omp parallel num_threads(4)
+    {
+        const int ith = omp_get_thread_num();
+        const int nth = omp_get_num_threads();
+
+        const int k_start = (K * ith) / nth;
+        const int k_end   = (K * (ith + 1)) / nth;
+        const int k_len   = k_end - k_start;
+
+        float32_t local_max = (k_len > 0) ? get_tensor_max(k_len, B + k_start) : 0.0f;
+        #pragma omp critical
+        {
+            if (local_max > LUT_Scales[0]) LUT_Scales[0] = local_max;
+        }
+        #pragma omp barrier
+        
+        float32_t global_max = LUT_Scales[0];
+        LUT_Scales[0] = (global_max > epsilon) ? (127.0f / global_max) : 1.0f;
+        const float32x4_t v_rescale = vdupq_n_f32(weight_scale / LUT_Scales[0]);
+        
+        if (k_len > 0) {
+            lut_ctor(k_len, QLUT + k_start * 16, B + k_start, LUT_Scales);
+        }
+        #pragma omp barrier
+
+        // Parallelize over row-blocks (ii) - REMOVED nested parallel for
+        #pragma omp for
+        for (int ii = 0; ii < M; ii += BM) {
+            for (int i = ii; i < ii + BM; i += 64) {
+                int16x8_t acc0 = vdupq_n_s16(0), acc1 = vdupq_n_s16(0), acc2 = vdupq_n_s16(0), acc3 = vdupq_n_s16(0);
+                int16x8_t acc4 = vdupq_n_s16(0), acc5 = vdupq_n_s16(0), acc6 = vdupq_n_s16(0), acc7 = vdupq_n_s16(0);
+
+                for (int k = 0; k < KK; k++) {
+                    int8x16_t vh = vld1q_s8(QLUT + k * 32);
+                    int8x16_t vl = vld1q_s8(QLUT + k * 32 + 16);
+
+    #define CORE_WORK_VECTOR(offset, accl, acch) { \
+                    uint8x16_t va = vld1q_u8(A + k * M + i + offset); \
+                    int8x16_t rh = vqtbl1q_s8(vh, va); \
+                    int8x16_t rl = vqtbl1q_s8(vl, va); \
+                    int16x8_t ol, oh; \
+                    reconstruct_int16_pair(rh, rl, ol, oh); \
+                    accl = vaddq_s16(accl, ol); acch = vaddq_s16(acch, oh); \
+                }
+                    CORE_WORK_VECTOR(0,  acc0, acc1);
+                    CORE_WORK_VECTOR(16, acc2, acc3);
+                    CORE_WORK_VECTOR(32, acc4, acc5);
+                    CORE_WORK_VECTOR(48, acc6, acc7);
+    #undef CORE_WORK_VECTOR
+                }
+
+                float32_t* pC = &(C[i]); // j=0
+    #define WRITE_BACK_VECTOR(out_ptr, accl, acch) { \
+                    vst1q_f32(out_ptr + 0, vfmaq_f32(vld1q_f32(out_ptr + 0), vcvtq_f32_s32(vmovl_s16(vget_low_s16(accl))), v_rescale)); \
+                    vst1q_f32(out_ptr + 4, vfmaq_f32(vld1q_f32(out_ptr + 4), vcvtq_f32_s32(vmovl_s16(vget_high_s16(accl))), v_rescale)); \
+                    vst1q_f32(out_ptr + 8, vfmaq_f32(vld1q_f32(out_ptr + 8), vcvtq_f32_s32(vmovl_s16(vget_low_s16(acch))), v_rescale)); \
+                    vst1q_f32(out_ptr + 12, vfmaq_f32(vld1q_f32(out_ptr + 12), vcvtq_f32_s32(vmovl_s16(vget_high_s16(acch))), v_rescale)); \
+                }
+                WRITE_BACK_VECTOR(pC,      acc0, acc1);
+                WRITE_BACK_VECTOR(pC + 16, acc2, acc3);
+                WRITE_BACK_VECTOR(pC + 32, acc4, acc5);
+                WRITE_BACK_VECTOR(pC + 48, acc6, acc7);
+    #undef WRITE_BACK_VECTOR
+            }
+        }
+    }
+
+    aligned_free(QLUT);
+    aligned_free(LUT_Scales);
+}
+
 double calculate_sqnr(const float32_t* C, const float32_t* C_hat, int M, int N) {
     double signal_power = 0.0;
     double noise_power = 0.0;
@@ -1272,6 +1359,15 @@ int main() {
     printf("\nComparing kernel output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-1, "Vecmul_lut_simd comparison");
 
+    double avg_vec_simd2_time = benchmark_matmul(
+        "\nStep 4: Running LUT Vec SIMD2(10 iterations for average)\n",
+        "Vecmul_lut_simd2",
+        [&]() { vecmul_lut_simd2(A_T, B_T, C_simd, weight_scale, M, N, K); },
+        C_simd, M, N, num_iterations
+    );
+    printf("\nComparing kernel output (C) with reference (C_)...\n");
+    compare_matrices(C_simd, C_, M, N, 1e-1, "Vecmul_lut_simd2 comparison");
+
     /*double avg_lut_time = benchmark_matmul(
         "\nStep 2: Running LUT Tiled(10 iterations for average)\n",
         "Matmul_lut_tiled",
@@ -1355,6 +1451,7 @@ int main() {
     double speedup_packed = (double)naive_duration.count() / (double)avg_packed_time;
     double speedup_microkernel = (double)naive_duration.count() / (double)avg_microkernel_time;*/
     double speedup_vec_simd = (double)naive_duration.count() / (double)avg_vec_simd_time;
+    double speedup_vec_simd2 = (double)naive_duration.count() / (double)avg_vec_simd2_time;
     //double speedup_simd2 = (double)naive_duration.count() / (double)avg_simd_time2;
     //double speedup_microkernel = (double)naive_duration.count() / (double)avg_microkernel_time;
     printf("\n=== PERFORMANCE COMPARISON ===\n");
@@ -1368,6 +1465,9 @@ int main() {
     printf("Speedup (naive / microkernel): %.2fx\n\n", speedup_microkernel);*/
     printf("LUT vecmul_lut_simd (avg):   %.2f ms\n", avg_vec_simd_time);
     printf("Speedup (naive / vecmul_lut_simd): %.2fx\n\n", speedup_vec_simd);
+    printf("LUT vecmul_lut_simd2 (avg):   %.2f ms\n", avg_vec_simd2_time);
+    printf("Speedup (naive / vecmul_lut_simd2): %.2fx\n\n", speedup_vec_simd2);
+    
     // Cleanup
     aligned_free(C_);
     aligned_free(B);
