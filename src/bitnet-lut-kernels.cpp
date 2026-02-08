@@ -92,7 +92,7 @@ static void partial_max_reset(void* lut_scales_) {
     *lut_scales = 0.0;
 }
 
-static void ggml_lut_ctor(int act_k, int8_t* qlut, bitnet_float_type* b, bitnet_float_type* lut_scales) {
+void ggml_lut_ctor(int act_k, int8_t* qlut, bitnet_float_type* b, bitnet_float_type* lut_scales) {
 #ifdef __ARM_NEON
     int16x8_t vec_lut[16];
     // Initialization to avoid uninitialized warnings and zero out any potential garbage
