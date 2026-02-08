@@ -77,11 +77,11 @@ inline void reconstruct_int16_pair(int8x16_t high, int8x16_t low, int16x8_t& out
 
 }
 
-inline void reconstruct_int16_pair2(uint8x16_t low, uint8x16_t high, int16x8_t& out_lo, int16x8_t& out_hi) {
-    // zip1 interleaves the low halves of both registers: [L0, H0, L1, H1...]
-    // zip2 interleaves the high halves: [L8, H8, L9, H9...]
-    uint8x16_t res_lo = vzip1q_u8(low, high);
-    uint8x16_t res_hi = vzip2q_u8(low, high);
+inline void reconstruct_int16_pair2(int8x16_t high, int8x16_t low, int16x8_t& out_lo, int16x8_t& out_hi) {
+    // Little-endian: [low_byte, high_byte] -> 16-bit word.
+    // vzip1q_u8 interleaves the bytes: low[0], high[0], low[1], high[1], ...
+    uint8x16_t res_lo = vzip1q_u8(vreinterpretq_u8_s8(low), vreinterpretq_u8_s8(high));
+    uint8x16_t res_hi = vzip2q_u8(vreinterpretq_u8_s8(low), vreinterpretq_u8_s8(high));
     
     out_lo = vreinterpretq_s16_u8(res_lo);
     out_hi = vreinterpretq_s16_u8(res_hi);
