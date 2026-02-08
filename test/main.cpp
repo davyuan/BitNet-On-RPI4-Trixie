@@ -1204,14 +1204,17 @@ void vecmul_lut_packed3(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, i
             for (int b = 0; b < 32; b++) acc_f[b] = vdupq_n_f32(0.0f);
 
             const int i_packed = i / 2;
+            #pragma unroll
             for (int t = 0; t < nth; t++) {
                 const int t_k_start = (n_blocks * t / nth) * 16;
                 const int t_k_end   = (n_blocks * (t + 1) / nth) * 16;
                 const float32x4_t v_rescale = v_rescale_array[t];
 
                 int16x8_t acc_s16[16];
+                #pragma unroll
                 for (int b = 0; b < 16; b++) acc_s16[b] = vdupq_n_s16(0);
 
+                #pragma unroll
                 for (int k = t_k_start / 2; k < t_k_end / 2; k += 4) {
                     const int8x16_t vh0 = vld1q_s8(QLUT + k * 32);
                     const int8x16_t vl0 = vld1q_s8(QLUT + k * 32 + 16);
@@ -1265,6 +1268,7 @@ void vecmul_lut_packed3(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, i
                     }
 
                     // Accumulate partial sum into float accumulators
+                    #pragma unroll
                     for (int b = 0; b < 16; b++) {
                         acc_f[b*2]   = vfmaq_f32(acc_f[b*2],   vcvtq_f32_s32(vmovl_s16(vget_low_s16(acc_s16[b]))), v_rescale);
                         acc_f[b*2+1] = vfmaq_f32(acc_f[b*2+1], vcvtq_f32_s32(vmovl_s16(vget_high_s16(acc_s16[b]))), v_rescale);
@@ -1272,6 +1276,7 @@ void vecmul_lut_packed3(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, i
                 }
 
                 float32_t* pC = &(C[i]);
+                #pragma unroll
                 for (int b = 0; b < 32; b++) {
                     vst1q_f32(pC + b * 4, acc_f[b]);
                 }

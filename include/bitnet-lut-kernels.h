@@ -77,6 +77,7 @@ inline void reconstruct_int16_pair(int8x16_t high, int8x16_t low, int16x8_t& out
 
 }
 
+//experimental alternative to reconstruct_int16_pair that uses vzipq to interleave high and low bytes before reinterpretation. Should produce the same result but may have different performance characteristics.
 inline void reconstruct_int16_pair2(int8x16_t high, int8x16_t low, int16x8_t& out_lo, int16x8_t& out_hi) {
     // Interleave low and high bytes to form 16-bit words.
     // In little-endian, low byte comes first [L0, H0, L1, H1...].
