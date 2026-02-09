@@ -1352,15 +1352,14 @@ void vecmul_lut_packed4(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, i
                     uint8x16_t vec_a = vld1q_u8(a_ptr); \
                     uint8x16_t vec_a_top = vshrq_n_u8(vec_a, 4); \
                     uint8x16_t vec_a_bot = vandq_u8(vec_a, vec_mask); \
-                    uint8x16_t u0 = vzip1q_u8(vec_a_bot, vec_a_top); \
-                    uint8x16_t u1 = vzip2q_u8(vec_a_bot, vec_a_top); \
-                    int8x16_t rh0 = vqtbl1q_s8(v_h, u0); \
-                    int8x16_t rl0 = vqtbl1q_s8(v_l, u0); \
-                    int8x16_t rh1 = vqtbl1q_s8(v_h, u1); \
-                    int8x16_t rl1 = vqtbl1q_s8(v_l, u1); \
+                    uint8x16x2_t vec_unp = vzipq_u8(vec_a_top, vec_a_bot); \
+                    int8x16_t rh0 = vqtbl1q_s8(v_h, vec_unp.val[0]); \
+                    int8x16_t rl0 = vqtbl1q_s8(v_l, vec_unp.val[0]); \
+                    int8x16_t rh1 = vqtbl1q_s8(v_h, vec_unp.val[1]); \
+                    int8x16_t rl1 = vqtbl1q_s8(v_l, vec_unp.val[1]); \
                     int16x8_t o0, o1, o2, o3; \
-                    reconstruct_int16_pair2(rh0, rl0, o0, o1); \
-                    reconstruct_int16_pair2(rh1, rl1, o2, o3); \
+                    reconstruct_int16_pair(rh0, rl0, o0, o1); \
+                    reconstruct_int16_pair(rh1, rl1, o2, o3); \
                     accl_0 = vaddq_s16(accl_0, o0); acch_0 = vaddq_s16(acch_0, o1); \
                     accl_1 = vaddq_s16(accl_1, o2); acch_1 = vaddq_s16(acch_1, o3); \
                 }
