@@ -1356,8 +1356,8 @@ void vecmul_lut_packed4(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, i
                     int8x16_t rh1 = vqtbl1q_s8(v_h, vec_unp.val[1]); \
                     int8x16_t rl1 = vqtbl1q_s8(v_l, vec_unp.val[1]); \
                     int16x8_t o0, o1, o2, o3; \
-                    reconstruct_int16_pair(rh0, rl0, o0, o1); \
-                    reconstruct_int16_pair(rh1, rl1, o2, o3); \
+                    reconstruct_int16_pair2(rh0, rl0, o0, o1); \
+                    reconstruct_int16_pair2(rh1, rl1, o2, o3); \
                     accl_0 = vaddq_s16(accl_0, o0); acch_0 = vaddq_s16(acch_0, o1); \
                     accl_1 = vaddq_s16(accl_1, o2); acch_1 = vaddq_s16(acch_1, o3); \
                 }
