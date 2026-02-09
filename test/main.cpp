@@ -1335,14 +1335,16 @@ void vecmul_lut_packed4(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, i
                 }
 
                 const int8_t* pQLUT = QLUT + k * lut_stride;
-                const int8x16_t vh0 = vld1q_s8(pQLUT);
-                const int8x16_t vl0 = vld1q_s8(pQLUT + 16);
-                const int8x16_t vh1 = vld1q_s8(pQLUT + lut_stride);
-                const int8x16_t vl1 = vld1q_s8(pQLUT + lut_stride + 16);
-                const int8x16_t vh2 = vld1q_s8(pQLUT + 2 * lut_stride);
-                const int8x16_t vl2 = vld1q_s8(pQLUT + 2 * lut_stride + 16);
-                const int8x16_t vh3 = vld1q_s8(pQLUT + 3 * lut_stride);
-                const int8x16_t vl3 = vld1q_s8(pQLUT + 3 * lut_stride + 16);
+                int8x16x4_t q0 = vld1q_s8_x4(pQLUT);
+                int8x16x4_t q1 = vld1q_s8_x4(pQLUT + 64);
+                const int8x16_t vh0 = q0.val[0];
+                const int8x16_t vl0 = q0.val[1];
+                const int8x16_t vh1 = q0.val[2];
+                const int8x16_t vl1 = q0.val[3];
+                const int8x16_t vh2 = q1.val[0];
+                const int8x16_t vl2 = q1.val[1];
+                const int8x16_t vh3 = q1.val[2];
+                const int8x16_t vl3 = q1.val[3];
 
 #define PROCESS_32_ROWS(a_ptr, v_h, v_l, accl_0, acch_0, accl_1, acch_1) { \
                     uint8x16_t vec_a = vld1q_u8(a_ptr); \
