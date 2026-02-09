@@ -505,6 +505,223 @@ void ggml_qgemm_lut_2col(int M, int N, int K, int ii, int j, uint8_t* A, int8_t*
     }
 }
 
+void ggml_qgemm_lut_2col_256(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT0, int8_t* LUT1, void* Scales, void* LUT_Scales, float32_t* C) {
+    int KK = K / 2;
+    const int lut_stride = 32;
+    const int i_packed = ii / 2;
+    const int row_stride = M / 2;
+    const uint8x16_t vec_mask = vdupq_n_u8(0x0f);
+    const float32_t lut_scale0 = ((float32_t*)LUT_Scales)[0];
+    const float32_t lut_scale1 = ((float32_t*)LUT_Scales)[1];
+    const float32_t weight_scale = ((float32_t*)Scales)[0];
+    const float32x4_t v_rescale0 = vdupq_n_f32(weight_scale / lut_scale0);
+    const float32x4_t v_rescale1 = vdupq_n_f32(weight_scale / lut_scale1);
+
+    // Initializate accumulators for 256 rows, 2 columns
+    int16x8_t acc_j0[32];
+    int16x8_t acc_j1[32];
+    for (int b = 0; b < 32; b++) {
+        acc_j0[b] = vdupq_n_s16(0);
+        acc_j1[b] = vdupq_n_s16(0);
+    }
+
+    for (int k = 0; k < KK; k += 4) {
+        if (k + 4 < KK) {
+            const uint8_t* pA_next = A + (k + 4) * row_stride + i_packed;
+            __builtin_prefetch(pA_next, 0, 3);
+            __builtin_prefetch(pA_next + 64, 0, 3);
+            __builtin_prefetch(pA_next + row_stride, 0, 3);
+            __builtin_prefetch(pA_next + row_stride + 64, 0, 3);
+            __builtin_prefetch(pA_next + 2 * row_stride, 0, 3);
+            __builtin_prefetch(pA_next + 2 * row_stride + 64, 0, 3);
+            __builtin_prefetch(pA_next + 3 * row_stride, 0, 3);
+            __builtin_prefetch(pA_next + 3 * row_stride + 64, 0, 3);
+
+            // Prefetch LUT0 and LUT1 entries
+            __builtin_prefetch(LUT0 + (k + 4) * lut_stride, 0, 3);
+            __builtin_prefetch(LUT0 + (k + 4) * lut_stride + 64, 0, 3);
+            __builtin_prefetch(LUT1 + (k + 4) * lut_stride, 0, 3);
+            __builtin_prefetch(LUT1 + (k + 4) * lut_stride + 64, 0, 3);
+        }
+
+#define PROCESS_32_ROWS_2COL(a_ptr, vh0, vl0, vh1, vl1, idx) { \
+                    uint8x16_t vec_a = vld1q_u8(a_ptr); \
+                    uint8x16_t vec_a_top = vshrq_n_u8(vec_a, 4); \
+                    uint8x16_t vec_a_bot = vandq_u8(vec_a, vec_mask); \
+                    uint8x16x2_t vec_a_unp = vzipq_u8(vec_a_top, vec_a_bot); \
+                    int8x16_t r0h_j0 = vqtbl1q_s8(vh0, vec_a_unp.val[0]); \
+                    int8x16_t r0l_j0 = vqtbl1q_s8(vl0, vec_a_unp.val[0]); \
+                    int8x16_t r1h_j0 = vqtbl1q_s8(vh0, vec_a_unp.val[1]); \
+                    int8x16_t r1l_j0 = vqtbl1q_s8(vl0, vec_a_unp.val[1]); \
+                    int8x16_t r0h_j1 = vqtbl1q_s8(vh1, vec_a_unp.val[0]); \
+                    int8x16_t r0l_j1 = vqtbl1q_s8(vl1, vec_a_unp.val[0]); \
+                    int8x16_t r1h_j1 = vqtbl1q_s8(vh1, vec_a_unp.val[1]); \
+                    int8x16_t r1l_j1 = vqtbl1q_s8(vl1, vec_a_unp.val[1]); \
+                    int16x8_t o0, o1, o2, o3; \
+                    reconstruct_int16_pair(r0h_j0, r0l_j0, o0, o1); \
+                    acc_j0[idx+0] = vaddq_s16(acc_j0[idx+0], o0); acc_j0[idx+1] = vaddq_s16(acc_j0[idx+1], o1); \
+                    reconstruct_int16_pair(r1h_j0, r1l_j0, o2, o3); \
+                    acc_j0[idx+2] = vaddq_s16(acc_j0[idx+2], o2); acc_j0[idx+3] = vaddq_s16(acc_j0[idx+3], o3); \
+                    reconstruct_int16_pair(r0h_j1, r0l_j1, o0, o1); \
+                    acc_j1[idx+0] = vaddq_s16(acc_j1[idx+0], o0); acc_j1[idx+1] = vaddq_s16(acc_j1[idx+1], o1); \
+                    reconstruct_int16_pair(r1h_j1, r1l_j1, o2, o3); \
+                    acc_j1[idx+2] = vaddq_s16(acc_j1[idx+2], o2); acc_j1[idx+3] = vaddq_s16(acc_j1[idx+3], o3); \
+                }
+
+        const int8_t* pQLUT0 = LUT0 + k * lut_stride;
+        const int8_t* pQLUT1 = LUT1 + k * lut_stride;
+        int8x16x4_t ql_j0_0 = vld1q_s8_x4(pQLUT0);
+        int8x16x4_t ql_j0_1 = vld1q_s8_x4(pQLUT0 + 64);
+        int8x16x4_t ql_j1_0 = vld1q_s8_x4(pQLUT1);
+        int8x16x4_t ql_j1_1 = vld1q_s8_x4(pQLUT1 + 64);
+
+        for (int i_k = 0; i_k < 4; i_k++) {
+            int8x16_t vh0, vl0, vh1, vl1;
+            if (i_k == 0) { vh0 = ql_j0_0.val[0]; vl0 = ql_j0_0.val[1]; vh1 = ql_j1_0.val[0]; vl1 = ql_j1_0.val[1]; }
+            else if (i_k == 1) { vh0 = ql_j0_0.val[2]; vl0 = ql_j0_0.val[3]; vh1 = ql_j1_0.val[2]; vl1 = ql_j1_0.val[3]; }
+            else if (i_k == 2) { vh0 = ql_j0_1.val[0]; vl0 = ql_j0_1.val[1]; vh1 = ql_j1_1.val[0]; vl1 = ql_j1_1.val[1]; }
+            else { vh0 = ql_j0_1.val[2]; vl0 = ql_j0_1.val[3]; vh1 = ql_j1_1.val[2]; vl1 = ql_j1_1.val[3]; }
+
+            const uint8_t* pA = A + (k + i_k) * row_stride + i_packed;
+            PROCESS_32_ROWS_2COL(pA,       vh0, vl0, vh1, vl1, 0);
+            PROCESS_32_ROWS_2COL(pA + 16,  vh0, vl0, vh1, vl1, 4);
+            PROCESS_32_ROWS_2COL(pA + 32,  vh0, vl0, vh1, vl1, 8);
+            PROCESS_32_ROWS_2COL(pA + 48,  vh0, vl0, vh1, vl1, 12);
+            PROCESS_32_ROWS_2COL(pA + 64,  vh0, vl0, vh1, vl1, 16);
+            PROCESS_32_ROWS_2COL(pA + 80,  vh0, vl0, vh1, vl1, 20);
+            PROCESS_32_ROWS_2COL(pA + 96,  vh0, vl0, vh1, vl1, 24);
+            PROCESS_32_ROWS_2COL(pA + 112, vh0, vl0, vh1, vl1, 28);
+        }
+#undef PROCESS_32_ROWS_2COL
+    }
+
+    // Write-back
+    for (int block = 0; block < 8; block++) {
+        float32_t* pC0 = &(C[j * M + ii + block * 32]);
+        float32_t* pC1 = &(C[(j + 1) * M + ii + block * 32]);
+
+#define WRITE_BACK(out_ptr, accl, acch, rescale) { \
+            vst1q_f32(out_ptr + 0, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(accl))), rescale)); \
+            vst1q_f32(out_ptr + 4, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(accl))), rescale)); \
+            vst1q_f32(out_ptr + 8, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(acch))), rescale)); \
+            vst1q_f32(out_ptr + 12, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(acch))), rescale)); \
+        }
+
+        WRITE_BACK(pC0,      acc_j0[block*4 + 0], acc_j0[block*4 + 1], v_rescale0);
+        WRITE_BACK(pC0 + 16, acc_j0[block*4 + 2], acc_j0[block*4 + 3], v_rescale0);
+        WRITE_BACK(pC1,      acc_j1[block*4 + 0], acc_j1[block*4 + 1], v_rescale1);
+        WRITE_BACK(pC1 + 16, acc_j1[block*4 + 2], acc_j1[block*4 + 3], v_rescale1);
+#undef WRITE_BACK
+    }
+}
+
+void ggml_qgemm_lut_2col_160(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT0, int8_t* LUT1, void* Scales, void* LUT_Scales, float32_t* C) {
+    int KK = K / 2;
+    const int lut_stride = 32;
+    const int i_packed = ii / 2;
+    const int row_stride = M / 2;
+    const uint8x16_t vec_mask = vdupq_n_u8(0x0f);
+    const float32_t lut_scale0 = ((float32_t*)LUT_Scales)[0];
+    const float32_t lut_scale1 = ((float32_t*)LUT_Scales)[1];
+    const float32_t weight_scale = ((float32_t*)Scales)[0];
+    const float32x4_t v_rescale0 = vdupq_n_f32(weight_scale / lut_scale0);
+    const float32x4_t v_rescale1 = vdupq_n_f32(weight_scale / lut_scale1);
+
+    // Initializate accumulators for 160 rows, 2 columns (20 blocks of 32 rows per column = 40 total)
+    int16x8_t acc_j0[20];
+    int16x8_t acc_j1[20];
+    for (int b = 0; b < 20; b++) {
+        acc_j0[b] = vdupq_n_s16(0);
+        acc_j1[b] = vdupq_n_s16(0);
+    }
+
+    for (int k = 0; k < KK; k += 4) {
+        if (k + 4 < KK) {
+            const uint8_t* pA_next = A + (k + 4) * row_stride + i_packed;
+            __builtin_prefetch(pA_next, 0, 3);
+            __builtin_prefetch(pA_next + 64, 0, 3);
+            __builtin_prefetch(pA_next + row_stride, 0, 3);
+            __builtin_prefetch(pA_next + row_stride + 64, 0, 3);
+            __builtin_prefetch(pA_next + 2 * row_stride, 0, 3);
+            __builtin_prefetch(pA_next + 2 * row_stride + 64, 0, 3);
+            __builtin_prefetch(pA_next + 3 * row_stride, 0, 3);
+            __builtin_prefetch(pA_next + 3 * row_stride + 64, 0, 3);
+
+            // Prefetch LUT0 and LUT1 entries
+            __builtin_prefetch(LUT0 + (k + 4) * lut_stride, 0, 3);
+            __builtin_prefetch(LUT0 + (k + 4) * lut_stride + 64, 0, 3);
+            __builtin_prefetch(LUT1 + (k + 4) * lut_stride, 0, 3);
+            __builtin_prefetch(LUT1 + (k + 4) * lut_stride + 64, 0, 3);
+        }
+
+#define PROCESS_32_ROWS_2COL(a_ptr, vh0, vl0, vh1, vl1, idx) { \
+                    uint8x16_t vec_a = vld1q_u8(a_ptr); \
+                    uint8x16_t vec_a_top = vshrq_n_u8(vec_a, 4); \
+                    uint8x16_t vec_a_bot = vandq_u8(vec_a, vec_mask); \
+                    uint8x16x2_t vec_a_unp = vzipq_u8(vec_a_top, vec_a_bot); \
+                    int8x16_t r0h_j0 = vqtbl1q_s8(vh0, vec_a_unp.val[0]); \
+                    int8x16_t r0l_j0 = vqtbl1q_s8(vl0, vec_a_unp.val[0]); \
+                    int8x16_t r1h_j0 = vqtbl1q_s8(vh0, vec_a_unp.val[1]); \
+                    int8x16_t r1l_j0 = vqtbl1q_s8(vl0, vec_a_unp.val[1]); \
+                    int8x16_t r0h_j1 = vqtbl1q_s8(vh1, vec_a_unp.val[0]); \
+                    int8x16_t r0l_j1 = vqtbl1q_s8(vl1, vec_a_unp.val[0]); \
+                    int8x16_t r1h_j1 = vqtbl1q_s8(vh1, vec_a_unp.val[1]); \
+                    int8x16_t r1l_j1 = vqtbl1q_s8(vl1, vec_a_unp.val[1]); \
+                    int16x8_t o0, o1, o2, o3; \
+                    reconstruct_int16_pair(r0h_j0, r0l_j0, o0, o1); \
+                    acc_j0[idx+0] = vaddq_s16(acc_j0[idx+0], o0); acc_j0[idx+1] = vaddq_s16(acc_j0[idx+1], o1); \
+                    reconstruct_int16_pair(r1h_j0, r1l_j0, o2, o3); \
+                    acc_j0[idx+2] = vaddq_s16(acc_j0[idx+2], o2); acc_j0[idx+3] = vaddq_s16(acc_j0[idx+3], o3); \
+                    reconstruct_int16_pair(r0h_j1, r0l_j1, o0, o1); \
+                    acc_j1[idx+0] = vaddq_s16(acc_j1[idx+0], o0); acc_j1[idx+1] = vaddq_s16(acc_j1[idx+1], o1); \
+                    reconstruct_int16_pair(r1h_j1, r1l_j1, o2, o3); \
+                    acc_j1[idx+2] = vaddq_s16(acc_j1[idx+2], o2); acc_j1[idx+3] = vaddq_s16(acc_j1[idx+3], o3); \
+                }
+
+        const int8_t* pQLUT0 = LUT0 + k * lut_stride;
+        const int8_t* pQLUT1 = LUT1 + k * lut_stride;
+        int8x16x4_t ql_j0_0 = vld1q_s8_x4(pQLUT0);
+        int8x16x4_t ql_j0_1 = vld1q_s8_x4(pQLUT0 + 64);
+        int8x16x4_t ql_j1_0 = vld1q_s8_x4(pQLUT1);
+        int8x16x4_t ql_j1_1 = vld1q_s8_x4(pQLUT1 + 64);
+
+        for (int i_k = 0; i_k < 4; i_k++) {
+            int8x16_t vh0, vl0, vh1, vl1;
+            if (i_k == 0) { vh0 = ql_j0_0.val[0]; vl0 = ql_j0_0.val[1]; vh1 = ql_j1_0.val[0]; vl1 = ql_j1_0.val[1]; }
+            else if (i_k == 1) { vh0 = ql_j0_0.val[2]; vl0 = ql_j0_0.val[3]; vh1 = ql_j1_0.val[2]; vl1 = ql_j1_0.val[3]; }
+            else if (i_k == 2) { vh0 = ql_j0_1.val[0]; vl0 = ql_j0_1.val[1]; vh1 = ql_j1_1.val[0]; vl1 = ql_j1_1.val[1]; }
+            else { vh0 = ql_j0_1.val[2]; vl0 = ql_j0_1.val[3]; vh1 = ql_j1_1.val[2]; vl1 = ql_j1_1.val[3]; }
+
+            const uint8_t* pA = A + (k + i_k) * row_stride + i_packed;
+            PROCESS_32_ROWS_2COL(pA,       vh0, vl0, vh1, vl1, 0);
+            PROCESS_32_ROWS_2COL(pA + 16,  vh0, vl0, vh1, vl1, 4);
+            PROCESS_32_ROWS_2COL(pA + 32,  vh0, vl0, vh1, vl1, 8);
+            PROCESS_32_ROWS_2COL(pA + 48,  vh0, vl0, vh1, vl1, 12);
+            PROCESS_32_ROWS_2COL(pA + 64,  vh0, vl0, vh1, vl1, 16);
+        }
+#undef PROCESS_32_ROWS_2COL
+    }
+
+    // Write-back
+    for (int block = 0; block < 5; block++) {
+        float32_t* pC0 = &(C[j * M + ii + block * 32]);
+        float32_t* pC1 = &(C[(j + 1) * M + ii + block * 32]);
+
+#define WRITE_BACK(out_ptr, accl, acch, rescale) { \
+            vst1q_f32(out_ptr + 0, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(accl))), rescale)); \
+            vst1q_f32(out_ptr + 4, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(accl))), rescale)); \
+            vst1q_f32(out_ptr + 8, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(acch))), rescale)); \
+            vst1q_f32(out_ptr + 12, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(acch))), rescale)); \
+        }
+
+        WRITE_BACK(pC0,      acc_j0[block*4 + 0], acc_j0[block*4 + 1], v_rescale0);
+        WRITE_BACK(pC0 + 16, acc_j0[block*4 + 2], acc_j0[block*4 + 3], v_rescale0);
+        WRITE_BACK(pC1,      acc_j1[block*4 + 0], acc_j1[block*4 + 1], v_rescale1);
+        WRITE_BACK(pC1 + 16, acc_j1[block*4 + 2], acc_j1[block*4 + 3], v_rescale1);
+#undef WRITE_BACK
+    }
+}
+
 void ggml_vec_dot_tl1(int n, float * s, size_t bs, const void * vx, size_t bx, const void * vy, size_t by, int nrc)
 {
     GGML_ASSERT(false); // I don't this needs to be implemented for BitNet TL1
