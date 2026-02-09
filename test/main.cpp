@@ -1611,7 +1611,7 @@ void vecmul_lut_packed6(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, i
 
 #define LOOKUP_ADD(u, vh, vl, acc_lo, acc_hi) { \
                         int8x16_t h = vqtbl1q_s8(vh, u); int8x16_t l = vqtbl1q_s8(vl, u); \
-                        reconstruct_int16_pair(h, l, o0, o1); \
+                        reconstruct_int16_pair2(h, l, o0, o1); \
                         acc_lo = vaddq_s16(acc_lo, o0); acc_hi = vaddq_s16(acc_hi, o1); \
                     }
                     LOOKUP_ADD(u0_0, vh0, vl0, acc[ai + 0], acc[ai + 1]);
