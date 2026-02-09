@@ -1560,9 +1560,11 @@ void vecmul_lut_packed6(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, i
 
             const int i_packed = i / 2;
             for (int k = 0; k < KK; k++) {
-                // Prefetch weight and LUT
+                // Prefetch weight (128 bytes) and LUT (32 bytes) for next K
                 if (k + 1 < KK) {
-                    __builtin_prefetch(A + (k + 1) * stride + i_packed, 0, 3);
+                    const uint8_t* pA_next = A + (k + 1) * stride + i_packed;
+                    __builtin_prefetch(pA_next, 0, 3);
+                    __builtin_prefetch(pA_next + 64, 0, 3);
                     __builtin_prefetch(QLUT + (k + 1) * lut_stride, 0, 3);
                 }
 
