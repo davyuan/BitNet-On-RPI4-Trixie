@@ -1528,11 +1528,11 @@ void vecmul_lut_packed5(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, i
    QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
         each K represents 2 activations in B. 
    C(1 x M)
-   This version uses SIMD optimizations. Single thread to construct LUT, then all threads share the same LUT for computation. This is to test the performance of LUT construction and sharing among threads.
-   we read 64 bytes from tensor A each time, which corresponds to 128 rows of A, and compute the dot product with 128 rows of C. 
+   This version uses SIMD optimizations. Single thread to construct LUT, then all threads share the same LUT for computation.
+   we read 256 bytes from tensor A each time, which corresponds to 256 rows of A, and compute the dot product with 256 rows of C. 
    We unroll the k-loop by 4 to increase the compute intensity and better amortize the cost of LUT access.
 */
-void vecmul_lut_packed6(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
+void vecmul_lut_packed_256(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
     int KK = K / 2;
     const int row_stride = M / 2;
     const int lut_stride = 32;
@@ -2306,14 +2306,14 @@ int main() {
     printf("\nComparing kernel output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-1, "Vecmul_lut_packed5 comparison");
 
-    double avg_vec_packed6_time = benchmark_matmul(
-        "\nStep 4: Running LUT Vec Packed6(10 iterations for average)\n",
-        "Vecmul_lut_packed6",
-        [&]() { vecmul_lut_packed6(A_packed_T, B_T, C_simd, weight_scale, M, N, K); },
+    double avg_vec_packed_256_time = benchmark_matmul(
+        "\nStep 4: Running LUT Vec Packed_256(10 iterations for average)\n",
+        "Vecmul_lut_packed_256",
+        [&]() { vecmul_lut_packed_256(A_packed_T, B_T, C_simd, weight_scale, M, N, K); },
         C_simd, M, N, num_iterations
     );
     printf("\nComparing kernel output (C) with reference (C_)...\n");
-    compare_matrices(C_simd, C_, M, N, 1e-1, "Vecmul_lut_packed6 comparison");
+    compare_matrices(C_simd, C_, M, N, 1e-1, "Vecmul_lut_packed_256 comparison");
 
     double avg_vec_packed_160_time = benchmark_matmul(
         "\nStep 4: Running LUT Vec Packed_160(10 iterations for average)\n",
@@ -2423,7 +2423,7 @@ int main() {
     double speedup_vec_micro_kernel = (double)naive_duration.count() / (double)avg_vec_micro_kernel_time;
     double speedup_vec_packed4 = (double)naive_duration.count() / (double)avg_vec_packed4_time;
     double speedup_vec_packed5 = (double)naive_duration.count() / (double)avg_vec_packed5_time;
-    double speedup_vec_packed6 = (double)naive_duration.count() / (double)avg_vec_packed6_time;
+    double speedup_vec_packed_256 = (double)naive_duration.count() / (double)avg_vec_packed_256_time;
     double speedup_vec_packed_160 = (double)naive_duration.count() / (double)avg_vec_packed_160_time;
     
     //double speedup_simd2 = (double)naive_duration.count() / (double)avg_simd_time2;
@@ -2451,8 +2451,8 @@ int main() {
     printf("Speedup (naive / vecmul_lut_packed4): %.2fx\n\n", speedup_vec_packed4);
     printf("LUT vecmul_lut_packed5 (avg):   %.2f ms\n", avg_vec_packed5_time);
     printf("Speedup (naive / vecmul_lut_packed5): %.2fx\n\n", speedup_vec_packed5);
-    printf("LUT vecmul_lut_packed6 (avg):   %.2f ms\n", avg_vec_packed6_time);
-    printf("Speedup (naive / vecmul_lut_packed6): %.2fx\n\n", speedup_vec_packed6);
+    printf("LUT vecmul_lut_packed_256 (avg):   %.2f ms\n", avg_vec_packed_256_time);
+    printf("Speedup (naive / vecmul_lut_packed_256): %.2fx\n\n", speedup_vec_packed_256);
     printf("LUT vecmul_lut_packed_160 (avg):   %.2f ms\n", avg_vec_packed_160_time);
     printf("Speedup (naive / vecmul_lut_packed_160): %.2fx\n\n", speedup_vec_packed_160);
     printf("LUT vecmul_lut_micro_kernel (avg):   %.2f ms\n", avg_vec_micro_kernel_time);
