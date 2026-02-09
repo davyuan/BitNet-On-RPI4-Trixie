@@ -558,13 +558,13 @@ void ggml_qgemm_lut_2col_256(int M, int N, int K, int ii, int j, uint8_t* A, int
                     int8x16_t r1h_j1 = vqtbl1q_s8(vh1, vec_a_unp.val[1]); \
                     int8x16_t r1l_j1 = vqtbl1q_s8(vl1, vec_a_unp.val[1]); \
                     int16x8_t o0, o1, o2, o3; \
-                    reconstruct_int16_pair(r0h_j0, r0l_j0, o0, o1); \
+                    reconstruct_int16_pair2(r0h_j0, r0l_j0, o0, o1); \
                     acc_j0[idx+0] = vaddq_s16(acc_j0[idx+0], o0); acc_j0[idx+1] = vaddq_s16(acc_j0[idx+1], o1); \
-                    reconstruct_int16_pair(r1h_j0, r1l_j0, o2, o3); \
+                    reconstruct_int16_pair2(r1h_j0, r1l_j0, o2, o3); \
                     acc_j0[idx+2] = vaddq_s16(acc_j0[idx+2], o2); acc_j0[idx+3] = vaddq_s16(acc_j0[idx+3], o3); \
-                    reconstruct_int16_pair(r0h_j1, r0l_j1, o0, o1); \
+                    reconstruct_int16_pair2(r0h_j1, r0l_j1, o0, o1); \
                     acc_j1[idx+0] = vaddq_s16(acc_j1[idx+0], o0); acc_j1[idx+1] = vaddq_s16(acc_j1[idx+1], o1); \
-                    reconstruct_int16_pair(r1h_j1, r1l_j1, o2, o3); \
+                    reconstruct_int16_pair2(r1h_j1, r1l_j1, o2, o3); \
                     acc_j1[idx+2] = vaddq_s16(acc_j1[idx+2], o2); acc_j1[idx+3] = vaddq_s16(acc_j1[idx+3], o3); \
                 }
 
@@ -668,13 +668,13 @@ void ggml_qgemm_lut_2col_160(int M, int N, int K, int ii, int j, uint8_t* A, int
                     int8x16_t r1h_j1 = vqtbl1q_s8(vh1, vec_a_unp.val[1]); \
                     int8x16_t r1l_j1 = vqtbl1q_s8(vl1, vec_a_unp.val[1]); \
                     int16x8_t o0, o1, o2, o3; \
-                    reconstruct_int16_pair(r0h_j0, r0l_j0, o0, o1); \
+                    reconstruct_int16_pair2(r0h_j0, r0l_j0, o0, o1); \
                     acc_j0[idx+0] = vaddq_s16(acc_j0[idx+0], o0); acc_j0[idx+1] = vaddq_s16(acc_j0[idx+1], o1); \
-                    reconstruct_int16_pair(r1h_j0, r1l_j0, o2, o3); \
+                    reconstruct_int16_pair2(r1h_j0, r1l_j0, o2, o3); \
                     acc_j0[idx+2] = vaddq_s16(acc_j0[idx+2], o2); acc_j0[idx+3] = vaddq_s16(acc_j0[idx+3], o3); \
-                    reconstruct_int16_pair(r0h_j1, r0l_j1, o0, o1); \
+                    reconstruct_int16_pair2(r0h_j1, r0l_j1, o0, o1); \
                     acc_j1[idx+0] = vaddq_s16(acc_j1[idx+0], o0); acc_j1[idx+1] = vaddq_s16(acc_j1[idx+1], o1); \
-                    reconstruct_int16_pair(r1h_j1, r1l_j1, o2, o3); \
+                    reconstruct_int16_pair2(r1h_j1, r1l_j1, o2, o3); \
                     acc_j1[idx+2] = vaddq_s16(acc_j1[idx+2], o2); acc_j1[idx+3] = vaddq_s16(acc_j1[idx+3], o3); \
                 }
 
