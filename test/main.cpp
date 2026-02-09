@@ -1585,7 +1585,7 @@ void vecmul_lut_packed6(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, i
                 const int8x16_t vh3 = q1.val[2];
                 const int8x16_t vl3 = q1.val[3];
 
-#define PROCESS_32_ROWS_4K(va0, va1, va2, va3, vh0, vl0, vh1, vl1, vh2, vl2, vh3, vl3, acc0, acc1, acc2, acc3) { \
+#define PROCESS_32_ROWS_4K(va0, va1, va2, va3, vh0, vl0, vh1, vl1, vh2, vl2, vh3, vl3, acc0, acc1) { \
                     uint8x16_t va0t = vshrq_n_u8(va0, 4); uint8x16_t va0b = vandq_u8(va0, vec_mask); \
                     uint8x16_t va1t = vshrq_n_u8(va1, 4); uint8x16_t va1b = vandq_u8(va1, vec_mask); \
                     uint8x16_t va2t = vshrq_n_u8(va2, 4); uint8x16_t va2b = vandq_u8(va2, vec_mask); \
@@ -1626,7 +1626,6 @@ void vecmul_lut_packed6(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, i
                 GROUP_STEP(96, acc[12], acc[13]);
                 GROUP_STEP(112, acc[14], acc[15]);
 #undef GROUP_STEP
-#undef PROCESS_32_ROWS_4K
 #undef PROCESS_32_ROWS_4K
             }
 
