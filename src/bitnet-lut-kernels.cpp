@@ -287,7 +287,7 @@ void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT,
     }
 }
 
-void ggml_qgemm_lut_128(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT, void* Scales, void* LUT_Scales, float32_t* C) {
+void ggml_qgemm_lut_160(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT, void* Scales, void* LUT_Scales, float32_t* C) {
     int KK = K / 2;
     const int lut_stride = 32;
     const int i_packed = ii / 2;
