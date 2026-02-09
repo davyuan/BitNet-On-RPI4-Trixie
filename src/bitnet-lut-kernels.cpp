@@ -206,7 +206,7 @@ void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT,
 
     for (int k = 0; k < KK; k += 4) {
         if (k + 4 < KK) {
-            const uint8_t* pA_next = A + (k + 4) * stride + i_packed;
+            const uint8_t* pA_next = A + (k + 4) * row_stride + i_packed;
             __builtin_prefetch(pA_next, 0, 3);
             __builtin_prefetch(pA_next + 64, 0, 3);
             __builtin_prefetch(pA_next + row_stride, 0, 3);
@@ -274,7 +274,7 @@ void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT,
     }
 
     for (int block = 0; block < 8; block++) {
-        float32_t* pC = &(C[i + block * 32]);
+        float32_t* pC = &(C[ii + block * 32]);
 #define WRITE_BACK_V(out_ptr, accl, acch) { \
             vst1q_f32(out_ptr + 0, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(accl))), v_rescale)); \
             vst1q_f32(out_ptr + 4, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(accl))), v_rescale)); \
