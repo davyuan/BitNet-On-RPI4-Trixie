@@ -192,6 +192,9 @@ void ggml_preprocessor(int M, int K, void* B, void* LUT_Scales, void* QLUT) {
 
 void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT, void* Scales, void* LUT_Scales, float32_t* C) {
     int KK = K / 2;
+    const int lut_stride = 32;
+    const int i_packed = ii / 2;
+    const int row_stride = M / 2;
     const uint8x16_t vec_mask = vdupq_n_u8(0x0f);
     const float32_t lut_scale = ((float32_t*)LUT_Scales)[0];
     const float32_t weight_scale = ((float32_t*)Scales)[0];
@@ -201,18 +204,30 @@ void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT,
     int16x8_t acc[16];
     for (int b = 0; b < 16; b++) acc[b] = vdupq_n_s16(0);
 
-    const int i_packed = ii / 2;
-    const int row_stride = M / 2;
-
     for (int k = 0; k < KK; k += 4) {
-        int8x16_t vh0 = vld1q_s8(LUT + k * 32);
-        int8x16_t vl0 = vld1q_s8(LUT + k * 32 + 16);
-        int8x16_t vh1 = vld1q_s8(LUT + (k + 1) * 32);
-        int8x16_t vl1 = vld1q_s8(LUT + (k + 1) * 32 + 16);
-        int8x16_t vh2 = vld1q_s8(LUT + (k + 2) * 32);
-        int8x16_t vl2 = vld1q_s8(LUT + (k + 2) * 32 + 16);
-        int8x16_t vh3 = vld1q_s8(LUT + (k + 3) * 32);
-        int8x16_t vl3 = vld1q_s8(LUT + (k + 3) * 32 + 16);
+        if (k + 4 < KK) {
+            const uint8_t* pA_next = A + (k + 4) * row_stride + i_packed;
+            __builtin_prefetch(pA_next, 0, 3);
+            __builtin_prefetch(pA_next + row_stride, 0, 3);
+            __builtin_prefetch(pA_next + 2 * row_stride, 0, 3);
+            __builtin_prefetch(pA_next + 3 * row_stride, 0, 3);
+
+            // Prefetch QLUT entries
+            __builtin_prefetch(LUT + (k + 4) * lut_stride, 0, 3);
+            __builtin_prefetch(LUT + (k + 4) * lut_stride + 64, 0, 3);
+        }
+                
+        const int8_t* pQLUT = LUT + k * lut_stride;
+        int8x16x4_t q0 = vld1q_s8_x4(pQLUT);
+        int8x16x4_t q1 = vld1q_s8_x4(pQLUT + 64);
+        const int8x16_t vh0 = q0.val[0];
+        const int8x16_t vl0 = q0.val[1];
+        const int8x16_t vh1 = q0.val[2];
+        const int8x16_t vl1 = q0.val[3];
+        const int8x16_t vh2 = q1.val[0];
+        const int8x16_t vl2 = q1.val[1];
+        const int8x16_t vh3 = q1.val[2];
+        const int8x16_t vl3 = q1.val[3];
 
 #define PROCESS_32_ROWS(a_ptr, v_h, v_l, accl0, accl1, acch0, acch1) { \
             uint8x16_t vec_a = vld1q_u8(a_ptr); \
