@@ -209,12 +209,12 @@ void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT,
             const uint8_t* pA_next = A + (k + 4) * stride + i_packed;
             __builtin_prefetch(pA_next, 0, 3);
             __builtin_prefetch(pA_next + 64, 0, 3);
-            __builtin_prefetch(pA_next + stride, 0, 3);
-            __builtin_prefetch(pA_next + stride + 64, 0, 3);
-            __builtin_prefetch(pA_next + 2 * stride, 0, 3);
-            __builtin_prefetch(pA_next + 2 * stride + 64, 0, 3);
-            __builtin_prefetch(pA_next + 3 * stride, 0, 3);
-            __builtin_prefetch(pA_next + 3 * stride + 64, 0, 3);
+            __builtin_prefetch(pA_next + row_stride, 0, 3);
+            __builtin_prefetch(pA_next + row_stride + 64, 0, 3);
+            __builtin_prefetch(pA_next + 2 * row_stride, 0, 3);
+            __builtin_prefetch(pA_next + 2 * row_stride + 64, 0, 3);
+            __builtin_prefetch(pA_next + 3 * row_stride, 0, 3);
+            __builtin_prefetch(pA_next + 3 * row_stride + 64, 0, 3);
 
             const int8_t* pQLUT_next = LUT + (k + 4) * lut_stride;
             __builtin_prefetch(pQLUT_next, 0, 3);
@@ -230,10 +230,10 @@ void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT,
         int8x16_t vh3 = vld1q_s8(LUT + (k + 3) * lut_stride + 0);
         int8x16_t vl3 = vld1q_s8(LUT + (k + 3) * lut_stride + 16);
 
-        const uint8_t* pA0_base = A + (k + 0) * stride + i_packed;
-        const uint8_t* pA1_base = A + (k + 1) * stride + i_packed;
-        const uint8_t* pA2_base = A + (k + 2) * stride + i_packed;
-        const uint8_t* pA3_base = A + (k + 3) * stride + i_packed;
+        const uint8_t* pA0_base = A + (k + 0) * row_stride + i_packed;
+        const uint8_t* pA1_base = A + (k + 1) * row_stride + i_packed;
+        const uint8_t* pA2_base = A + (k + 2) * row_stride + i_packed;
+        const uint8_t* pA3_base = A + (k + 3) * row_stride + i_packed;
 
         for (int r = 0; r < 256; r += 32) {
             const int irp = r / 2;
