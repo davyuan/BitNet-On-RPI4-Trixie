@@ -1585,48 +1585,47 @@ void vecmul_lut_packed6(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, i
                 const int8x16_t vh3 = q1.val[2];
                 const int8x16_t vl3 = q1.val[3];
 
-#define PROCESS_32_ROWS_4K(va0, va1, va2, va3, vh0, vl0, vh1, vl1, vh2, vl2, vh3, vl3, acc0, acc1) { \
-                    uint8x16_t va0t = vshrq_n_u8(va0, 4); uint8x16_t va0b = vandq_u8(va0, vec_mask); \
-                    uint8x16_t va1t = vshrq_n_u8(va1, 4); uint8x16_t va1b = vandq_u8(va1, vec_mask); \
-                    uint8x16_t va2t = vshrq_n_u8(va2, 4); uint8x16_t va2b = vandq_u8(va2, vec_mask); \
-                    uint8x16_t va3t = vshrq_n_u8(va3, 4); uint8x16_t va3b = vandq_u8(va3, vec_mask); \
-                    int8x16_t rh0_0 = vqtbl1q_s8(vh0, va0t); int8x16_t rl0_0 = vqtbl1q_s8(vl0, va0b); \
-                    int8x16_t rh0_1 = vqtbl1q_s8(vh1, va1t); int8x16_t rl0_1 = vqtbl1q_s8(vl1, va1b); \
-                    int8x16_t rh0_2 = vqtbl1q_s8(vh2, va2t); int8x16_t rl0_2 = vqtbl1q_s8(vl2, va2b); \
-                    int8x16_t rh0_3 = vqtbl1q_s8(vh3, va3t); int8x16_t rl0_3 = vqtbl1q_s8(vl3, va3b); \
-                    int16x8_t o0, o1; \
-                    reconstruct_int16_pair(rh0_0, rl0_0, o0, o1); \
-                    acc0 = vaddq_s16(acc0, o0); acc1 = vaddq_s16(acc1, o1); \
-                    reconstruct_int16_pair(rh0_1, rl0_1, o0, o1); \
-                    acc0 = vaddq_s16(acc0, o0); acc1 = vaddq_s16(acc1, o1); \
-                    reconstruct_int16_pair(rh0_2, rl0_2, o0, o1); \
-                    acc0 = vaddq_s16(acc0, o0); acc1 = vaddq_s16(acc1, o1); \
-                    reconstruct_int16_pair(rh0_3, rl0_3, o0, o1); \
-                    acc0 = vaddq_s16(acc0, o0); acc1 = vaddq_s16(acc1, o1); \
+#define PROCESS_32_ROWS_2K(pA0, vh0, vl0, pA1, vh1, vl1, a0, a1, a2, a3) { \
+                    uint8x16_t w0 = vld1q_u8(pA0); \
+                    uint8x16_t w1 = vld1q_u8(pA1); \
+                    uint8x16x2_t u0 = vzipq_u8(vshrq_n_u8(w0, 4), vandq_u8(w0, vec_mask)); \
+                    uint8x16x2_t u1 = vzipq_u8(vshrq_n_u8(w1, 4), vandq_u8(w1, vec_mask)); \
+                    int8x16_t h0_0 = vqtbl1q_s8(vh0, u0.val[0]); \
+                    int8x16_t l0_0 = vqtbl1q_s8(vl0, u0.val[0]); \
+                    int8x16_t h1_0 = vqtbl1q_s8(vh1, u1.val[0]); \
+                    int8x16_t l1_0 = vqtbl1q_s8(vl1, u1.val[0]); \
+                    int16x8_t o0, o1, o2, o3; \
+                    reconstruct_int16_pair(h0_0, l0_0, o0, o1); \
+                    a0 = vaddq_s16(a0, o0); a1 = vaddq_s16(a1, o1); \
+                    reconstruct_int16_pair(h1_0, l1_0, o2, o3); \
+                    a0 = vaddq_s16(a0, o2); a1 = vaddq_s16(a1, o3); \
+                    int8x16_t h0_1 = vqtbl1q_s8(vh0, u0.val[1]); \
+                    int8x16_t l0_1 = vqtbl1q_s8(vl0, u0.val[1]); \
+                    int8x16_t h1_1 = vqtbl1q_s8(vh1, u1.val[1]); \
+                    int8x16_t l1_1 = vqtbl1q_s8(vl1, u1.val[1]); \
+                    reconstruct_int16_pair(h0_1, l0_1, o0, o1); \
+                    a2 = vaddq_s16(a2, o0); a3 = vaddq_s16(a3, o1); \
+                    reconstruct_int16_pair(h1_1, l1_1, o2, o3); \
+                    a2 = vaddq_s16(a2, o2); a3 = vaddq_s16(a3, o3); \
                 }
 
-                const uint8_t* pA0 = A + k * stride + i_packed;
+                const uint8_t* pA0 = A + (k + 0) * stride + i_packed;
                 const uint8_t* pA1 = A + (k + 1) * stride + i_packed;
                 const uint8_t* pA2 = A + (k + 2) * stride + i_packed;
                 const uint8_t* pA3 = A + (k + 3) * stride + i_packed;
 
-#define GROUP_STEP(off, a0, a1) { \
-                    uint8x16_t v0 = vld1q_u8(pA0 + off); \
-                    uint8x16_t v1 = vld1q_u8(pA1 + off); \
-                    uint8x16_t v2 = vld1q_u8(pA2 + off); \
-                    uint8x16_t v3 = vld1q_u8(pA3 + off); \
-                    PROCESS_32_ROWS_4K(v0, v1, v2, v3, vh0, vl0, vh1, vl1, vh2, vl2, vh3, vl3, a0, a1); \
-                }
-                GROUP_STEP(0,  acc[0],  acc[1]);
-                GROUP_STEP(16, acc[2],  acc[3]);
-                GROUP_STEP(32, acc[4],  acc[5]);
-                GROUP_STEP(48, acc[6],  acc[7]);
-                GROUP_STEP(64, acc[8],  acc[9]);
-                GROUP_STEP(80, acc[10], acc[11]);
-                GROUP_STEP(96, acc[12], acc[13]);
-                GROUP_STEP(112, acc[14], acc[15]);
-#undef GROUP_STEP
-#undef PROCESS_32_ROWS_4K
+                PROCESS_32_ROWS_2K(pA0 + 0, vh0, vl0, pA1 + 0, vh1, vl1, acc[0], acc[1], acc[2], acc[3]);
+                PROCESS_32_ROWS_2K(pA2 + 0, vh2, vl2, pA3 + 0, vh3, vl3, acc[0], acc[1], acc[2], acc[3]);
+
+                PROCESS_32_ROWS_2K(pA0 + 16, vh0, vl0, pA1 + 16, vh1, vl1, acc[4], acc[5], acc[6], acc[7]);
+                PROCESS_32_ROWS_2K(pA2 + 16, vh2, vl2, pA3 + 16, vh3, vl3, acc[4], acc[5], acc[6], acc[7]);
+
+                PROCESS_32_ROWS_2K(pA0 + 32, vh0, vl0, pA1 + 32, vh1, vl1, acc[8], acc[9], acc[10], acc[11]);
+                PROCESS_32_ROWS_2K(pA2 + 32, vh2, vl2, pA3 + 32, vh3, vl3, acc[8], acc[9], acc[10], acc[11]);
+
+                PROCESS_32_ROWS_2K(pA0 + 48, vh0, vl0, pA1 + 48, vh1, vl1, acc[12], acc[13], acc[14], acc[15]);
+                PROCESS_32_ROWS_2K(pA2 + 48, vh2, vl2, pA3 + 48, vh3, vl3, acc[12], acc[13], acc[14], acc[15]);
+#undef PROCESS_32_ROWS_2K
             }
 
             // Write-back
