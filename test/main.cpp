@@ -1669,33 +1669,8 @@ void vecmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, float32_t* 
     #pragma omp parallel num_threads(4)
     {    
         const int ith = omp_get_thread_num();
-        const int nth = omp_get_num_threads();
-
-        // 1. Partition K in units of 16 to ensure SIMD alignment (16 activations per block)
-        const int n_blocks = K / 16;
-        const int b_start  = (n_blocks * ith) / nth;
-        const int b_end    = (n_blocks * (ith + 1)) / nth;
-        
-        const int k_start = b_start * 16;
-        const int k_len   = (b_end - b_start) * 16;
-
-        float32_t local_max = (k_len > 0) ? ggml_get_tensor_max(k_len, B + k_start) : 0.0f;
-        #pragma omp critical
-        {
-            if (local_max > LUT_Scales[0]) LUT_Scales[0] = local_max;
-        }
-        #pragma omp barrier
-        
-        if(ith == 0) {
-            float32_t global_max = LUT_Scales[0];
-            LUT_Scales[0] = (global_max > epsilon) ? (127.0f / global_max) : 1.0f;
-        }
-        #pragma omp barrier
-
-        const float32x4_t v_rescale = vdupq_n_f32(weight_scale / LUT_Scales[0]);
-        
-        if (k_len > 0) {
-            ggml_lut_ctor(k_len, QLUT + k_start * 16, B + k_start, LUT_Scales);
+        if (ith == 0) {
+            ggml_preprocessor(M, K, B, LUT_Scales, QLUT);
         }
         #pragma omp barrier
 
