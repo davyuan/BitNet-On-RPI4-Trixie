@@ -1554,68 +1554,50 @@ void vecmul_lut_packed6(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, i
         const float32x4_t v_rescale = vdupq_n_f32(weight_scale / LUT_Scales[0]);
 
         #pragma omp for
-        for (int i = 0; i < M; i += 128) {
-            int16x8_t acc[16];
-            for (int b = 0; b < 16; b++) acc[b] = vdupq_n_s16(0);
+        for (int i = 0; i < M; i += 256) {
+            int16x8_t acc[32];
+            for (int b = 0; b < 32; b++) acc[b] = vdupq_n_s16(0);
 
             const int i_packed = i / 2;
-            for (int k = 0; k < KK; k += 4) {
-                // Prefetch A data and QLUT entries for the next k-iteration block
-                if (k + 4 < KK) {
-                    const uint8_t* pA_next = A + (k + 4) * stride + i_packed;
-                    __builtin_prefetch(pA_next, 0, 3);
-                    __builtin_prefetch(pA_next + stride, 0, 3);
-                    __builtin_prefetch(pA_next + 2 * stride, 0, 3);
-                    __builtin_prefetch(pA_next + 3 * stride, 0, 3);
-
-                    // Prefetch QLUT entries
-                    __builtin_prefetch(QLUT + (k + 4) * lut_stride, 0, 3);
-                    __builtin_prefetch(QLUT + (k + 4) * lut_stride + 64, 0, 3);
+            for (int k = 0; k < KK; k++) {
+                // Prefetch weight and LUT
+                if (k + 1 < KK) {
+                    __builtin_prefetch(A + (k + 1) * stride + i_packed, 0, 3);
+                    __builtin_prefetch(QLUT + (k + 1) * lut_stride, 0, 3);
                 }
 
                 const int8_t* pQLUT = QLUT + k * lut_stride;
-                int8x16_t vh0 = vld1q_s8(pQLUT + 0);
-                int8x16_t vl0 = vld1q_s8(pQLUT + 16);
-                int8x16_t vh1 = vld1q_s8(pQLUT + 32);
-                int8x16_t vl1 = vld1q_s8(pQLUT + 48);
-                int8x16_t vh2 = vld1q_s8(pQLUT + 64);
-                int8x16_t vl2 = vld1q_s8(pQLUT + 80);
-                int8x16_t vh3 = vld1q_s8(pQLUT + 96);
-                int8x16_t vl3 = vld1q_s8(pQLUT + 112);
+                int8x16_t vh = vld1q_s8(pQLUT);
+                int8x16_t vl = vld1q_s8(pQLUT + 16);
 
-#define PROCESS_128_ROWS_FOR_K(vh, vl, pA_ptr) { \
-                    uint8x16x4_t w = vld1q_u8_x4(pA_ptr); \
-                    for (int b = 0; b < 4; b++) { \
-                        uint8x16_t wa = w.val[b]; \
-                        uint8x16x2_t u = vzipq_u8(vshrq_n_u8(wa, 4), vandq_u8(wa, vec_mask)); \
-                        int8x16_t h0 = vqtbl1q_s8(vh, u.val[0]); \
-                        int8x16_t l0 = vqtbl1q_s8(vl, u.val[0]); \
-                        int8x16_t h1 = vqtbl1q_s8(vh, u.val[1]); \
-                        int8x16_t l1 = vqtbl1q_s8(vl, u.val[1]); \
-                        int16x8_t o[4]; \
-                        reconstruct_int16_pair(h0, l0, o[0], o[1]); \
-                        reconstruct_int16_pair(h1, l1, o[2], o[3]); \
-                        acc[b*4 + 0] = vaddq_s16(acc[b*4 + 0], o[0]); \
-                        acc[b*4 + 1] = vaddq_s16(acc[b*4 + 1], o[1]); \
-                        acc[b*4 + 2] = vaddq_s16(acc[b*4 + 2], o[2]); \
-                        acc[b*4 + 3] = vaddq_s16(acc[b*4 + 3], o[3]); \
-                    } \
+                const uint8_t* pA = A + k * stride + i_packed;
+                #pragma unroll
+                for (int b = 0; b < 8; b++) {
+                    uint8x16_t wa = vld1q_u8(pA + b * 16);
+                    uint8x16x2_t u = vzipq_u8(vshrq_n_u8(wa, 4), vandq_u8(wa, vec_mask));
+                    
+                    int8x16_t h0 = vqtbl1q_s8(vh, u.val[0]);
+                    int8x16_t l0 = vqtbl1q_s8(vl, u.val[0]);
+                    int8x16_t h1 = vqtbl1q_s8(vh, u.val[1]);
+                    int8x16_t l1 = vqtbl1q_s8(vl, u.val[1]);
+
+                    int16x8_t o0, o1, o2, o3;
+                    reconstruct_int16_pair(h0, l0, o0, o1);
+                    acc[b*4 + 0] = vaddq_s16(acc[b*4 + 0], o0);
+                    acc[b*4 + 1] = vaddq_s16(acc[b*4 + 1], o1);
+                    reconstruct_int16_pair(h1, l1, o2, o3);
+                    acc[b*4 + 2] = vaddq_s16(acc[b*4 + 2], o2);
+                    acc[b*4 + 3] = vaddq_s16(acc[b*4 + 3], o3);
                 }
-
-                PROCESS_128_ROWS_FOR_K(vh0, vl0, A + (k+0) * stride + i_packed);
-                PROCESS_128_ROWS_FOR_K(vh1, vl1, A + (k+1) * stride + i_packed);
-                PROCESS_128_ROWS_FOR_K(vh2, vl2, A + (k+2) * stride + i_packed);
-                PROCESS_128_ROWS_FOR_K(vh3, vl3, A + (k+3) * stride + i_packed);
-#undef PROCESS_128_ROWS_FOR_K
             }
 
             // Write-back
-            for (int block = 0; block < 4; block++) {
+            for (int block = 0; block < 8; block++) {
                 float32_t* pC = &(C[i + block * 32]);
 #define WRITE_BACK(out_ptr, accl, acch) { \
-                    vst1q_f32(out_ptr + 0, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(accl))), v_rescale)); \
-                    vst1q_f32(out_ptr + 4, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(accl))), v_rescale)); \
-                    vst1q_f32(out_ptr + 8, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(acch))), v_rescale)); \
+                    vst1q_f32(out_ptr + 0,  vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(accl))), v_rescale)); \
+                    vst1q_f32(out_ptr + 4,  vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(accl))), v_rescale)); \
+                    vst1q_f32(out_ptr + 8,  vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(acch))), v_rescale)); \
                     vst1q_f32(out_ptr + 12, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(acch))), v_rescale)); \
                 }
                 WRITE_BACK(pC,      acc[block*4 + 0], acc[block*4 + 1]);
