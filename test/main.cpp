@@ -1314,8 +1314,8 @@ void vecmul_lut_packed4(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, i
 
         #pragma omp for
         for (int i = 0; i < M; i += 128) {
-            float32x4_t acc_f[32]; // 16 blocks * 2 (low/high)
-            for (int b = 0; b < 32; b++) acc_f[b] = vdupq_n_f32(0.0f);
+            int16x8_t acc[16];
+            for (int b = 0; b < 16; b++) acc[b] = vdupq_n_s16(0);
 
             const int i_packed = i / 2;
             for (int k = 0; k < KK; k += 4) {
@@ -1327,9 +1327,6 @@ void vecmul_lut_packed4(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, i
                 const int8x16_t vl2 = vld1q_s8(QLUT + (k + 2) * 32 + 16);
                 const int8x16_t vh3 = vld1q_s8(QLUT + (k + 3) * 32);
                 const int8x16_t vl3 = vld1q_s8(QLUT + (k + 3) * 32 + 16);
-
-                int16x8_t acc_s16[16];
-                for (int b = 0; b < 16; b++) acc_s16[b] = vdupq_n_s16(0);
 
 #define PROCESS_32_ROWS(a_ptr, v_h, v_l, accl_0, acch_0, accl_1, acch_1) { \
                     uint8x16_t vec_a = vld1q_u8(a_ptr); \
@@ -1348,43 +1345,46 @@ void vecmul_lut_packed4(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, i
                 }
 
                 const uint8_t* pA0 = A + k * M / 2 + i_packed;
-                PROCESS_32_ROWS(pA0,      vh0, vl0, acc_s16[0], acc_s16[1], acc_s16[2], acc_s16[3]);
-                PROCESS_32_ROWS(pA0 + 16, vh0, vl0, acc_s16[4], acc_s16[5], acc_s16[6], acc_s16[7]);
-                PROCESS_32_ROWS(pA0 + 32, vh0, vl0, acc_s16[8], acc_s16[9], acc_s16[10], acc_s16[11]);
-                PROCESS_32_ROWS(pA0 + 48, vh0, vl0, acc_s16[12], acc_s16[13], acc_s16[14], acc_s16[15]);
+                PROCESS_32_ROWS(pA0,      vh0, vl0, acc[0],  acc[1],  acc[2],  acc[3]);
+                PROCESS_32_ROWS(pA0 + 16, vh0, vl0, acc[4],  acc[5],  acc[6],  acc[7]);
+                PROCESS_32_ROWS(pA0 + 32, vh0, vl0, acc[8],  acc[9],  acc[10], acc[11]);
+                PROCESS_32_ROWS(pA0 + 48, vh0, vl0, acc[12], acc[13], acc[14], acc[15]);
 
                 const uint8_t* pA1 = A + (k + 1) * M / 2 + i_packed;
-                PROCESS_32_ROWS(pA1,      vh1, vl1, acc_s16[0], acc_s16[1], acc_s16[2], acc_s16[3]);
-                PROCESS_32_ROWS(pA1 + 16, vh1, vl1, acc_s16[4], acc_s16[5], acc_s16[6], acc_s16[7]);
-                PROCESS_32_ROWS(pA1 + 32, vh1, vl1, acc_s16[8], acc_s16[9], acc_s16[10], acc_s16[11]);
-                PROCESS_32_ROWS(pA1 + 48, vh1, vl1, acc_s16[12], acc_s16[13], acc_s16[14], acc_s16[15]);
+                PROCESS_32_ROWS(pA1,      vh1, vl1, acc[0],  acc[1],  acc[2],  acc[3]);
+                PROCESS_32_ROWS(pA1 + 16, vh1, vl1, acc[4],  acc[5],  acc[6],  acc[7]);
+                PROCESS_32_ROWS(pA1 + 32, vh1, vl1, acc[8],  acc[9],  acc[10], acc[11]);
+                PROCESS_32_ROWS(pA1 + 48, vh1, vl1, acc[12], acc[13], acc[14], acc[15]);
 
                 const uint8_t* pA2 = A + (k + 2) * M / 2 + i_packed;
-                PROCESS_32_ROWS(pA2,      vh2, vl2, acc_s16[0], acc_s16[1], acc_s16[2], acc_s16[3]);
-                PROCESS_32_ROWS(pA2 + 16, vh2, vl2, acc_s16[4], acc_s16[5], acc_s16[6], acc_s16[7]);
-                PROCESS_32_ROWS(pA2 + 32, vh2, vl2, acc_s16[8], acc_s16[9], acc_s16[10], acc_s16[11]);
-                PROCESS_32_ROWS(pA2 + 48, vh2, vl2, acc_s16[12], acc_s16[13], acc_s16[14], acc_s16[15]);
+                PROCESS_32_ROWS(pA2,      vh2, vl2, acc[0],  acc[1],  acc[2],  acc[3]);
+                PROCESS_32_ROWS(pA2 + 16, vh2, vl2, acc[4],  acc[5],  acc[6],  acc[7]);
+                PROCESS_32_ROWS(pA2 + 32, vh2, vl2, acc[8],  acc[9],  acc[10], acc[11]);
+                PROCESS_32_ROWS(pA2 + 48, vh2, vl2, acc[12], acc[13], acc[14], acc[15]);
 
                 const uint8_t* pA3 = A + (k + 3) * M / 2 + i_packed;
-                PROCESS_32_ROWS(pA3,      vh3, vl3, acc_s16[0], acc_s16[1], acc_s16[2], acc_s16[3]);
-                PROCESS_32_ROWS(pA3 + 16, vh3, vl3, acc_s16[4], acc_s16[5], acc_s16[6], acc_s16[7]);
-                PROCESS_32_ROWS(pA3 + 32, vh3, vl3, acc_s16[8], acc_s16[9], acc_s16[10], acc_s16[11]);
-                PROCESS_32_ROWS(pA3 + 48, vh3, vl3, acc_s16[12], acc_s16[13], acc_s16[14], acc_s16[15]);
+                PROCESS_32_ROWS(pA3,      vh3, vl3, acc[0],  acc[1],  acc[2],  acc[3]);
+                PROCESS_32_ROWS(pA3 + 16, vh3, vl3, acc[4],  acc[5],  acc[6],  acc[7]);
+                PROCESS_32_ROWS(pA3 + 32, vh3, vl3, acc[8],  acc[9],  acc[10], acc[11]);
+                PROCESS_32_ROWS(pA3 + 48, vh3, vl3, acc[12], acc[13], acc[14], acc[15]);
 #undef PROCESS_32_ROWS
-
-                for (int b = 0; b < 16; b++) {
-                    acc_f[b*2]   = vaddq_f32(acc_f[b*2],   vcvtq_f32_s32(vmovl_s16(vget_low_s16(acc_s16[b]))));
-                    acc_f[b*2+1] = vaddq_f32(acc_f[b*2+1], vcvtq_f32_s32(vmovl_s16(vget_high_s16(acc_s16[b]))));
-                }
             }
 
-            float32_t* pC = &(C[i]);
-            for (int b = 0; b < 32; b++) {
-                vst1q_f32(pC + b * 4, vmulq_f32(acc_f[b], v_rescale));
+            // Write-back
+            for (int block = 0; block < 4; block++) {
+                float32_t* pC = &(C[i + block * 32]);
+#define WRITE_BACK(out_ptr, accl, acch) { \
+                    vst1q_f32(out_ptr + 0, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(accl))), v_rescale)); \
+                    vst1q_f32(out_ptr + 4, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(accl))), v_rescale)); \
+                    vst1q_f32(out_ptr + 8, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(acch))), v_rescale)); \
+                    vst1q_f32(out_ptr + 12, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(acch))), v_rescale)); \
+                }
+                WRITE_BACK(pC,      acc[block*4 + 0], acc[block*4 + 1]);
+                WRITE_BACK(pC + 16, acc[block*4 + 2], acc[block*4 + 3]);
+#undef WRITE_BACK
             }
         }
     }
-
     aligned_free(QLUT);
     aligned_free(LUT_Scales);
 }
@@ -1936,15 +1936,6 @@ int main() {
     printf("\nComparing kernel output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-1, "Vecmul_lut_packed3 comparison");
 
-    double avg_vec_micro_kernel_time = benchmark_matmul(
-        "\nStep 4: Running LUT Vec micro kernel(10 iterations for average)\n",
-        "Vecmul_lut_micro_kernel",
-        [&]() { vecmul_lut_micro_kernel(A_packed_T, B_T, C_simd, weight_scale, M, N, K); },
-        C_simd, M, N, num_iterations
-    );
-    printf("\nComparing kernel output (C) with reference (C_)...\n");
-    compare_matrices(C_simd, C_, M, N, 1e-1, "Vecmul_lut_micro_kernel comparison");
-
     double avg_vec_packed4_time = benchmark_matmul(
         "\nStep 4: Running LUT Vec Packed4(10 iterations for average)\n",
         "Vecmul_lut_packed4",
@@ -1953,6 +1944,15 @@ int main() {
     );
     printf("\nComparing kernel output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-1, "Vecmul_lut_packed4 comparison");
+    
+    double avg_vec_micro_kernel_time = benchmark_matmul(
+        "\nStep 4: Running LUT Vec micro kernel(10 iterations for average)\n",
+        "Vecmul_lut_micro_kernel",
+        [&]() { vecmul_lut_micro_kernel(A_packed_T, B_T, C_simd, weight_scale, M, N, K); },
+        C_simd, M, N, num_iterations
+    );
+    printf("\nComparing kernel output (C) with reference (C_)...\n");
+    compare_matrices(C_simd, C_, M, N, 1e-1, "Vecmul_lut_micro_kernel comparison");
     
     /*double avg_lut_time = benchmark_matmul(
         "\nStep 2: Running LUT Tiled(10 iterations for average)\n",
