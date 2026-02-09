@@ -1700,7 +1700,7 @@ void vecmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, float32_t* 
         #pragma omp barrier
 
         #pragma omp for
-        for (int ii = 0; ii < ne01; ii += BM) {
+        for (int ii = 0; ii < ne01; ii += 256) {
             ggml_qgemm_lut( ne01, ne11, ne10, ii, 0, A, 
                             QLUT, 
                             ws, 
