@@ -1321,13 +1321,17 @@ void vecmul_lut_packed4(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, i
 
             const int i_packed = i / 2;
             for (int k = 0; k < KK; k += 4) {
-                // Prefetch A data for the next k-iteration block
+                // Prefetch A data and QLUT entries for the next k-iteration block
                 if (k + 4 < KK) {
                     const uint8_t* pA_next = A + (k + 4) * stride + i_packed;
                     __builtin_prefetch(pA_next, 0, 3);
                     __builtin_prefetch(pA_next + stride, 0, 3);
                     __builtin_prefetch(pA_next + 2 * stride, 0, 3);
                     __builtin_prefetch(pA_next + 3 * stride, 0, 3);
+
+                    // Prefetch QLUT entries
+                    __builtin_prefetch(QLUT + (k + 4) * lut_stride, 0, 3);
+                    __builtin_prefetch(QLUT + (k + 4) * lut_stride + 64, 0, 3);
                 }
 
                 const int8_t* pQLUT = QLUT + k * lut_stride;
