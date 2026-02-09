@@ -1295,6 +1295,8 @@ void vecmul_lut_packed3(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, i
 */
 void vecmul_lut_packed4(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
     int KK = K / 2;
+    const int stride = M / 2;
+    const int lut_stride = 32;
     const uint8x16_t vec_mask = vdupq_n_u8(0x0f);
     const float32_t weight_scale = ws[0];
 
@@ -1319,14 +1321,24 @@ void vecmul_lut_packed4(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, i
 
             const int i_packed = i / 2;
             for (int k = 0; k < KK; k += 4) {
-                const int8x16_t vh0 = vld1q_s8(QLUT + k * 32);
-                const int8x16_t vl0 = vld1q_s8(QLUT + k * 32 + 16);
-                const int8x16_t vh1 = vld1q_s8(QLUT + (k + 1) * 32);
-                const int8x16_t vl1 = vld1q_s8(QLUT + (k + 1) * 32 + 16);
-                const int8x16_t vh2 = vld1q_s8(QLUT + (k + 2) * 32);
-                const int8x16_t vl2 = vld1q_s8(QLUT + (k + 2) * 32 + 16);
-                const int8x16_t vh3 = vld1q_s8(QLUT + (k + 3) * 32);
-                const int8x16_t vl3 = vld1q_s8(QLUT + (k + 3) * 32 + 16);
+                // Prefetch A data for the next k-iteration block
+                if (k + 4 < KK) {
+                    const uint8_t* pA_next = A + (k + 4) * stride + i_packed;
+                    __builtin_prefetch(pA_next, 0, 3);
+                    __builtin_prefetch(pA_next + stride, 0, 3);
+                    __builtin_prefetch(pA_next + 2 * stride, 0, 3);
+                    __builtin_prefetch(pA_next + 3 * stride, 0, 3);
+                }
+
+                const int8_t* pQLUT = QLUT + k * lut_stride;
+                const int8x16_t vh0 = vld1q_s8(pQLUT);
+                const int8x16_t vl0 = vld1q_s8(pQLUT + 16);
+                const int8x16_t vh1 = vld1q_s8(pQLUT + lut_stride);
+                const int8x16_t vl1 = vld1q_s8(pQLUT + lut_stride + 16);
+                const int8x16_t vh2 = vld1q_s8(pQLUT + 2 * lut_stride);
+                const int8x16_t vl2 = vld1q_s8(pQLUT + 2 * lut_stride + 16);
+                const int8x16_t vh3 = vld1q_s8(pQLUT + 3 * lut_stride);
+                const int8x16_t vl3 = vld1q_s8(pQLUT + 3 * lut_stride + 16);
 
 #define PROCESS_32_ROWS(a_ptr, v_h, v_l, accl_0, acch_0, accl_1, acch_1) { \
                     uint8x16_t vec_a = vld1q_u8(a_ptr); \
@@ -1344,25 +1356,25 @@ void vecmul_lut_packed4(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, i
                     accl_1 = vaddq_s16(accl_1, o2); acch_1 = vaddq_s16(acch_1, o3); \
                 }
 
-                const uint8_t* pA0 = A + k * M / 2 + i_packed;
+                const uint8_t* pA0 = A + k * stride + i_packed;
                 PROCESS_32_ROWS(pA0,      vh0, vl0, acc[0],  acc[1],  acc[2],  acc[3]);
                 PROCESS_32_ROWS(pA0 + 16, vh0, vl0, acc[4],  acc[5],  acc[6],  acc[7]);
                 PROCESS_32_ROWS(pA0 + 32, vh0, vl0, acc[8],  acc[9],  acc[10], acc[11]);
                 PROCESS_32_ROWS(pA0 + 48, vh0, vl0, acc[12], acc[13], acc[14], acc[15]);
 
-                const uint8_t* pA1 = A + (k + 1) * M / 2 + i_packed;
+                const uint8_t* pA1 = A + (k + 1) * stride + i_packed;
                 PROCESS_32_ROWS(pA1,      vh1, vl1, acc[0],  acc[1],  acc[2],  acc[3]);
                 PROCESS_32_ROWS(pA1 + 16, vh1, vl1, acc[4],  acc[5],  acc[6],  acc[7]);
                 PROCESS_32_ROWS(pA1 + 32, vh1, vl1, acc[8],  acc[9],  acc[10], acc[11]);
                 PROCESS_32_ROWS(pA1 + 48, vh1, vl1, acc[12], acc[13], acc[14], acc[15]);
 
-                const uint8_t* pA2 = A + (k + 2) * M / 2 + i_packed;
+                const uint8_t* pA2 = A + (k + 2) * stride + i_packed;
                 PROCESS_32_ROWS(pA2,      vh2, vl2, acc[0],  acc[1],  acc[2],  acc[3]);
                 PROCESS_32_ROWS(pA2 + 16, vh2, vl2, acc[4],  acc[5],  acc[6],  acc[7]);
                 PROCESS_32_ROWS(pA2 + 32, vh2, vl2, acc[8],  acc[9],  acc[10], acc[11]);
                 PROCESS_32_ROWS(pA2 + 48, vh2, vl2, acc[12], acc[13], acc[14], acc[15]);
 
-                const uint8_t* pA3 = A + (k + 3) * M / 2 + i_packed;
+                const uint8_t* pA3 = A + (k + 3) * stride + i_packed;
                 PROCESS_32_ROWS(pA3,      vh3, vl3, acc[0],  acc[1],  acc[2],  acc[3]);
                 PROCESS_32_ROWS(pA3 + 16, vh3, vl3, acc[4],  acc[5],  acc[6],  acc[7]);
                 PROCESS_32_ROWS(pA3 + 32, vh3, vl3, acc[8],  acc[9],  acc[10], acc[11]);
@@ -1944,7 +1956,7 @@ int main() {
     );
     printf("\nComparing kernel output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-1, "Vecmul_lut_packed4 comparison");
-    
+
     double avg_vec_micro_kernel_time = benchmark_matmul(
         "\nStep 4: Running LUT Vec micro kernel(10 iterations for average)\n",
         "Vecmul_lut_micro_kernel",
