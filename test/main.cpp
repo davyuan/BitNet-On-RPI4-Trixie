@@ -1553,13 +1553,18 @@ void vecmul_lut_packed6(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, i
 
         const float32x4_t v_rescale = vdupq_n_f32(weight_scale / LUT_Scales[0]);
 
-        #pragma omp for
-        for (int i = 0; i < M; i += 128) {
-            int16x8_t acc[16];
-            for (int b = 0; b < 16; b++) acc[b] = vdupq_n_s16(0);
+        for (int k = 0; k < KK; k += 4) {
+            if (k + 4 < KK) {
+                __builtin_prefetch(QLUT + (k + 4) * lut_stride, 0, 3);
+                __builtin_prefetch(QLUT + (k + 4) * lut_stride + 64, 0, 3);
+            }
 
-            const int i_packed = i / 2;
-            for (int k = 0; k < KK; k += 4) {
+            #pragma omp for
+            for (int i = 0; i < M; i += 128) {
+                const int i_packed = i / 2;
+                int16x8_t acc[16];
+                for (int b = 0; b < 16; b++) acc[b] = vdupq_n_s16(0);
+
                 // Prefetch A data and QLUT entries for the next k-iteration block
                 if (k + 4 < KK) {
                     const uint8_t* pA_next = A + (k + 4) * stride + i_packed;
@@ -1567,66 +1572,60 @@ void vecmul_lut_packed6(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, i
                     __builtin_prefetch(pA_next + stride, 0, 3);
                     __builtin_prefetch(pA_next + 2 * stride, 0, 3);
                     __builtin_prefetch(pA_next + 3 * stride, 0, 3);
-
-                    // Prefetch QLUT entries
-                    __builtin_prefetch(QLUT + (k + 4) * lut_stride, 0, 3);
-                    __builtin_prefetch(QLUT + (k + 4) * lut_stride + 64, 0, 3);
                 }
 
                 const int8_t* pQLUT = QLUT + k * lut_stride;
                 int8x16x4_t q0 = vld1q_s8_x4(pQLUT);
                 int8x16x4_t q1 = vld1q_s8_x4(pQLUT + 64);
+                const int8x16_t vh0 = q0.val[0];
+                const int8x16_t vl0 = q0.val[1];
+                const int8x16_t vh1 = q0.val[2];
+                const int8x16_t vl1 = q0.val[3];
+                const int8x16_t vh2 = q1.val[0];
+                const int8x16_t vl2 = q1.val[1];
+                const int8x16_t vh3 = q1.val[2];
+                const int8x16_t vl3 = q1.val[3];
 
-#define PROCESS_128_ROWS_INTERLEAVED(k_idx, v_h, v_l) { \
-                    const uint8_t* pAk = A + (k + k_idx) * stride + i_packed; \
-                    uint8x16_t v0 = vld1q_u8(pAk);      \
-                    uint8x16_t v1 = vld1q_u8(pAk + 16); \
-                    uint8x16_t v2 = vld1q_u8(pAk + 32); \
-                    uint8x16_t v3 = vld1q_u8(pAk + 48); \
-                    \
-                    uint8x16_t t0 = vshrq_n_u8(v0, 4);  uint8x16_t b0 = vandq_u8(v0, vec_mask); \
-                    uint8x16_t t1 = vshrq_n_u8(v1, 4);  uint8x16_t b1 = vandq_u8(v1, vec_mask); \
-                    uint8x16_t t2 = vshrq_n_u8(v2, 4);  uint8x16_t b2 = vandq_u8(v2, vec_mask); \
-                    uint8x16_t t3 = vshrq_n_u8(v3, 4);  uint8x16_t b3 = vandq_u8(v3, vec_mask); \
-                    \
-                    uint8x16x2_t u0 = vzipq_u8(t0, b0); \
-                    uint8x16x2_t u1 = vzipq_u8(t1, b1); \
-                    uint8x16x2_t u2 = vzipq_u8(t2, b2); \
-                    uint8x16x2_t u3 = vzipq_u8(t3, b3); \
-                    \
-                    int8x16_t r0h0 = vqtbl1q_s8(v_h, u0.val[0]); int8x16_t r0l0 = vqtbl1q_s8(v_l, u0.val[0]); \
-                    int8x16_t r0h1 = vqtbl1q_s8(v_h, u0.val[1]); int8x16_t r0l1 = vqtbl1q_s8(v_l, u0.val[1]); \
-                    int8x16_t r1h0 = vqtbl1q_s8(v_h, u1.val[0]); int8x16_t r1l0 = vqtbl1q_s8(v_l, u1.val[0]); \
-                    int8x16_t r1h1 = vqtbl1q_s8(v_h, u1.val[1]); int8x16_t r1l1 = vqtbl1q_s8(v_l, u1.val[1]); \
+#define PROCESS_32_ROWS(a_ptr, v_h, v_l, accl_0, acch_0, accl_1, acch_1) { \
+                    uint8x16_t vec_a = vld1q_u8(a_ptr); \
+                    uint8x16_t vec_a_top = vshrq_n_u8(vec_a, 4); \
+                    uint8x16_t vec_a_bot = vandq_u8(vec_a, vec_mask); \
+                    uint8x16x2_t vec_unp = vzipq_u8(vec_a_top, vec_a_bot); \
+                    int8x16_t rh0 = vqtbl1q_s8(v_h, vec_unp.val[0]); \
+                    int8x16_t rl0 = vqtbl1q_s8(v_l, vec_unp.val[0]); \
+                    int8x16_t rh1 = vqtbl1q_s8(v_h, vec_unp.val[1]); \
+                    int8x16_t rl1 = vqtbl1q_s8(v_l, vec_unp.val[1]); \
                     int16x8_t o0, o1, o2, o3; \
-                    reconstruct_int16_pair(r0h0, r0l0, o0, o1); \
-                    reconstruct_int16_pair(r0h1, r0l1, o2, o3); \
-                    acc[0] = vaddq_s16(acc[0], o0); acc[1] = vaddq_s16(acc[1], o1); \
-                    acc[2] = vaddq_s16(acc[2], o2); acc[3] = vaddq_s16(acc[3], o3); \
-                    reconstruct_int16_pair(r1h0, r1l0, o0, o1); \
-                    reconstruct_int16_pair(r1h1, r1l1, o2, o3); \
-                    acc[4] = vaddq_s16(acc[4], o0); acc[5] = vaddq_s16(acc[5], o1); \
-                    acc[6] = vaddq_s16(acc[6], o2); acc[7] = vaddq_s16(acc[7], o3); \
-                    \
-                    int8x16_t r2h0 = vqtbl1q_s8(v_h, u2.val[0]); int8x16_t r2l0 = vqtbl1q_s8(v_l, u2.val[0]); \
-                    int8x16_t r2h1 = vqtbl1q_s8(v_h, u2.val[1]); int8x16_t r2l1 = vqtbl1q_s8(v_l, u2.val[1]); \
-                    int8x16_t r3h0 = vqtbl1q_s8(v_h, u3.val[0]); int8x16_t r3l0 = vqtbl1q_s8(v_l, u3.val[0]); \
-                    int8x16_t r3h1 = vqtbl1q_s8(v_h, u3.val[1]); int8x16_t r3l1 = vqtbl1q_s8(v_l, u3.val[1]); \
-                    reconstruct_int16_pair(r2h0, r2l0, o0, o1); \
-                    reconstruct_int16_pair(r2h1, r2l1, o2, o3); \
-                    acc[8] = vaddq_s16(acc[8], o0); acc[9] = vaddq_s16(acc[9], o1); \
-                    acc[10] = vaddq_s16(acc[10], o2); acc[11] = vaddq_s16(acc[11], o3); \
-                    reconstruct_int16_pair(r3h0, r3l0, o0, o1); \
-                    reconstruct_int16_pair(r3h1, r3l1, o2, o3); \
-                    acc[12] = vaddq_s16(acc[12], o0); acc[13] = vaddq_s16(acc[13], o1); \
-                    acc[14] = vaddq_s16(acc[14], o2); acc[15] = vaddq_s16(acc[15], o3); \
+                    reconstruct_int16_pair(rh0, rl0, o0, o1); \
+                    reconstruct_int16_pair(rh1, rl1, o2, o3); \
+                    accl_0 = vaddq_s16(accl_0, o0); acch_0 = vaddq_s16(acch_0, o1); \
+                    accl_1 = vaddq_s16(accl_1, o2); acch_1 = vaddq_s16(acch_1, o3); \
                 }
 
-                PROCESS_128_ROWS_INTERLEAVED(0, q0.val[0], q0.val[1]);
-                PROCESS_128_ROWS_INTERLEAVED(1, q0.val[2], q0.val[3]);
-                PROCESS_128_ROWS_INTERLEAVED(2, q1.val[0], q1.val[1]);
-                PROCESS_128_ROWS_INTERLEAVED(3, q1.val[2], q1.val[3]);
-#undef PROCESS_128_ROWS_INTERLEAVED
+                const uint8_t* pA0 = A + k * stride + i_packed;
+                PROCESS_32_ROWS(pA0,      vh0, vl0, acc[0],  acc[1],  acc[2],  acc[3]);
+                PROCESS_32_ROWS(pA0 + 16, vh0, vl0, acc[4],  acc[5],  acc[6],  acc[7]);
+                PROCESS_32_ROWS(pA0 + 32, vh0, vl0, acc[8],  acc[9],  acc[10], acc[11]);
+                PROCESS_32_ROWS(pA0 + 48, vh0, vl0, acc[12], acc[13], acc[14], acc[15]);
+
+                const uint8_t* pA1 = A + (k + 1) * stride + i_packed;
+                PROCESS_32_ROWS(pA1,      vh1, vl1, acc[0],  acc[1],  acc[2],  acc[3]);
+                PROCESS_32_ROWS(pA1 + 16, vh1, vl1, acc[4],  acc[5],  acc[6],  acc[7]);
+                PROCESS_32_ROWS(pA1 + 32, vh1, vl1, acc[8],  acc[9],  acc[10], acc[11]);
+                PROCESS_32_ROWS(pA1 + 48, vh1, vl1, acc[12], acc[13], acc[14], acc[15]);
+
+                const uint8_t* pA2 = A + (k + 2) * stride + i_packed;
+                PROCESS_32_ROWS(pA2,      vh2, vl2, acc[0],  acc[1],  acc[2],  acc[3]);
+                PROCESS_32_ROWS(pA2 + 16, vh2, vl2, acc[4],  acc[5],  acc[6],  acc[7]);
+                PROCESS_32_ROWS(pA2 + 32, vh2, vl2, acc[8],  acc[9],  acc[10], acc[11]);
+                PROCESS_32_ROWS(pA2 + 48, vh2, vl2, acc[12], acc[13], acc[14], acc[15]);
+
+                const uint8_t* pA3 = A + (k + 3) * stride + i_packed;
+                PROCESS_32_ROWS(pA3,      vh3, vl3, acc[0],  acc[1],  acc[2],  acc[3]);
+                PROCESS_32_ROWS(pA3 + 16, vh3, vl3, acc[4],  acc[5],  acc[6],  acc[7]);
+                PROCESS_32_ROWS(pA3 + 32, vh3, vl3, acc[8],  acc[9],  acc[10], acc[11]);
+                PROCESS_32_ROWS(pA3 + 48, vh3, vl3, acc[12], acc[13], acc[14], acc[15]);
+#undef PROCESS_32_ROWS
             }
 
             // Write-back
