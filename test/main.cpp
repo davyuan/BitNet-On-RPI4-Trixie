@@ -1589,12 +1589,13 @@ void vecmul_lut_packed6(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, i
                         int8x16_t rl0 = vqtbl1q_s8(v_l, unp.val[0]); \
                         int8x16_t rh1 = vqtbl1q_s8(v_h, unp.val[1]); \
                         int8x16_t rl1 = vqtbl1q_s8(v_l, unp.val[1]); \
-                        int8x16x2_t r0 = vzipq_s8(rl0, rh0); \
-                        int8x16x2_t r1 = vzipq_s8(rl1, rh1); \
-                        acc[b*4 + 0] = vaddq_s16(acc[b*4 + 0], vreinterpretq_s16_s8(r0.val[0])); \
-                        acc[b*4 + 1] = vaddq_s16(acc[b*4 + 1], vreinterpretq_s16_s8(r0.val[1])); \
-                        acc[b*4 + 2] = vaddq_s16(acc[b*4 + 2], vreinterpretq_s16_s8(r1.val[0])); \
-                        acc[b*4 + 3] = vaddq_s16(acc[b*4 + 3], vreinterpretq_s16_s8(r1.val[1])); \
+                        int16x8_t o0, o1, o2, o3; \
+                        reconstruct_int16_pair(rh0, rl0, o0, o1); \
+                        reconstruct_int16_pair(rh1, rl1, o2, o3); \
+                        acc[b*4 + 0] = vaddq_s16(acc[b*4 + 0], o0); \
+                        acc[b*4 + 1] = vaddq_s16(acc[b*4 + 1], o1); \
+                        acc[b*4 + 2] = vaddq_s16(acc[b*4 + 2], o2); \
+                        acc[b*4 + 3] = vaddq_s16(acc[b*4 + 3], o3); \
                     } \
                 }
 
