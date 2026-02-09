@@ -274,7 +274,7 @@ void ggml_qgemm_lut(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* LUT,
     }
 
     for (int block = 0; block < 8; block++) {
-        float32_t* pC = &(C[ii + block * 32]);
+        float32_t* pC = &(C[j * M + ii + block * 32]);
 #define WRITE_BACK_V(out_ptr, accl, acch) { \
             vst1q_f32(out_ptr + 0, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(accl))), v_rescale)); \
             vst1q_f32(out_ptr + 4, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(accl))), v_rescale)); \
@@ -371,7 +371,7 @@ void ggml_qgemm_lut_160(int M, int N, int K, int ii, int j, uint8_t* A, int8_t* 
     }
 
     for (int block = 0; block < 5; block++) {
-        float32_t* pC = &(C[ii + block * 32]);
+        float32_t* pC = &(C[j * M + ii + block * 32]);
 #define WRITE_BACK_V(out_ptr, accl, acch) { \
             vst1q_f32(out_ptr + 0, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(accl))), v_rescale)); \
             vst1q_f32(out_ptr + 4, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(accl))), v_rescale)); \
