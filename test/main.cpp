@@ -1602,10 +1602,10 @@ void vecmul_lut_packed6(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, i
                     uint8x16_t ut2 = vshrq_n_u8(w2, 4); uint8x16_t ub2 = vandq_u8(w2, vec_mask);
                     uint8x16_t ut3 = vshrq_n_u8(w3, 4); uint8x16_t ub3 = vandq_u8(w3, vec_mask);
 
-                    uint8x16_t u0_0 = vzip1q_u8(ub0, ut0); uint8x16_t u0_1 = vzip2q_u8(ub0, ut0);
-                    uint8x16_t u1_0 = vzip1q_u8(ub1, ut1); uint8x16_t u1_1 = vzip2q_u8(ub1, ut1);
-                    uint8x16_t u2_0 = vzip1q_u8(ub2, ut2); uint8x16_t u2_1 = vzip2q_u8(ub2, ut2);
-                    uint8x16_t u3_0 = vzip1q_u8(ub3, ut3); uint8x16_t u3_1 = vzip2q_u8(ub3, ut3);
+                    uint8x16_t u0_0 = vzip1q_u8(ut0, ub0); uint8x16_t u0_1 = vzip2q_u8(ut0, ub0);
+                    uint8x16_t u1_0 = vzip1q_u8(ut1, ub1); uint8x16_t u1_1 = vzip2q_u8(ut1, ub1);
+                    uint8x16_t u2_0 = vzip1q_u8(ut2, ub2); uint8x16_t u2_1 = vzip2q_u8(ut2, ub2);
+                    uint8x16_t u3_0 = vzip1q_u8(ut3, ub3); uint8x16_t u3_1 = vzip2q_u8(ut3, ub3);
 
                     const int ai = (r / 32) * 4;
                     int16x8_t o0, o1;
