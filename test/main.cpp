@@ -1524,6 +1524,106 @@ void vecmul_lut_packed5(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, i
     aligned_free(LUT_Scales);
 }
 
+/* A(K/2 x M/2), B(1 x K)
+   QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
+        each K represents 2 activations in B. 
+   C(1 x M)
+   This version uses SIMD optimizations. Single thread to construct LUT, then all threads share the same LUT for computation. This is to test the performance of LUT construction and sharing among threads.
+   we read 64 bytes from tensor A each time, which corresponds to 128 rows of A, and compute the dot product with 128 rows of C. 
+   We unroll the k-loop by 4 to increase the compute intensity and better amortize the cost of LUT access.
+*/
+void vecmul_lut_packed6(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
+    int KK = K / 2;
+    const int stride = M / 2;
+    const int lut_stride = 32;
+    const uint8x16_t vec_mask = vdupq_n_u8(0x0f);
+    const float32_t weight_scale = ws[0];
+
+    // N=1 for vector multiplication. Build LUT once and share across all threads.
+    int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
+    float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t)); 
+
+    #pragma omp parallel num_threads(4)
+    {
+        const int ith = omp_get_thread_num();
+        if (ith == 0) {
+            ggml_preprocessor(M, K, B, LUT_Scales, QLUT);
+        }
+        #pragma omp barrier
+
+        const float32x4_t v_rescale = vdupq_n_f32(weight_scale / LUT_Scales[0]);
+
+        #pragma omp for
+        for (int i = 0; i < M; i += 128) {
+            int16x8_t acc[16];
+            for (int b = 0; b < 16; b++) acc[b] = vdupq_n_s16(0);
+
+            const int i_packed = i / 2;
+            for (int k = 0; k < KK; k += 4) {
+                // Prefetch A data and QLUT entries for the next k-iteration block
+                if (k + 4 < KK) {
+                    const uint8_t* pA_next = A + (k + 4) * stride + i_packed;
+                    __builtin_prefetch(pA_next, 0, 3);
+                    __builtin_prefetch(pA_next + stride, 0, 3);
+                    __builtin_prefetch(pA_next + 2 * stride, 0, 3);
+                    __builtin_prefetch(pA_next + 3 * stride, 0, 3);
+
+                    // Prefetch QLUT entries
+                    __builtin_prefetch(QLUT + (k + 4) * lut_stride, 0, 3);
+                    __builtin_prefetch(QLUT + (k + 4) * lut_stride + 64, 0, 3);
+                }
+
+                const int8_t* pQLUT = QLUT + k * lut_stride;
+                int8x16x4_t q0 = vld1q_s8_x4(pQLUT);
+                int8x16x4_t q1 = vld1q_s8_x4(pQLUT + 64);
+
+#define PROCESS_128_ROWS_STEP(k_idx, v_h, v_l) { \
+                    const uint8_t* pAk = A + (k + k_idx) * stride + i_packed; \
+                    uint8x16x4_t vA = vld1q_u8_x4(pAk); \
+                    for (int b = 0; b < 4; b++) { \
+                        uint8x16_t vec_a = vA.val[b]; \
+                        uint8x16_t top = vshrq_n_u8(vec_a, 4); \
+                        uint8x16_t bot = vandq_u8(vec_a, vec_mask); \
+                        uint8x16x2_t unp = vzipq_u8(top, bot); \
+                        int8x16_t rh0 = vqtbl1q_s8(v_h, unp.val[0]); \
+                        int8x16_t rl0 = vqtbl1q_s8(v_l, unp.val[0]); \
+                        int8x16_t rh1 = vqtbl1q_s8(v_h, unp.val[1]); \
+                        int8x16_t rl1 = vqtbl1q_s8(v_l, unp.val[1]); \
+                        int8x16x2_t r0 = vzipq_s8(rl0, rh0); \
+                        int8x16x2_t r1 = vzipq_s8(rl1, rh1); \
+                        acc[b*4 + 0] = vaddq_s16(acc[b*4 + 0], vreinterpretq_s16_s8(r0.val[0])); \
+                        acc[b*4 + 1] = vaddq_s16(acc[b*4 + 1], vreinterpretq_s16_s8(r0.val[1])); \
+                        acc[b*4 + 2] = vaddq_s16(acc[b*4 + 2], vreinterpretq_s16_s8(r1.val[0])); \
+                        acc[b*4 + 3] = vaddq_s16(acc[b*4 + 3], vreinterpretq_s16_s8(r1.val[1])); \
+                    } \
+                }
+
+                PROCESS_128_ROWS_STEP(0, q0.val[0], q0.val[1]);
+                PROCESS_128_ROWS_STEP(1, q0.val[2], q0.val[3]);
+                PROCESS_128_ROWS_STEP(2, q1.val[0], q1.val[1]);
+                PROCESS_128_ROWS_STEP(3, q1.val[2], q1.val[3]);
+#undef PROCESS_128_ROWS_STEP
+            }
+
+            // Write-back
+            for (int block = 0; block < 4; block++) {
+                float32_t* pC = &(C[i + block * 32]);
+#define WRITE_BACK(out_ptr, accl, acch) { \
+                    vst1q_f32(out_ptr + 0, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(accl))), v_rescale)); \
+                    vst1q_f32(out_ptr + 4, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(accl))), v_rescale)); \
+                    vst1q_f32(out_ptr + 8, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(acch))), v_rescale)); \
+                    vst1q_f32(out_ptr + 12, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(acch))), v_rescale)); \
+                }
+                WRITE_BACK(pC,      acc[block*4 + 0], acc[block*4 + 1]);
+                WRITE_BACK(pC + 16, acc[block*4 + 2], acc[block*4 + 3]);
+#undef WRITE_BACK
+            }
+        }
+    }
+    aligned_free(QLUT);
+    aligned_free(LUT_Scales);
+}
+
 /* A(K/2 x M), B(1 x K)
    QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
         each K represents 2 activations in B. 
@@ -2089,6 +2189,15 @@ int main() {
     printf("\nComparing kernel output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-1, "Vecmul_lut_packed5 comparison");
 
+    double avg_vec_packed6_time = benchmark_matmul(
+        "\nStep 4: Running LUT Vec Packed6(10 iterations for average)\n",
+        "Vecmul_lut_packed6",
+        [&]() { vecmul_lut_packed6(A_packed_T, B_T, C_simd, weight_scale, M, N, K); },
+        C_simd, M, N, num_iterations
+    );
+    printf("\nComparing kernel output (C) with reference (C_)...\n");
+    compare_matrices(C_simd, C_, M, N, 1e-1, "Vecmul_lut_packed6 comparison");
+
     double avg_vec_micro_kernel_time = benchmark_matmul(
         "\nStep 4: Running LUT Vec micro kernel(10 iterations for average)\n",
         "Vecmul_lut_micro_kernel",
@@ -2188,6 +2297,7 @@ int main() {
     double speedup_vec_micro_kernel = (double)naive_duration.count() / (double)avg_vec_micro_kernel_time;
     double speedup_vec_packed4 = (double)naive_duration.count() / (double)avg_vec_packed4_time;
     double speedup_vec_packed5 = (double)naive_duration.count() / (double)avg_vec_packed5_time;
+    double speedup_vec_packed6 = (double)naive_duration.count() / (double)avg_vec_packed6_time;
     
     //double speedup_simd2 = (double)naive_duration.count() / (double)avg_simd_time2;
     //double speedup_microkernel = (double)naive_duration.count() / (double)avg_microkernel_time;
@@ -2214,6 +2324,8 @@ int main() {
     printf("Speedup (naive / vecmul_lut_packed4): %.2fx\n\n", speedup_vec_packed4);
     printf("LUT vecmul_lut_packed5 (avg):   %.2f ms\n", avg_vec_packed5_time);
     printf("Speedup (naive / vecmul_lut_packed5): %.2fx\n\n", speedup_vec_packed5);
+    printf("LUT vecmul_lut_packed6 (avg):   %.2f ms\n", avg_vec_packed6_time);
+    printf("Speedup (naive / vecmul_lut_packed6): %.2fx\n\n", speedup_vec_packed6);
     printf("LUT vecmul_lut_micro_kernel (avg):   %.2f ms\n", avg_vec_micro_kernel_time);
     printf("Speedup (naive / vecmul_lut_micro_kernel): %.2fx\n\n", speedup_vec_micro_kernel);
     
