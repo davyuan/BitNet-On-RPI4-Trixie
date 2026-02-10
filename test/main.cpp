@@ -1031,36 +1031,41 @@ void matmul_lut_packed_M(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, 
             memset(tempvals, 0, M * sizeof(int16_t));
             const float32x4_t v_rescale = vdupq_n_f32(weight_scale / LUT_Scales[0]);
 
-            for (int k = 0; k < KK; k += 2) {
-                if (k + 2 < KK) {
-                    __builtin_prefetch(QLUT + (k + 2) * 32, 0, 3);
-                    __builtin_prefetch(QLUT + (k + 2) * 32 + 32, 0, 3);
+            for (int k = 0; k < KK; k += 4) {
+                if (k + 4 < KK) {
+                    __builtin_prefetch(QLUT + (k + 4) * 32, 0, 3);
+                    __builtin_prefetch(QLUT + (k + 4) * 32 + 32, 0, 3);
+                    __builtin_prefetch(QLUT + (k + 4) * 32 + 64, 0, 3);
+                    __builtin_prefetch(QLUT + (k + 4) * 32 + 96, 0, 3);
                 }
 
                 const int8x16_t vh0 = vld1q_s8(QLUT + k * 32);
                 const int8x16_t vl0 = vld1q_s8(QLUT + k * 32 + 16);
                 const int8x16_t vh1 = vld1q_s8(QLUT + (k + 1) * 32);
                 const int8x16_t vl1 = vld1q_s8(QLUT + (k + 1) * 32 + 16);
+                const int8x16_t vh2 = vld1q_s8(QLUT + (k + 2) * 32);
+                const int8x16_t vl2 = vld1q_s8(QLUT + (k + 2) * 32 + 16);
+                const int8x16_t vh3 = vld1q_s8(QLUT + (k + 3) * 32);
+                const int8x16_t vl3 = vld1q_s8(QLUT + (k + 3) * 32 + 16);
 
-                for (int i = 0; i < M; i += 256) {
-                    if (i + 256 < M) {
-                        // Prefetch next 512 bytes of tempvals (8 cache lines of 64 bytes)
-                        __builtin_prefetch(&tempvals[i + 256], 1, 3);
-                        __builtin_prefetch(&tempvals[i + 256 + 32], 1, 3);
-                        __builtin_prefetch(&tempvals[i + 256 + 64], 1, 3);
-                        __builtin_prefetch(&tempvals[i + 256 + 96], 1, 3);
-                        __builtin_prefetch(&tempvals[i + 256 + 128], 1, 3);
-                        __builtin_prefetch(&tempvals[i + 256 + 160], 1, 3);
-                        __builtin_prefetch(&tempvals[i + 256 + 192], 1, 3);
-                        __builtin_prefetch(&tempvals[i + 256 + 224], 1, 3);
+                for (int i = 0; i < M; i += 160) {
+                    if (i + 160 < M) {
+                        // Prefetch next 320 bytes of tempvals (5 cache lines)
+                        __builtin_prefetch(&tempvals[i + 160], 1, 3);
+                        __builtin_prefetch(&tempvals[i + 160 + 32], 1, 3);
+                        __builtin_prefetch(&tempvals[i + 160 + 64], 1, 3);
+                        __builtin_prefetch(&tempvals[i + 160 + 96], 1, 3);
+                        __builtin_prefetch(&tempvals[i + 160 + 128], 1, 3);
 
-                        // Prefetch weights for next i-tile
-                        __builtin_prefetch(A + k * row_stride + (i + 256) / 2, 0, 3);
-                        __builtin_prefetch(A + (k + 1) * row_stride + (i + 256) / 2, 0, 3);
+                        // Prefetch weights for next i-tile (4*80 bytes = 320 bytes = 5 lines)
+                        __builtin_prefetch(A + k * row_stride + (i + 160) / 2, 0, 3);
+                        __builtin_prefetch(A + (k + 1) * row_stride + (i + 160) / 2, 0, 3);
+                        __builtin_prefetch(A + (k + 2) * row_stride + (i + 160) / 2, 0, 3);
+                        __builtin_prefetch(A + (k + 3) * row_stride + (i + 160) / 2, 0, 3);
                     }
 
-                    int16x8_t acc[32];
-                    for (int b = 0; b < 32; b++) {
+                    int16x8_t acc[20];
+                    for (int b = 0; b < 20; b++) {
                         acc[b] = vld1q_s16(&tempvals[i + b * 8]);
                     }
 
@@ -1076,33 +1081,47 @@ void matmul_lut_packed_M(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, 
 
                     {
                         const uint8x16x4_t w0_0 = vld1q_u8_x4(A + k * row_stride + i / 2);
-                        const uint8x16x4_t w0_1 = vld1q_u8_x4(A + k * row_stride + i / 2 + 64);
+                        const uint8x16_t w0_1 = vld1q_u8(A + k * row_stride + i / 2 + 64);
                         PROCESS_ONE_K(w0_0.val[0], vh0, vl0, acc[0], acc[1], acc[2], acc[3]);
                         PROCESS_ONE_K(w0_0.val[1], vh0, vl0, acc[4], acc[5], acc[6], acc[7]);
                         PROCESS_ONE_K(w0_0.val[2], vh0, vl0, acc[8], acc[9], acc[10], acc[11]);
                         PROCESS_ONE_K(w0_0.val[3], vh0, vl0, acc[12], acc[13], acc[14], acc[15]);
-                        PROCESS_ONE_K(w0_1.val[0], vh0, vl0, acc[16], acc[17], acc[18], acc[19]);
-                        PROCESS_ONE_K(w0_1.val[1], vh0, vl0, acc[20], acc[21], acc[22], acc[23]);
-                        PROCESS_ONE_K(w0_1.val[2], vh0, vl0, acc[24], acc[25], acc[26], acc[27]);
-                        PROCESS_ONE_K(w0_1.val[3], vh0, vl0, acc[28], acc[29], acc[30], acc[31]);
+                        PROCESS_ONE_K(w0_1, vh0, vl0, acc[16], acc[17], acc[18], acc[19]);
                     }
 
                     {
                         const uint8x16x4_t w1_0 = vld1q_u8_x4(A + (k + 1) * row_stride + i / 2);
-                        const uint8x16x4_t w1_1 = vld1q_u8_x4(A + (k + 1) * row_stride + i / 2 + 64);
+                        const uint8x16_t w1_1 = vld1q_u8(A + (k + 1) * row_stride + i / 2 + 64);
                         PROCESS_ONE_K(w1_0.val[0], vh1, vl1, acc[0], acc[1], acc[2], acc[3]);
                         PROCESS_ONE_K(w1_0.val[1], vh1, vl1, acc[4], acc[5], acc[6], acc[7]);
                         PROCESS_ONE_K(w1_0.val[2], vh1, vl1, acc[8], acc[9], acc[10], acc[11]);
                         PROCESS_ONE_K(w1_0.val[3], vh1, vl1, acc[12], acc[13], acc[14], acc[15]);
-                        PROCESS_ONE_K(w1_1.val[0], vh1, vl1, acc[16], acc[17], acc[18], acc[19]);
-                        PROCESS_ONE_K(w1_1.val[1], vh1, vl1, acc[20], acc[21], acc[22], acc[23]);
-                        PROCESS_ONE_K(w1_1.val[2], vh1, vl1, acc[24], acc[25], acc[26], acc[27]);
-                        PROCESS_ONE_K(w1_1.val[3], vh1, vl1, acc[28], acc[29], acc[30], acc[31]);
+                        PROCESS_ONE_K(w1_1, vh1, vl1, acc[16], acc[17], acc[18], acc[19]);
+                    }
+
+                    {
+                        const uint8x16x4_t w2_0 = vld1q_u8_x4(A + (k + 2) * row_stride + i / 2);
+                        const uint8x16_t w2_1 = vld1q_u8(A + (k + 2) * row_stride + i / 2 + 64);
+                        PROCESS_ONE_K(w2_0.val[0], vh2, vl2, acc[0], acc[1], acc[2], acc[3]);
+                        PROCESS_ONE_K(w2_0.val[1], vh2, vl2, acc[4], acc[5], acc[6], acc[7]);
+                        PROCESS_ONE_K(w2_0.val[2], vh2, vl2, acc[8], acc[9], acc[10], acc[11]);
+                        PROCESS_ONE_K(w2_0.val[3], vh2, vl2, acc[12], acc[13], acc[14], acc[15]);
+                        PROCESS_ONE_K(w2_1, vh2, vl2, acc[16], acc[17], acc[18], acc[19]);
+                    }
+
+                    {
+                        const uint8x16x4_t w3_0 = vld1q_u8_x4(A + (k + 3) * row_stride + i / 2);
+                        const uint8x16_t w3_1 = vld1q_u8(A + (k + 3) * row_stride + i / 2 + 64);
+                        PROCESS_ONE_K(w3_0.val[0], vh3, vl3, acc[0], acc[1], acc[2], acc[3]);
+                        PROCESS_ONE_K(w3_0.val[1], vh3, vl3, acc[4], acc[5], acc[6], acc[7]);
+                        PROCESS_ONE_K(w3_0.val[2], vh3, vl3, acc[8], acc[9], acc[10], acc[11]);
+                        PROCESS_ONE_K(w3_0.val[3], vh3, vl3, acc[12], acc[13], acc[14], acc[15]);
+                        PROCESS_ONE_K(w3_1, vh3, vl3, acc[16], acc[17], acc[18], acc[19]);
                     }
 
 #undef PROCESS_ONE_K
 
-                    for (int b = 0; b < 32; b++) {
+                    for (int b = 0; b < 20; b++) {
                         vst1q_s16(&tempvals[i + b * 8], acc[b]);
                     }
                 }
