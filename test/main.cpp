@@ -1063,13 +1063,13 @@ void matmul_lut_packed_M(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, 
                                 uint8x16_t u1_0 = vzip1q_u8(ut1, ub1); uint8x16_t u1_1 = vzip2q_u8(ut1, ub1); \
                                 int16x8_t o0, o1, h, l; \
                                 h = vqtbl1q_s8(vh0, u0_0); l = vqtbl1q_s8(vl0, u0_0); \
-                                reconstruct_int16_pair2(h, l, o0, o1); a0 = vaddq_s16(a0, o0); a1 = vaddq_s16(a1, o1); \
+                                reconstruct_int16_pair(h, l, o0, o1); a0 = vaddq_s16(a0, o0); a1 = vaddq_s16(a1, o1); \
                                 h = vqtbl1q_s8(vh0, u0_1); l = vqtbl1q_s8(vl0, u0_1); \
-                                reconstruct_int16_pair2(h, l, o0, o1); a2 = vaddq_s16(a2, o0); a3 = vaddq_s16(a3, o1); \
+                                reconstruct_int16_pair(h, l, o0, o1); a2 = vaddq_s16(a2, o0); a3 = vaddq_s16(a3, o1); \
                                 h = vqtbl1q_s8(vh1, u1_0); l = vqtbl1q_s8(vl1, u1_0); \
-                                reconstruct_int16_pair2(h, l, o0, o1); a0 = vaddq_s16(a0, o0); a1 = vaddq_s16(a1, o1); \
+                                reconstruct_int16_pair(h, l, o0, o1); a0 = vaddq_s16(a0, o0); a1 = vaddq_s16(a1, o1); \
                                 h = vqtbl1q_s8(vh1, u1_1); l = vqtbl1q_s8(vl1, u1_1); \
-                                reconstruct_int16_pair2(h, l, o0, o1); a2 = vaddq_s16(a2, o0); a3 = vaddq_s16(a3, o1); \
+                                reconstruct_int16_pair(h, l, o0, o1); a2 = vaddq_s16(a2, o0); a3 = vaddq_s16(a3, o1); \
                             }
 
                             PROCESS_BLOCK(w0.val[0], w1.val[0], acc[0], acc[1], acc[2], acc[3]);
