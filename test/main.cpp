@@ -1045,44 +1045,42 @@ void matmul_lut_packed_M(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, 
                     const uint8_t* pA0_base = A + k * row_stride;
                     const uint8_t* pA1_base = A + (k + 1) * row_stride;
 
-                    for (int ii = 0; ii < M; ii += 512) {
-                        for (int i = 0; (ii + i) < M && i < 512; i += 128) {
-                            int16x8_t acc[16];
-                            // Initialize registers with 0 for this k-step
-                            for (int b = 0; b < 16; b++) {
-                                acc[b] = vdupq_n_s16(0);
-                            }
+                    for (int i = 0; i < M; i += 128) {
+                        int16x8_t acc[16];
+                        // Initialize registers with 0 for this k-step
+                        for (int b = 0; b < 16; b++) {
+                            acc[b] = vdupq_n_s16(0);
+                        }
 
-                            const uint8x16x4_t w0 = vld1q_u8_x4(pA0_base + (ii + i) / 2);
-                            const uint8x16x4_t w1 = vld1q_u8_x4(pA1_base + (ii + i) / 2);
+                        const uint8x16x4_t w0 = vld1q_u8_x4(pA0_base + i / 2);
+                        const uint8x16x4_t w1 = vld1q_u8_x4(pA1_base + i / 2);
 
 #define PROCESS_BLOCK(w0_reg, w1_reg, a0, a1, a2, a3) { \
-                                uint8x16_t ut0 = vshrq_n_u8(w0_reg, 4); uint8x16_t ub0 = vandq_u8(w0_reg, vec_mask); \
-                                uint8x16_t ut1 = vshrq_n_u8(w1_reg, 4); uint8x16_t ub1 = vandq_u8(w1_reg, vec_mask); \
-                                uint8x16_t u0_0 = vzip1q_u8(ut0, ub0); uint8x16_t u0_1 = vzip2q_u8(ut0, ub0); \
-                                uint8x16_t u1_0 = vzip1q_u8(ut1, ub1); uint8x16_t u1_1 = vzip2q_u8(ut1, ub1); \
-                                int16x8_t o0, o1, h, l; \
-                                h = vqtbl1q_s8(vh0, u0_0); l = vqtbl1q_s8(vl0, u0_0); \
-                                reconstruct_int16_pair(h, l, o0, o1); a0 = vaddq_s16(a0, o0); a1 = vaddq_s16(a1, o1); \
-                                h = vqtbl1q_s8(vh0, u0_1); l = vqtbl1q_s8(vl0, u0_1); \
-                                reconstruct_int16_pair(h, l, o0, o1); a2 = vaddq_s16(a2, o0); a3 = vaddq_s16(a3, o1); \
-                                h = vqtbl1q_s8(vh1, u1_0); l = vqtbl1q_s8(vl1, u1_0); \
-                                reconstruct_int16_pair(h, l, o0, o1); a0 = vaddq_s16(a0, o0); a1 = vaddq_s16(a1, o1); \
-                                h = vqtbl1q_s8(vh1, u1_1); l = vqtbl1q_s8(vl1, u1_1); \
-                                reconstruct_int16_pair(h, l, o0, o1); a2 = vaddq_s16(a2, o0); a3 = vaddq_s16(a3, o1); \
-                            }
+                            uint8x16_t ut0 = vshrq_n_u8(w0_reg, 4); uint8x16_t ub0 = vandq_u8(w0_reg, vec_mask); \
+                            uint8x16_t ut1 = vshrq_n_u8(w1_reg, 4); uint8x16_t ub1 = vandq_u8(w1_reg, vec_mask); \
+                            uint8x16_t u0_0 = vzip1q_u8(ut0, ub0); uint8x16_t u0_1 = vzip2q_u8(ut0, ub0); \
+                            uint8x16_t u1_0 = vzip1q_u8(ut1, ub1); uint8x16_t u1_1 = vzip2q_u8(ut1, ub1); \
+                            int16x8_t o0, o1, h, l; \
+                            h = vqtbl1q_s8(vh0, u0_0); l = vqtbl1q_s8(vl0, u0_0); \
+                            reconstruct_int16_pair2(h, l, o0, o1); a0 = vaddq_s16(a0, o0); a1 = vaddq_s16(a1, o1); \
+                            h = vqtbl1q_s8(vh0, u0_1); l = vqtbl1q_s8(vl0, u0_1); \
+                            reconstruct_int16_pair2(h, l, o0, o1); a2 = vaddq_s16(a2, o0); a3 = vaddq_s16(a3, o1); \
+                            h = vqtbl1q_s8(vh1, u1_0); l = vqtbl1q_s8(vl1, u1_0); \
+                            reconstruct_int16_pair2(h, l, o0, o1); a0 = vaddq_s16(a0, o0); a1 = vaddq_s16(a1, o1); \
+                            h = vqtbl1q_s8(vh1, u1_1); l = vqtbl1q_s8(vl1, u1_1); \
+                            reconstruct_int16_pair2(h, l, o0, o1); a2 = vaddq_s16(a2, o0); a3 = vaddq_s16(a3, o1); \
+                        }
 
-                            PROCESS_BLOCK(w0.val[0], w1.val[0], acc[0], acc[1], acc[2], acc[3]);
-                            PROCESS_BLOCK(w0.val[1], w1.val[1], acc[4], acc[5], acc[6], acc[7]);
-                            PROCESS_BLOCK(w0.val[2], w1.val[2], acc[8], acc[9], acc[10], acc[11]);
-                            PROCESS_BLOCK(w0.val[3], w1.val[3], acc[12], acc[13], acc[14], acc[15]);
+                        PROCESS_BLOCK(w0.val[0], w1.val[0], acc[0], acc[1], acc[2], acc[3]);
+                        PROCESS_BLOCK(w0.val[1], w1.val[1], acc[4], acc[5], acc[6], acc[7]);
+                        PROCESS_BLOCK(w0.val[2], w1.val[2], acc[8], acc[9], acc[10], acc[11]);
+                        PROCESS_BLOCK(w0.val[3], w1.val[3], acc[12], acc[13], acc[14], acc[15]);
 #undef PROCESS_BLOCK
 
-                            // Add the accumulated registers to tempvals at the end of the i loop's tile processing
-                            for (int b = 0; b < 16; b++) {
-                                int16_t* ptr = &tempvals[ii + i + b * 8];
-                                vst1q_s16(ptr, vaddq_s16(vld1q_s16(ptr), acc[b]));
-                            }
+                        // Add the accumulated registers to tempvals at the end of the i loop's tile processing
+                        for (int b = 0; b < 16; b++) {
+                            int16_t* ptr = &tempvals[i + b * 8];
+                            vst1q_s16(ptr, vaddq_s16(vld1q_s16(ptr), acc[b]));
                         }
                     }
                 }
