@@ -1038,13 +1038,25 @@ void matmul_lut_packed_M(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, 
                     acc0_j1[b] = vdupq_n_s16(0);
                 }
 
-                for (int k = 0; k < KK; k++) {
-                    const int8x16_t vh_j0 = vld1q_s8(QLUT0 + k * 32);
-                    const int8x16_t vl_j0 = vld1q_s8(QLUT0 + k * 32 + 16);
-                    const int8x16_t vh_j1 = vld1q_s8(QLUT1 + k * 32);
-                    const int8x16_t vl_j1 = vld1q_s8(QLUT1 + k * 32 + 16);
+                for (int k = 0; k < KK; k += 4) {
+                    __builtin_prefetch(QLUT0 + (k + 16) * 32, 0, 3);
+                    __builtin_prefetch(QLUT1 + (k + 16) * 32, 0, 3);
+                    __builtin_prefetch(A + (k + 16) * row_stride + i / 2, 0, 3);
+                    __builtin_prefetch(A + (k + 17) * row_stride + i / 2, 0, 3);
+                    __builtin_prefetch(A + (k + 18) * row_stride + i / 2, 0, 3);
+                    __builtin_prefetch(A + (k + 19) * row_stride + i / 2, 0, 3);
 
-                    const uint8x16x2_t w = vld1q_u8_x2(A + k * row_stride + i / 2);
+#define PROCESS_STEP(k_idx) { \
+                        const int8x16_t vh_j0 = vld1q_s8(QLUT0 + (k_idx) * 32); \
+                        const int8x16_t vl_j0 = vld1q_s8(QLUT0 + (k_idx) * 32 + 16); \
+                        const int8x16_t vh_j1 = vld1q_s8(QLUT1 + (k_idx) * 32); \
+                        const int8x16_t vl_j1 = vld1q_s8(QLUT1 + (k_idx) * 32 + 16); \
+                        const uint8x16x2_t w = vld1q_u8_x2(A + (k_idx) * row_stride + i / 2); \
+                        PROCESS_ONE_K(w.val[0], vh_j0, vl_j0, acc0_j0[0], acc0_j0[1], acc0_j0[2], acc0_j0[3]); \
+                        PROCESS_ONE_K(w.val[1], vh_j0, vl_j0, acc0_j0[4], acc0_j0[5], acc0_j0[6], acc0_j0[7]); \
+                        PROCESS_ONE_K(w.val[0], vh_j1, vl_j1, acc0_j1[0], acc0_j1[1], acc0_j1[2], acc0_j1[3]); \
+                        PROCESS_ONE_K(w.val[1], vh_j1, vl_j1, acc0_j1[4], acc0_j1[5], acc0_j1[6], acc0_j1[7]); \
+                    }
 
 #define PROCESS_ONE_K(w_reg, vh, vl, a0, a1, a2, a3) { \
                         uint8x16_t ut = vshrq_n_u8(w_reg, 4); uint8x16_t ub = vandq_u8(w_reg, vec_mask); \
@@ -1056,11 +1068,13 @@ void matmul_lut_packed_M(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, 
                         reconstruct_int16_pair2(h, l, o0, o1); a2 = vaddq_s16(a2, o0); a3 = vaddq_s16(a3, o1); \
                     }
 
-                    PROCESS_ONE_K(w.val[0], vh_j0, vl_j0, acc0_j0[0], acc0_j0[1], acc0_j0[2], acc0_j0[3]);
-                    PROCESS_ONE_K(w.val[1], vh_j0, vl_j0, acc0_j0[4], acc0_j0[5], acc0_j0[6], acc0_j0[7]);
-                    PROCESS_ONE_K(w.val[0], vh_j1, vl_j1, acc0_j1[0], acc0_j1[1], acc0_j1[2], acc0_j1[3]);
-                    PROCESS_ONE_K(w.val[1], vh_j1, vl_j1, acc0_j1[4], acc0_j1[5], acc0_j1[6], acc0_j1[7]);
+                    PROCESS_STEP(k);
+                    PROCESS_STEP(k + 1);
+                    PROCESS_STEP(k + 2);
+                    PROCESS_STEP(k + 3);
+
 #undef PROCESS_ONE_K
+#undef PROCESS_STEP
                 }
 
                 const float32x4_t v_rescale0 = vdupq_n_f32(weight_scale / LUT_Scales0[0]);
