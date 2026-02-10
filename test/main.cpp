@@ -1027,15 +1027,20 @@ void matmul_lut_packed_M(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, 
 
         #pragma omp for
         for (int j = 0; j < N; j++) {
-                ggml_preprocessor(M, K, (void*)(B + j * K), (void*)(&LUT_Scales[0]), (void*)QLUT);
-                memset(tempvals, 0, M * sizeof(int16_t));
-                const float32x4_t v_rescale = vdupq_n_f32(weight_scale / LUT_Scales[0]);
+            ggml_preprocessor(M, K, (void*)(B + j * K), (void*)(&LUT_Scales[0]), (void*)QLUT);
+            const float32x4_t v_rescale = vdupq_n_f32(weight_scale / LUT_Scales[0]);
+
+            for (int i = 0; i < M; i += 128) {
+                int16x8_t acc[16];
+                for (int b = 0; b < 16; b++) {
+                    acc[b] = vdupq_n_s16(0);
+                }
 
                 for (int k = 0; k < KK; k += 4) {
-                    // Prefetch QLUT for the next block (4 indices = 128 bytes)
                     if (k + 4 < KK) {
                         __builtin_prefetch(QLUT + (k + 4) * 32, 0, 3);
                         __builtin_prefetch(QLUT + (k + 4) * 32 + 64, 0, 3);
+                        __builtin_prefetch(A + (k + 4) * row_stride + i / 2, 0, 3);
                     }
 
                     const int8x16_t vh0 = vld1q_s8(QLUT + k * 32);
@@ -1047,65 +1052,46 @@ void matmul_lut_packed_M(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, 
                     const int8x16_t vh3 = vld1q_s8(QLUT + (k + 3) * 32);
                     const int8x16_t vl3 = vld1q_s8(QLUT + (k + 3) * 32 + 16);
 
-                    const uint8_t* pA0_base = A + k * row_stride;
-                    const uint8_t* pA1_base = A + (k + 1) * row_stride;
-                    const uint8_t* pA2_base = A + (k + 2) * row_stride;
-                    const uint8_t* pA3_base = A + (k + 3) * row_stride;
-
-                    for (int i = 0; i < M; i += 128) {
-                        int16x8_t acc[16];
-                        // Initialize registers with 0 for this k-step
-                        for (int b = 0; b < 16; b++) {
-                            acc[b] = vdupq_n_s16(0);
-                        }
-
-                        const uint8x16x4_t w0 = vld1q_u8_x4(pA0_base + i / 2);
-                        const uint8x16x4_t w1 = vld1q_u8_x4(pA1_base + i / 2);
-                        const uint8x16x4_t w2 = vld1q_u8_x4(pA2_base + i / 2);
-                        const uint8x16x4_t w3 = vld1q_u8_x4(pA3_base + i / 2);
+                    const uint8x16x4_t w0 = vld1q_u8_x4(A + k * row_stride + i / 2);
+                    const uint8x16x4_t w1 = vld1q_u8_x4(A + (k + 1) * row_stride + i / 2);
+                    const uint8x16x4_t w2 = vld1q_u8_x4(A + (k + 2) * row_stride + i / 2);
+                    const uint8x16x4_t w3 = vld1q_u8_x4(A + (k + 3) * row_stride + i / 2);
 
 #define PROCESS_ONE_K(w_reg, vh, vl, a0, a1, a2, a3) { \
-                            uint8x16_t ut = vshrq_n_u8(w_reg, 4); uint8x16_t ub = vandq_u8(w_reg, vec_mask); \
-                            uint8x16_t u0 = vzip1q_u8(ut, ub); uint8x16_t u1 = vzip2q_u8(ut, ub); \
-                            int16x8_t o0, o1, h, l; \
-                            h = vqtbl1q_s8(vh, u0); l = vqtbl1q_s8(vl, u0); \
-                            reconstruct_int16_pair2(h, l, o0, o1); a0 = vaddq_s16(a0, o0); a1 = vaddq_s16(a1, o1); \
-                            h = vqtbl1q_s8(vh, u1); l = vqtbl1q_s8(vl, u1); \
-                            reconstruct_int16_pair2(h, l, o0, o1); a2 = vaddq_s16(a2, o0); a3 = vaddq_s16(a3, o1); \
-                        }
+                        uint8x16_t ut = vshrq_n_u8(w_reg, 4); uint8x16_t ub = vandq_u8(w_reg, vec_mask); \
+                        uint8x16_t u0 = vzip1q_u8(ut, ub); uint8x16_t u1 = vzip2q_u8(ut, ub); \
+                        int16x8_t o0, o1, h, l; \
+                        h = vqtbl1q_s8(vh, u0); l = vqtbl1q_s8(vl, u0); \
+                        reconstruct_int16_pair2(h, l, o0, o1); a0 = vaddq_s16(a0, o0); a1 = vaddq_s16(a1, o1); \
+                        h = vqtbl1q_s8(vh, u1); l = vqtbl1q_s8(vl, u1); \
+                        reconstruct_int16_pair2(h, l, o0, o1); a2 = vaddq_s16(a2, o0); a3 = vaddq_s16(a3, o1); \
+                    }
 
 #define PROCESS_WEIGHT_GROUP(idx) { \
-                            PROCESS_ONE_K(w0.val[idx], vh0, vl0, acc[idx*4+0], acc[idx*4+1], acc[idx*4+2], acc[idx*4+3]); \
-                            PROCESS_ONE_K(w1.val[idx], vh1, vl1, acc[idx*4+0], acc[idx*4+1], acc[idx*4+2], acc[idx*4+3]); \
-                            PROCESS_ONE_K(w2.val[idx], vh2, vl2, acc[idx*4+0], acc[idx*4+1], acc[idx*4+2], acc[idx*4+3]); \
-                            PROCESS_ONE_K(w3.val[idx], vh3, vl3, acc[idx*4+0], acc[idx*4+1], acc[idx*4+2], acc[idx*4+3]); \
-                        }
+                        PROCESS_ONE_K(w0.val[idx], vh0, vl0, acc[idx*4+0], acc[idx*4+1], acc[idx*4+2], acc[idx*4+3]); \
+                        PROCESS_ONE_K(w1.val[idx], vh1, vl1, acc[idx*4+0], acc[idx*4+1], acc[idx*4+2], acc[idx*4+3]); \
+                        PROCESS_ONE_K(w2.val[idx], vh2, vl2, acc[idx*4+0], acc[idx*4+1], acc[idx*4+2], acc[idx*4+3]); \
+                        PROCESS_ONE_K(w3.val[idx], vh3, vl3, acc[idx*4+0], acc[idx*4+1], acc[idx*4+2], acc[idx*4+3]); \
+                    }
 
-                        PROCESS_WEIGHT_GROUP(0);
-                        PROCESS_WEIGHT_GROUP(1);
-                        PROCESS_WEIGHT_GROUP(2);
-                        PROCESS_WEIGHT_GROUP(3);
+                    PROCESS_WEIGHT_GROUP(0);
+                    PROCESS_WEIGHT_GROUP(1);
+                    PROCESS_WEIGHT_GROUP(2);
+                    PROCESS_WEIGHT_GROUP(3);
 
 #undef PROCESS_WEIGHT_GROUP
 #undef PROCESS_ONE_K
-
-                        // Add the accumulated registers to tempvals at the end of the i loop's tile processing
-                        for (int b = 0; b < 16; b++) {
-                            int16_t* ptr = &tempvals[i + b * 8];
-                            vst1q_s16(ptr, vaddq_s16(vld1q_s16(ptr), acc[b]));
-                        }
-                    }
                 }
 
-                // Final rescale and write to C
-                for (int i = 0; i < M; i += 8) {
-                    int16x8_t v_int = vld1q_s16(&tempvals[i]);
-                    float32x4_t v_low = vmulq_f32(v_rescale, vcvtq_f32_s32(vmovl_s16(vget_low_s16(v_int))));
-                    float32x4_t v_high = vmulq_f32(v_rescale, vcvtq_f32_s32(vmovl_s16(vget_high_s16(v_int))));
-                    vst1q_f32(&C[j * M + i], v_low);
-                    vst1q_f32(&C[j * M + i + 4], v_high);
+                // Write results for this 128-row block back to C with scaling
+                for (int b = 0; b < 16; b++) {
+                    int offset = i + b * 8;
+                    vst1q_f32(&C[j * M + offset], vmulq_f32(v_rescale, vcvtq_f32_s32(vmovl_s16(vget_low_s16(acc[b])))));
+                    vst1q_f32(&C[j * M + offset + 4], vmulq_f32(v_rescale, vcvtq_f32_s32(vmovl_s16(vget_high_s16(acc[b])))));
                 }
+            }
         }
+        
         aligned_free(QLUT);
         aligned_free(LUT_Scales);
         aligned_free(tempvals);
