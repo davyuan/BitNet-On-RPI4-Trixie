@@ -545,8 +545,8 @@ void ggml_qgemm_lut_2col_256(int M, int N, int K, int ii, int j, uint8_t* A, int
         int8x16_t vh0_j1 = ql1.val[0]; int8x16_t vl0_j1 = ql1.val[1];
         int8x16_t vh1_j1 = ql1.val[2]; int8x16_t vl1_j1 = ql1.val[3];
 
-        const uint8_t* pA0_base = A + (k + 0) * row_stride + ii_packed;
-        const uint8_t* pA1_base = A + (k + 1) * row_stride + ii_packed;
+        const uint8_t* pA0_base = A + (k + 0) * row_stride + i_packed;
+        const uint8_t* pA1_base = A + (k + 1) * row_stride + i_packed;
 
         for (int r = 0; r < 256; r += 32) {
             const int irp = r / 2;
@@ -639,8 +639,8 @@ void ggml_qgemm_lut_2col_160(int M, int N, int K, int ii, int j, uint8_t* A, int
         int8x16_t vh0_j1 = ql1.val[0]; int8x16_t vl0_j1 = ql1.val[1];
         int8x16_t vh1_j1 = ql1.val[2]; int8x16_t vl1_j1 = ql1.val[3];
 
-        const uint8_t* pA0_base = A + (k + 0) * row_stride + ii_packed;
-        const uint8_t* pA1_base = A + (k + 1) * row_stride + ii_packed;
+        const uint8_t* pA0_base = A + (k + 0) * row_stride + i_packed;
+        const uint8_t* pA1_base = A + (k + 1) * row_stride + i_packed;
 
         for (int r = 0; r < 160; r += 32) {
             const int irp = r / 2;
