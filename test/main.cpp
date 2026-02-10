@@ -1028,38 +1028,43 @@ void matmul_lut_packed_M(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, 
         #pragma omp for
         for (int j = 0; j < N; j++) {
                 ggml_preprocessor(M, K, (void*)(B + j * K), (void*)(&LUT_Scales[0]), (void*)QLUT);
-                
-                // Zero out tempvals for current column j
-                for (int i = 0; i < M; i++) {
-                    tempvals[i] = 0.0f;
-                }
+                memset(tempvals, 0, M * sizeof(float32_t));
 
-                for (int k = 0; k < KK; k++) {
-                    int8x16_t vh = vld1q_s8(QLUT + k * 32);
-                    int8x16_t vl = vld1q_s8(QLUT + k * 32 + 16);
-                    const uint8_t* pA_base = A + k * row_stride;
+                for (int k = 0; k < KK; k += 2) {
+                    // Prefetch QLUT for the next block (2 kndices = 64 bytes)
+                    if (k + 2 < KK) {
+                        __builtin_prefetch(QLUT + (k + 2) * 32, 0, 3);
+                    }
+
+                    int8x16_t vh0 = vld1q_s8(QLUT + k * 32);
+                    int8x16_t vl0 = vld1q_s8(QLUT + k * 32 + 16);
+                    int8x16_t vh1 = vld1q_s8(QLUT + (k + 1) * 32);
+                    int8x16_t vl1 = vld1q_s8(QLUT + (k + 1) * 32 + 16);
+
+                    const uint8_t* pA0_base = A + k * row_stride;
+                    const uint8_t* pA1_base = A + (k + 1) * row_stride;
 
                     for (int i = 0; i < M; i += 32) {
-                        uint8x16_t w = vld1q_u8(pA_base + i / 2);
+                        uint8x16_t w0 = vld1q_u8(pA0_base + i / 2);
+                        uint8x16_t w1 = vld1q_u8(pA1_base + i / 2);
 
-                        uint8x16_t ut = vshrq_n_u8(w, 4);
-                        uint8x16_t ub = vandq_u8(w, vec_mask);
+                        uint8x16_t ut0 = vshrq_n_u8(w0, 4); uint8x16_t ub0 = vandq_u8(w0, vec_mask);
+                        uint8x16_t ut1 = vshrq_n_u8(w1, 4); uint8x16_t ub1 = vandq_u8(w1, vec_mask);
 
-                        uint8x16_t u0 = vzip1q_u8(ut, ub);
-                        uint8x16_t u1 = vzip2q_u8(ut, ub);
+                        uint8x16_t u0_0 = vzip1q_u8(ut0, ub0); uint8x16_t u0_1 = vzip2q_u8(ut0, ub0);
+                        uint8x16_t u1_0 = vzip1q_u8(ut1, ub1); uint8x16_t u1_1 = vzip2q_u8(ut1, ub1);
 
                         int16x8_t o0_l, o0_h, o1_l, o1_h;
                         
-                        {
-                            int8x16_t h = vqtbl1q_s8(vh, u0);
-                            int8x16_t l = vqtbl1q_s8(vl, u0);
-                            reconstruct_int16_pair2(h, l, o0_l, o0_h);
+#define LOOKUP_RECONSTRUCT(vh, vl, u, ol, oh) { \
+                            int8x16_t h = vqtbl1q_s8(vh, u); \
+                            int8x16_t l = vqtbl1q_s8(vl, u); \
+                            reconstruct_int16_pair2(h, l, ol, oh); \
                         }
-                        {
-                            int8x16_t h = vqtbl1q_s8(vh, u1);
-                            int8x16_t l = vqtbl1q_s8(vl, u1);
-                            reconstruct_int16_pair2(h, l, o1_l, o1_h);
-                        }
+
+                        // k+0 part
+                        LOOKUP_RECONSTRUCT(vh0, vl0, u0_0, o0_l, o0_h);
+                        LOOKUP_RECONSTRUCT(vh0, vl0, u0_1, o1_l, o1_h);
 
 #define ACCUM_TEMP(ptr, res_v) { \
                             vst1q_f32(ptr,     vaddq_f32(vld1q_f32(ptr),     vcvtq_f32_s32(vmovl_s16(vget_low_s16(res_v))))); \
@@ -1069,6 +1074,17 @@ void matmul_lut_packed_M(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, 
                         ACCUM_TEMP(&tempvals[i + 8],  o0_h);
                         ACCUM_TEMP(&tempvals[i + 16], o1_l);
                         ACCUM_TEMP(&tempvals[i + 24], o1_h);
+
+                        // k+1 part
+                        LOOKUP_RECONSTRUCT(vh1, vl1, u1_0, o0_l, o0_h);
+                        LOOKUP_RECONSTRUCT(vh1, vl1, u1_1, o1_l, o1_h);
+
+                        ACCUM_TEMP(&tempvals[i + 0],  o0_l);
+                        ACCUM_TEMP(&tempvals[i + 8],  o0_h);
+                        ACCUM_TEMP(&tempvals[i + 16], o1_l);
+                        ACCUM_TEMP(&tempvals[i + 24], o1_h);
+
+#undef LOOKUP_RECONSTRUCT
 #undef ACCUM_TEMP
                     }
                 }
