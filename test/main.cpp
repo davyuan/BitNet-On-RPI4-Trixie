@@ -1023,12 +1023,13 @@ void matmul_lut_packed_M(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, 
     {
         int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
         float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
-        float32_t* tempvals = (float32_t*)aligned_malloc(M * sizeof(float32_t));
+        int16_t* tempvals = (int16_t*)aligned_malloc(M * sizeof(int16_t));
 
         #pragma omp for
         for (int j = 0; j < N; j++) {
                 ggml_preprocessor(M, K, (void*)(B + j * K), (void*)(&LUT_Scales[0]), (void*)QLUT);
-                memset(tempvals, 0, M * sizeof(float32_t));
+                memset(tempvals, 0, M * sizeof(int16_t));
+                const float32x4_t v_rescale = vdupq_n_f32(weight_scale / LUT_Scales[0]);
 
                 for (int k = 0; k < KK; k += 2) {
                     // Prefetch QLUT for the next block (2 kndices = 64 bytes)
@@ -1055,8 +1056,7 @@ void matmul_lut_packed_M(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, 
                         }
 
 #define ACCUM_TEMP(ptr, res_v) { \
-                            vst1q_f32(ptr,     vaddq_f32(vld1q_f32(ptr),     vcvtq_f32_s32(vmovl_s16(vget_low_s16(res_v))))); \
-                            vst1q_f32(ptr + 4, vaddq_f32(vld1q_f32(ptr + 4), vcvtq_f32_s32(vmovl_s16(vget_high_s16(res_v))))); \
+                            vst1q_s16((int16_t*)(ptr), vaddq_s16(vld1q_s16((int16_t*)(ptr)), res_v)); \
                         }
 
 #define PROCESS_W(w0, w1, offset_i) { \
@@ -1091,10 +1091,12 @@ void matmul_lut_packed_M(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, 
                 }
 
                 // Final rescale and write to C
-                const float32x4_t v_rescale = vdupq_n_f32(weight_scale / LUT_Scales[0]);
-                for (int i = 0; i < M; i += 4) {
-                    float32x4_t v = vld1q_f32(&tempvals[i]);
-                    vst1q_f32(&C[j * M + i], vmulq_f32(v, v_rescale));
+                for (int i = 0; i < M; i += 8) {
+                    int16x8_t v_int = vld1q_s16(&tempvals[i]);
+                    float32x4_t v_low = vmulq_f32(v_rescale, vcvtq_f32_s32(vmovl_s16(vget_low_s16(v_int))));
+                    float32x4_t v_high = vmulq_f32(v_rescale, vcvtq_f32_s32(vmovl_s16(vget_high_s16(v_int))));
+                    vst1q_f32(&C[j * M + i], v_low);
+                    vst1q_f32(&C[j * M + i + 4], v_high);
                 }
         }
         aligned_free(QLUT);
