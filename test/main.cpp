@@ -1117,6 +1117,10 @@ void matmul_lut_packed_M(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, 
 
             // Final rescale and write results to C
             for (int i = 0; i < M; i += 8) {
+                if (i + 32 < M) {
+                    __builtin_prefetch(&tempvals[i + 32], 0, 3);
+                    __builtin_prefetch(&C[j * M + i + 32], 1, 3);
+                }
                 int16x8_t v_int = vld1q_s16(&tempvals[i]);
                 vst1q_f32(&C[j * M + i], vmulq_f32(v_rescale, vcvtq_f32_s32(vmovl_s16(vget_low_s16(v_int)))));
                 vst1q_f32(&C[j * M + i + 4], vmulq_f32(v_rescale, vcvtq_f32_s32(vmovl_s16(vget_high_s16(v_int)))));
