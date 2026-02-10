@@ -1031,34 +1031,31 @@ void matmul_lut_packed_M(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, 
             memset(tempvals, 0, M * sizeof(int16_t));
             const float32x4_t v_rescale = vdupq_n_f32(weight_scale / LUT_Scales[0]);
 
-            for (int kk = 0; kk < KK; kk += 64) {
-                const int k_end = (kk + 64 > KK) ? KK : (kk + 64);
-                
+            for (int k = 0; k < KK; k += 4) {
+                if (k + 4 < KK) {
+                    __builtin_prefetch(QLUT + (k + 4) * 32, 0, 3);
+                    __builtin_prefetch(QLUT + (k + 4) * 32 + 64, 0, 3);
+                }
+
+                const int8x16_t vh0 = vld1q_s8(QLUT + k * 32);
+                const int8x16_t vl0 = vld1q_s8(QLUT + k * 32 + 16);
+                const int8x16_t vh1 = vld1q_s8(QLUT + (k + 1) * 32);
+                const int8x16_t vl1 = vld1q_s8(QLUT + (k + 1) * 32 + 16);
+                const int8x16_t vh2 = vld1q_s8(QLUT + (k + 2) * 32);
+                const int8x16_t vl2 = vld1q_s8(QLUT + (k + 2) * 32 + 16);
+                const int8x16_t vh3 = vld1q_s8(QLUT + (k + 3) * 32);
+                const int8x16_t vl3 = vld1q_s8(QLUT + (k + 3) * 32 + 16);
+
                 for (int i = 0; i < M; i += 128) {
                     int16x8_t acc[16];
                     for (int b = 0; b < 16; b++) {
                         acc[b] = vld1q_s16(&tempvals[i + b * 8]);
                     }
 
-                    for (int k = kk; k < k_end; k += 4) {
-                        if (k + 4 < k_end) {
-                            __builtin_prefetch(QLUT + (k + 4) * 32, 0, 3);
-                            __builtin_prefetch(QLUT + (k + 4) * 32 + 64, 0, 3);
-                        }
-
-                        const int8x16_t vh0 = vld1q_s8(QLUT + k * 32);
-                        const int8x16_t vl0 = vld1q_s8(QLUT + k * 32 + 16);
-                        const int8x16_t vh1 = vld1q_s8(QLUT + (k + 1) * 32);
-                        const int8x16_t vl1 = vld1q_s8(QLUT + (k + 1) * 32 + 16);
-                        const int8x16_t vh2 = vld1q_s8(QLUT + (k + 2) * 32);
-                        const int8x16_t vl2 = vld1q_s8(QLUT + (k + 2) * 32 + 16);
-                        const int8x16_t vh3 = vld1q_s8(QLUT + (k + 3) * 32);
-                        const int8x16_t vl3 = vld1q_s8(QLUT + (k + 3) * 32 + 16);
-
-                        const uint8x16x4_t w0 = vld1q_u8_x4(A + k * row_stride + i / 2);
-                        const uint8x16x4_t w1 = vld1q_u8_x4(A + (k + 1) * row_stride + i / 2);
-                        const uint8x16x4_t w2 = vld1q_u8_x4(A + (k + 2) * row_stride + i / 2);
-                        const uint8x16x4_t w3 = vld1q_u8_x4(A + (k + 3) * row_stride + i / 2);
+                    const uint8x16x4_t w0 = vld1q_u8_x4(A + k * row_stride + i / 2);
+                    const uint8x16x4_t w1 = vld1q_u8_x4(A + (k + 1) * row_stride + i / 2);
+                    const uint8x16x4_t w2 = vld1q_u8_x4(A + (k + 2) * row_stride + i / 2);
+                    const uint8x16x4_t w3 = vld1q_u8_x4(A + (k + 3) * row_stride + i / 2);
 
 #define PROCESS_ONE_K(w_reg, vh, vl, a0, a1, a2, a3) { \
                         uint8x16_t ut = vshrq_n_u8(w_reg, 4); uint8x16_t ub = vandq_u8(w_reg, vec_mask); \
@@ -1077,14 +1074,13 @@ void matmul_lut_packed_M(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, 
                         PROCESS_ONE_K(w3.val[idx], vh3, vl3, acc[idx*4+0], acc[idx*4+1], acc[idx*4+2], acc[idx*4+3]); \
                     }
 
-                        PROCESS_WEIGHT_GROUP(0);
-                        PROCESS_WEIGHT_GROUP(1);
-                        PROCESS_WEIGHT_GROUP(2);
-                        PROCESS_WEIGHT_GROUP(3);
+                    PROCESS_WEIGHT_GROUP(0);
+                    PROCESS_WEIGHT_GROUP(1);
+                    PROCESS_WEIGHT_GROUP(2);
+                    PROCESS_WEIGHT_GROUP(3);
 
 #undef PROCESS_WEIGHT_GROUP
 #undef PROCESS_ONE_K
-                    }
 
                     for (int b = 0; b < 16; b++) {
                         vst1q_s16(&tempvals[i + b * 8], acc[b]);
