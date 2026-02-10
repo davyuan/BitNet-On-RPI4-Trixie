@@ -527,18 +527,18 @@ void ggml_qgemm_lut_2col_256(int M, int N, int K, int ii, int j, uint8_t* A, int
 
     for (int k = 0; k < KK; k += 2) {
         if (k + 2 < KK) {
-            const uint8_t* pA_next = A + (k + 2) * row_stride + ii_packed;
+            const uint8_t* pA_next = A + (k + 2) * row_stride + i_packed;
             __builtin_prefetch(pA_next, 0, 3);
             __builtin_prefetch(pA_next + 64, 0, 3);
             __builtin_prefetch(pA_next + row_stride, 0, 3);
             __builtin_prefetch(pA_next + row_stride + 64, 0, 3);
 
-            __builtin_prefetch(QLUT0 + (k + 2) * 32, 0, 3);
-            __builtin_prefetch(QLUT1 + (k + 2) * 32, 0, 3);
+            __builtin_prefetch(LUT0 + (k + 2) * 32, 0, 3);
+            __builtin_prefetch(LUT1 + (k + 2) * 32, 0, 3);
         }
 
-        int8x16x4_t ql0 = vld1q_s8_x4(QLUT0 + k * 32);
-        int8x16x4_t ql1 = vld1q_s8_x4(QLUT1 + k * 32);
+        int8x16x4_t ql0 = vld1q_s8_x4(LUT0 + k * 32);
+        int8x16x4_t ql1 = vld1q_s8_x4(LUT1 + k * 32);
 
         int8x16_t vh0_j0 = ql0.val[0]; int8x16_t vl0_j0 = ql0.val[1];
         int8x16_t vh1_j0 = ql0.val[2]; int8x16_t vl1_j0 = ql0.val[3];
@@ -621,18 +621,18 @@ void ggml_qgemm_lut_2col_160(int M, int N, int K, int ii, int j, uint8_t* A, int
 
     for (int k = 0; k < KK; k += 2) {
         if (k + 2 < KK) {
-            const uint8_t* pA_next = A + (k + 2) * row_stride + ii_packed;
+            const uint8_t* pA_next = A + (k + 2) * row_stride + i_packed;
             __builtin_prefetch(pA_next, 0, 3);
             __builtin_prefetch(pA_next + 64, 0, 3);
             __builtin_prefetch(pA_next + row_stride, 0, 3);
             __builtin_prefetch(pA_next + row_stride + 64, 0, 3);
 
-            __builtin_prefetch(QLUT0 + (k + 2) * 32, 0, 3);
-            __builtin_prefetch(QLUT1 + (k + 2) * 32, 0, 3);
+            __builtin_prefetch(LUT0 + (k + 2) * 32, 0, 3);
+            __builtin_prefetch(LUT1 + (k + 2) * 32, 0, 3);
         }
 
-        int8x16x4_t ql0 = vld1q_s8_x4(QLUT0 + k * 32);
-        int8x16x4_t ql1 = vld1q_s8_x4(QLUT1 + k * 32);
+        int8x16x4_t ql0 = vld1q_s8_x4(LUT0 + k * 32);
+        int8x16x4_t ql1 = vld1q_s8_x4(LUT1 + k * 32);
 
         int8x16_t vh0_j0 = ql0.val[0]; int8x16_t vl0_j0 = ql0.val[1];
         int8x16_t vh1_j0 = ql0.val[2]; int8x16_t vl1_j0 = ql0.val[3];
