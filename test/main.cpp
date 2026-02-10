@@ -2454,6 +2454,7 @@ int main() {
     
     printf("\nStep 4: Running Microkernel(10 iterations for average)\n");
     double avg_microkernel_time = benchmark_matmul(
+        "\nStep 4: Running Microkernel(10 iterations for average)\n",
         "Matmul_microkernel",
         [&]() { matmul_lut_micro_kernel(A_packed_T, B_T, C_simd, weight_scale, M, N, K); },
         C_simd, M, N, num_iterations
@@ -2463,6 +2464,7 @@ int main() {
 
     printf("\nStep 5: Running Matmul LUT Packed 256 (10 iterations for average)\n");
     double avg_packed_256_time = benchmark_matmul(
+        "\nStep 5: Running Matmul LUT Packed 256 (10 iterations for average)\n",
         "Matmul_lut_packed_256",
         [&]() { matmul_lut_packed_256(A_packed_T, B_T, C_simd, weight_scale, M, N, K); },
         C_simd, M, N, num_iterations
