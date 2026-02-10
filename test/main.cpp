@@ -224,6 +224,59 @@ void matmul_lut_tiled2(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, in
     }
 }
 
+/* A(MxK/2), B(NxK)
+   QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
+        each K represents 2 activations in B. 
+   C(NxM)
+   This version implements a tiled based LUT-lookup matmul without SIMD optimizations.
+   we parition the work among threads by j, so every thread owns its LUT the output columns.
+   we maximize the reuse of LUT by iterating the M dimension.    
+*/
+void matmul_lut_tiled3(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
+    int KK = K / 2;
+        
+    // Partition rows among 4 cores
+    #pragma omp parallel num_threads(4) 
+    {
+        int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
+        float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
+        int16_t* tmp_vals = (int16_t*)aligned_malloc(M * N * sizeof(int16_t));
+        memset(tmp_vals, 0, M * N * sizeof(int16_t));
+        
+        #pragma omp for
+        for (int j = 0; j < N; j++) {
+            *LUT_Scales = 1.0f;
+            ggml_preprocessor(M, K, (void*)(B + j * K), (void*)LUT_Scales, (void*)QLUT);  
+            for (int k = 0; k < KK; k++) {          
+                for (int i = 0; i < M; i++) {
+                    int lut_index = A[i*KK + k];
+                    int32_t local_sum = 0; 
+                    uint8_t high_byte = (uint8_t)QLUT[k * 32 + lut_index];
+                    uint8_t low_byte = (uint8_t)QLUT[k * 32 + 16 + lut_index];
+                    // Combine as unsigned first, then cast to signed int16
+                    int16_t combined = (int16_t)(((uint16_t)high_byte << 8) | (uint16_t)low_byte);
+                    
+                    // Add to result (C is pre-initialized to 0)
+                    tmp_vals[j*M + i] += combined ;
+                }
+            }
+        }
+        #pragma omp barrier
+
+        #pragma omp for
+        for (int j = 0; j < N; j++) {
+            for (int i = 0; i < M; i++) {
+                C[j*M + i] = (float32_t)tmp_vals[j*M + i] * ws[0] / (*LUT_Scales);
+            }
+        }
+        #pragma omp barrier
+
+        aligned_free(QLUT);
+        aligned_free(LUT_Scales);        
+        aligned_free(tmp_vals);
+    }
+}
+
 /* A(K/2 x M), B(N x K)
    QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
         each K represents 2 activations in B. 
@@ -976,8 +1029,8 @@ void matmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, float32_t* 
             ggml_preprocessor(ne01, ne10, B + (j * ne10), &LUT_Scales[0], QLUT0);
             ggml_preprocessor(ne01, ne10, B + ((j + 1) * ne10), &LUT_Scales[1], QLUT1);
 
-            for (int ii = 0; ii < ne01; ii += 160) {
-                ggml_qgemm_lut_2col_160(ne01, ne11, ne10, ii, j, A, 
+            for (int ii = 0; ii < ne01; ii += 256) {
+                ggml_qgemm_lut_2col_256(ne01, ne11, ne10, ii, j, A, 
                                 QLUT0, 
                                 QLUT1,
                                 ws, 
@@ -2525,7 +2578,16 @@ int main() {
         C_simd, M, N, num_iterations
     );
     printf("\nComparing kernel output (C) with reference (C_)...\n");
-    compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_lut_tiled comparison");
+    compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_lut_tiled2 comparison");
+
+    double avg_lut_time3 = benchmark_matmul(
+        "\nStep 2: Running LUT Tiled v3(10 iterations for average)\n",
+        "Matmul_lut_tiled",
+        [&]() { matmul_lut_tiled3(A, B_T, C_simd, weight_scale, M, N, K); },
+        C_simd, M, N, num_iterations
+    );
+    printf("\nComparing kernel output (C) with reference (C_)...\n");
+    compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_lut_tiled3 comparison");
 
     double avg_simd_time = benchmark_matmul(
         "\nStep 3: Running LUT SIMD(10 iterations for average)\n",
@@ -2578,6 +2640,7 @@ int main() {
     // Print performance comparison
     double speedup_lut = (double)naive_duration.count() / (double)avg_lut_time;
     double speedup_lut2 = (double)naive_duration.count() / (double)avg_lut_time2;
+    double speedup_lut3 = (double)naive_duration.count() / (double)avg_lut_time3;
     double speedup_simd = (double)naive_duration.count() / (double)avg_simd_time;
     double speedup_packed = (double)naive_duration.count() / (double)avg_packed_time;
     double speedup_microkernel = (double)naive_duration.count() / (double)avg_microkernel_time;
@@ -2588,6 +2651,7 @@ int main() {
     printf("matmul naive:   %.2f ms\n", (double)naive_duration.count());
     printf("Speedup (naive / lut)):   %.2fx\n", speedup_lut);
     printf("Speedup (naive / lut2)):   %.2fx\n", speedup_lut2);
+    printf("Speedup (naive / lut3)):   %.2fx\n", speedup_lut3);
     printf("Speedup (naive / SIMD): %.2fx\n\n", speedup_simd);
     printf("LUT matmul_lut_unpacked (avg):   %.2f ms\n", avg_packed_time);
     printf("Speedup (naive / lut_packed): %.2fx\n\n", speedup_packed);
