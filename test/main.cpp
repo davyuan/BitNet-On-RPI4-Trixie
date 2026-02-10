@@ -242,6 +242,7 @@ void matmul_lut_tiled3(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, in
         float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
         int16_t* tmp_vals = (int16_t*)aligned_malloc(M * N * sizeof(int16_t));
         memset(tmp_vals, 0, M * N * sizeof(int16_t));
+        float32_t rescale = ws[0] / (*LUT_Scales);
         
         #pragma omp for
         for (int j = 0; j < N; j++) {
@@ -266,7 +267,7 @@ void matmul_lut_tiled3(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, in
         #pragma omp for
         for (int j = 0; j < N; j++) {
             for (int i = 0; i < M; i++) {
-                C[j*M + i] = (float32_t)tmp_vals[j*M + i] * ws[0] / (*LUT_Scales);
+                C[j*M + i] = (float32_t)tmp_vals[j*M + i] * rescale;
             }
         }
         #pragma omp barrier
@@ -1005,6 +1006,85 @@ void matmul_lut_packed_160(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws
         aligned_free(LUT_Scales);
     }
 }
+
+/* A(K/2 x M/2), B(N x K)
+   QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
+        each K represents 2 activations in B. 
+   C(N x M)
+   This version uses SIMD optimizations 
+*/
+void matmul_lut_packed_M(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
+    int KK = K / 2;
+    const uint8x16_t vec_mask = vdupq_n_u8(0x0f);
+    const float32_t weight_scale = ws[0];
+    const int row_stride = M / 2;
+
+    #pragma omp parallel num_threads(4)
+    {
+        int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
+        float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
+        float32_t* tempvals = (float32_t*)aligned_malloc(M * sizeof(float32_t));
+
+        #pragma omp for
+        for (int j = 0; j < N; j++) {
+                ggml_preprocessor(M, K, (void*)(B + j * K), (void*)(&LUT_Scales[0]), (void*)QLUT);
+                
+                // Zero out tempvals for current column j
+                for (int i = 0; i < M; i++) {
+                    tempvals[i] = 0.0f;
+                }
+
+                for (int k = 0; k < KK; k++) {
+                    int8x16_t vh = vld1q_s8(QLUT + k * 32);
+                    int8x16_t vl = vld1q_s8(QLUT + k * 32 + 16);
+                    const uint8_t* pA_base = A + k * row_stride;
+
+                    for (int i = 0; i < M; i += 32) {
+                        uint8x16_t w = vld1q_u8(pA_base + i / 2);
+
+                        uint8x16_t ut = vshrq_n_u8(w, 4);
+                        uint8x16_t ub = vandq_u8(w, vec_mask);
+
+                        uint8x16_t u0 = vzip1q_u8(ut, ub);
+                        uint8x16_t u1 = vzip2q_u8(ut, ub);
+
+                        int16x8_t o0_l, o0_h, o1_l, o1_h;
+                        
+                        {
+                            int8x16_t h = vqtbl1q_s8(vh, u0);
+                            int8x16_t l = vqtbl1q_s8(vl, u0);
+                            reconstruct_int16_pair2(h, l, o0_l, o0_h);
+                        }
+                        {
+                            int8x16_t h = vqtbl1q_s8(vh, u1);
+                            int8x16_t l = vqtbl1q_s8(vl, u1);
+                            reconstruct_int16_pair2(h, l, o1_l, o1_h);
+                        }
+
+#define ACCUM_TEMP(ptr, res_v) { \
+                            vst1q_f32(ptr,     vaddq_f32(vld1q_f32(ptr),     vcvtq_f32_s32(vmovl_s16(vget_low_s16(res_v))))); \
+                            vst1q_f32(ptr + 4, vaddq_f32(vld1q_f32(ptr + 4), vcvtq_f32_s32(vmovl_s16(vget_high_s16(res_v))))); \
+                        }
+                        ACCUM_TEMP(&tempvals[i + 0],  o0_l);
+                        ACCUM_TEMP(&tempvals[i + 8],  o0_h);
+                        ACCUM_TEMP(&tempvals[i + 16], o1_l);
+                        ACCUM_TEMP(&tempvals[i + 24], o1_h);
+#undef ACCUM_TEMP
+                    }
+                }
+
+                // Final rescale and write to C
+                const float32x4_t v_rescale = vdupq_n_f32(weight_scale / LUT_Scales[0]);
+                for (int i = 0; i < M; i += 4) {
+                    float32x4_t v = vld1q_f32(&tempvals[i]);
+                    vst1q_f32(&C[j * M + i], vmulq_f32(v, v_rescale));
+                }
+        }
+        aligned_free(QLUT);
+        aligned_free(LUT_Scales);
+        aligned_free(tempvals);
+    }
+}      
 
 /* A(K/2 x M), B(N x K)
    QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
@@ -2627,6 +2707,16 @@ int main() {
     printf("\nComparing kernel output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_lut_packed_160 comparison");
 
+    printf("\nStep 4: Running Matmul LUT Packed M (10 iterations for average)\n");
+    double avg_packed_M_time = benchmark_matmul(
+        "\nStep 4: Running Matmul LUT Packed M (10 iterations for average)\n",
+        "Matmul_lut_packed_M",
+        [&]() { matmul_lut_packed_M(A_packed_T, B_T, C_simd, weight_scale, M, N, K); },
+        C_simd, M, N, num_iterations
+    );
+    printf("\nComparing kernel output (C) with reference (C_)...\n");
+    compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_lut_packed_M comparison");
+
     printf("\nStep 4: Running Microkernel(10 iterations for average)\n");
     double avg_microkernel_time = benchmark_matmul(
         "\nStep 4: Running Microkernel(10 iterations for average)\n",
@@ -2646,6 +2736,7 @@ int main() {
     double speedup_microkernel = (double)naive_duration.count() / (double)avg_microkernel_time;
     double speedup_packed_256 = (double)naive_duration.count() / (double)avg_packed_256_time;
     double speedup_packed_160 = (double)naive_duration.count() / (double)avg_packed_160_time;
+    double speedup_packed_M = (double)naive_duration.count() / (double)avg_packed_M_time;
 
     printf("\n=== PERFORMANCE COMPARISON ===\n");
     printf("matmul naive:   %.2f ms\n", (double)naive_duration.count());
@@ -2659,6 +2750,8 @@ int main() {
     printf("Speedup (naive / packed_256): %.2fx\n\n", speedup_packed_256);
     printf("LUT matmul_lut_packed_160 (avg):   %.2f ms\n", avg_packed_160_time);
     printf("Speedup (naive / packed_160): %.2fx\n\n", speedup_packed_160);
+    printf("LUT matmul_lut_packed_M (avg):   %.2f ms\n", avg_packed_M_time);
+    printf("Speedup (naive / packed_M): %.2fx\n\n", speedup_packed_M);
     printf("LUT matmul_microkernel (avg):   %.2f ms\n", avg_microkernel_time);
     printf("Speedup (naive / microkernel): %.2fx\n\n", speedup_microkernel);
 
