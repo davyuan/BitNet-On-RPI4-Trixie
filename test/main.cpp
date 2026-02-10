@@ -20,7 +20,7 @@
 
 const int M = 2560;           // Weight rows (A rows)
 const int K = 2560;        // Shared dimension
-const int N = 128;         // Activation rows (B rows) = output size
+const int N = 64;         // Activation rows (B rows) = output size
 
 // Transpose matrix B from (N x M) to B_T (M x N)
 void transpose_matrix(float32_t* B, float32_t* B_T, int M, int N) {
@@ -713,6 +713,136 @@ void matmul_lut_packed(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, in
             }
         }
     }
+        aligned_free(QLUT0);
+        aligned_free(QLUT1);
+        aligned_free(LUT_Scales);
+    }
+}
+
+/* A(K/2 x M/2), B(N x K)
+   QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
+        each K represents 2 activations in B. 
+   C(N x M)
+   This version uses SIMD optimizations and process 2 columns of B at once. 
+   Also it processes 256 rows of A at once (instead of 128 rows in the previous version) to better amortize the LUT lookup costs.
+*/
+void matmul_lut_packed_256(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, int M, int N, int K) {
+    int KK = K / 2;
+    const uint8x16_t vec_mask = vdupq_n_u8(0x0f);
+    const float32_t weight_scale = ws[0];
+
+    #pragma omp parallel num_threads(4)
+    {
+        int8_t* QLUT0 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
+        int8_t* QLUT1 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
+        float32_t* LUT_Scales = (float32_t*)aligned_malloc(2 * sizeof(float32_t));
+
+        #pragma omp for
+        for (int j = 0; j < N; j += 2) {
+                ggml_preprocessor(M, K, (void*)(B + j * K), (void*)(&LUT_Scales[0]), (void*)QLUT0);                  
+                ggml_preprocessor(M, K, (void*)(B + (j + 1) * K), (void*)(&LUT_Scales[1]), (void*)QLUT1);                  
+                
+                const float32x4_t v_rescale0 = vdupq_n_f32(weight_scale / LUT_Scales[0]);
+                const float32x4_t v_rescale1 = vdupq_n_f32(weight_scale / LUT_Scales[1]);
+                
+                for (int ii = 0; ii < M; ii += 256) {
+                    int16x8_t acc_j0[32];
+                    int16x8_t acc_j1[32];
+                    for (int b = 0; b < 32; b++) {
+                        acc_j0[b] = vdupq_n_s16(0);
+                        acc_j1[b] = vdupq_n_s16(0);
+                    }
+
+                    const int row_stride = M / 2;
+                    const int ii_packed = ii / 2;
+
+                    for (int k = 0; k < KK; k += 4) {
+                        if (k + 4 < KK) {
+                            const uint8_t* pA_next = A + (k + 4) * row_stride + ii_packed;
+                            __builtin_prefetch(pA_next, 0, 3);
+                            __builtin_prefetch(pA_next + 64, 0, 3);
+                            __builtin_prefetch(pA_next + row_stride, 0, 3);
+                            __builtin_prefetch(pA_next + row_stride + 64, 0, 3);
+                            __builtin_prefetch(pA_next + 2 * row_stride, 0, 3);
+                            __builtin_prefetch(pA_next + 2 * row_stride + 64, 0, 3);
+                            __builtin_prefetch(pA_next + 3 * row_stride, 0, 3);
+                            __builtin_prefetch(pA_next + 3 * row_stride + 64, 0, 3);
+
+                            __builtin_prefetch(QLUT0 + (k + 4) * 32, 0, 3);
+                            __builtin_prefetch(QLUT0 + (k + 4) * 32 + 64, 0, 3);
+                            __builtin_prefetch(QLUT1 + (k + 4) * 32, 0, 3);
+                            __builtin_prefetch(QLUT1 + (k + 4) * 32 + 64, 0, 3);
+                        }
+
+#define PROCESS_32_ROWS_2COL_V2(a_ptr, vh0, vl0, vh1, vl1, idx) { \
+                            uint8x16_t vec_a = vld1q_u8(a_ptr); \
+                            uint8x16_t vec_a_top = vshrq_n_u8(vec_a, 4); \
+                            uint8x16_t vec_a_bot = vandq_u8(vec_a, vec_mask); \
+                            uint8x16x2_t vec_a_unp = vzipq_u8(vec_a_top, vec_a_bot); \
+                            int8x16_t r0h_j0 = vqtbl1q_s8(vh0, vec_a_unp.val[0]); \
+                            int8x16_t r0l_j0 = vqtbl1q_s8(vl0, vec_a_unp.val[0]); \
+                            int8x16_t r1h_j0 = vqtbl1q_s8(vh0, vec_a_unp.val[1]); \
+                            int8x16_t r1l_j0 = vqtbl1q_s8(vl0, vec_a_unp.val[1]); \
+                            int8x16_t r0h_j1 = vqtbl1q_s8(vh1, vec_a_unp.val[0]); \
+                            int8x16_t r0l_j1 = vqtbl1q_s8(vl1, vec_a_unp.val[0]); \
+                            int8x16_t r1h_j1 = vqtbl1q_s8(vh1, vec_a_unp.val[1]); \
+                            int8x16_t r1l_j1 = vqtbl1q_s8(vl1, vec_a_unp.val[1]); \
+                            int16x8_t o0, o1, o2, o3; \
+                            reconstruct_int16_pair2(r0h_j0, r0l_j0, o0, o1); \
+                            acc_j0[idx+0] = vaddq_s16(acc_j0[idx+0], o0); acc_j0[idx+1] = vaddq_s16(acc_j0[idx+1], o1); \
+                            reconstruct_int16_pair2(r1h_j0, r1l_j0, o2, o3); \
+                            acc_j0[idx+2] = vaddq_s16(acc_j0[idx+2], o2); acc_j0[idx+3] = vaddq_s16(acc_j0[idx+3], o3); \
+                            reconstruct_int16_pair2(r0h_j1, r0l_j1, o0, o1); \
+                            acc_j1[idx+0] = vaddq_s16(acc_j1[idx+0], o0); acc_j1[idx+1] = vaddq_s16(acc_j1[idx+1], o1); \
+                            reconstruct_int16_pair2(r1h_j1, r1l_j1, o2, o3); \
+                            acc_j1[idx+2] = vaddq_s16(acc_j1[idx+2], o2); acc_j1[idx+3] = vaddq_s16(acc_j1[idx+3], o3); \
+                        }
+
+                        int8x16x4_t ql_j0_0 = vld1q_s8_x4(QLUT0 + k * 32);
+                        int8x16x4_t ql_j0_1 = vld1q_s8_x4(QLUT0 + k * 32 + 64);
+                        int8x16x4_t ql_j1_0 = vld1q_s8_x4(QLUT1 + k * 32);
+                        int8x16x4_t ql_j1_1 = vld1q_s8_x4(QLUT1 + k * 32 + 64);
+
+                        for (int i_k = 0; i_k < 4; i_k++) {
+                            int8x16_t vh0, vl0, vh1, vl1;
+                            if (i_k == 0) { vh0 = ql_j0_0.val[0]; vl0 = ql_j0_0.val[1]; vh1 = ql_j1_0.val[0]; vl1 = ql_j1_0.val[1]; }
+                            else if (i_k == 1) { vh0 = ql_j0_0.val[2]; vl0 = ql_j0_0.val[3]; vh1 = ql_j1_0.val[2]; vl1 = ql_j1_0.val[3]; }
+                            else if (i_k == 2) { vh0 = ql_j0_1.val[0]; vl0 = ql_j0_1.val[1]; vh1 = ql_j1_1.val[0]; vl1 = ql_j1_1.val[1]; }
+                            else { vh0 = ql_j0_1.val[2]; vl0 = ql_j0_1.val[3]; vh1 = ql_j1_1.val[2]; vl1 = ql_j1_1.val[3]; }
+
+                            const uint8_t* pA = A + (k + i_k) * row_stride + ii_packed;
+                            PROCESS_32_ROWS_2COL_V2(pA,       vh0, vl0, vh1, vl1, 0);
+                            PROCESS_32_ROWS_2COL_V2(pA + 16,  vh0, vl0, vh1, vl1, 4);
+                            PROCESS_32_ROWS_2COL_V2(pA + 32,  vh0, vl0, vh1, vl1, 8);
+                            PROCESS_32_ROWS_2COL_V2(pA + 48,  vh0, vl0, vh1, vl1, 12);
+                            PROCESS_32_ROWS_2COL_V2(pA + 64,  vh0, vl0, vh1, vl1, 16);
+                            PROCESS_32_ROWS_2COL_V2(pA + 80,  vh0, vl0, vh1, vl1, 20);
+                            PROCESS_32_ROWS_2COL_V2(pA + 96,  vh0, vl0, vh1, vl1, 24);
+                            PROCESS_32_ROWS_2COL_V2(pA + 112, vh0, vl0, vh1, vl1, 28);
+                        }
+#undef PROCESS_32_ROWS_2COL_V2
+                    }
+
+                    // Write-back (C is pre-zeroed, no need for FMA)
+                    float32_t* pC0 = &(C[j * M + ii]);
+                    float32_t* pC1 = &(C[(j + 1) * M + ii]);
+
+#define WRITE_BACK_2COL_V2(out_ptr, accl, acch, rescale) { \
+                        vst1q_f32(out_ptr + 0,  vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(accl))),  rescale)); \
+                        vst1q_f32(out_ptr + 4,  vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(accl))), rescale)); \
+                        vst1q_f32(out_ptr + 8,  vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(acch))),  rescale)); \
+                        vst1q_f32(out_ptr + 12, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(acch))), rescale)); \
+                    }
+
+                    for (int block = 0; block < 8; block++) {
+                        WRITE_BACK_2COL_V2(pC0 + block * 32,      acc_j0[block*4 + 0], acc_j0[block*4 + 1], v_rescale0);
+                        WRITE_BACK_2COL_V2(pC0 + block * 32 + 16, acc_j0[block*4 + 2], acc_j0[block*4 + 3], v_rescale0);
+                        WRITE_BACK_2COL_V2(pC1 + block * 32,      acc_j1[block*4 + 0], acc_j1[block*4 + 1], v_rescale1);
+                        WRITE_BACK_2COL_V2(pC1 + block * 32 + 16, acc_j1[block*4 + 2], acc_j1[block*4 + 3], v_rescale1);
+                    }
+#undef WRITE_BACK_2COL_V2
+                }
+        }
         aligned_free(QLUT0);
         aligned_free(QLUT1);
         aligned_free(LUT_Scales);
@@ -2184,53 +2314,6 @@ int main() {
         printf("Weight scale for block %d: %.6f\n", i, weight_scale[i]);
     }
 
-    // Debug: Print first 16 rows of A_, A_packed, and A_packed_T
-    /*printf("\n=== DEBUG: First 16 rows of A_ (float32_t, 16 elements each) ===\n");
-    for (int i = 0; i < 16; i++) {
-        printf("A_[%2d]: ", i);
-        for (int j = 0; j < 16; j++) {
-            printf("%8.3f ", A_[i * K + j]);
-        }
-        printf("\n");
-    }
-    
-    printf("\n=== DEBUG: First 16 rows of A (uint8_t, 16 elements each) ===\n");
-    for (int i = 0; i < 16; i++) {
-        printf("A[%2d]: ", i);
-        for (int j = 0; j < 16; j++) {
-            printf("%2u ", (unsigned)A[i * K/2 + j]);
-        }
-        printf("\n");
-    }
-
-    printf("\n=== DEBUG: First 16 rows of A_packed_T (uint8_t, 16 elements each) ===\n");
-    for (int i = 0; i < 16; i++) {
-        printf("A_packed_T[%2d]: ", i);
-        for (int j = 0; j < 16; j++) {
-            printf("%02x ", (unsigned)A_packed_T[i * M / 2 + j]);
-        }
-        printf("\n");
-    }
-    
-    // Debug: Print first 16 rows of B and B_T
-    printf("\n=== DEBUG: First 16 rows of B (float32_t, 16 elements each) ===\n");
-    for (int i = 0; i < 16; i++) {
-        printf("B[%2d]: ", i);
-        for (int j = 0; j < 16; j++) {
-            printf("%8.3f ", B[i * N + j]);
-        }
-        printf("\n");
-    }
-
-    printf("\n=== DEBUG: First 16 rows of B_T (float32_t, 16 elements each) ===\n");
-    for (int i = 0; i < 16; i++) {
-        printf("B_T[%2d]: ", i);
-        for (int j = 0; j < 16; j++) {
-            printf("%8.3f ", B_T[i * K + j]);
-        }
-        printf("\n");
-    }*/
-
     printf("Running LUT construction and inference...\n");
     printf("Matrix dimensions:  A(2560x2560), B(2560x640), C(2560x160)\n");
 
@@ -2241,7 +2324,7 @@ int main() {
     auto naive_duration = std::chrono::duration_cast<std::chrono::milliseconds>(naive_end - naive_start);   
     printf("Reference matmul complete. Time: %ld ms\n", naive_duration.count());
 
-    const int num_iterations = 50;
+    const int num_iterations = 10;
     /*double avg_vec_simd_time = benchmark_matmul(
         "\nStep 4: Running LUT Vec SIMD(10 iterations for average)\n",
         "Vecmul_lut_simd",
@@ -2369,14 +2452,23 @@ int main() {
     printf("\nComparing kernel output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_lut_packed comparison");
     
+    printf("\nStep 4: Running Microkernel(10 iterations for average)\n");
     double avg_microkernel_time = benchmark_matmul(
-        "\nStep 4: Running Microkernel(10 iterations for average)\n",
         "Matmul_microkernel",
         [&]() { matmul_lut_micro_kernel(A_packed_T, B_T, C_simd, weight_scale, M, N, K); },
         C_simd, M, N, num_iterations
     );
     printf("\nComparing kernel output (C) with reference (C_)...\n");
     compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_microkernel comparison");
+
+    printf("\nStep 5: Running Matmul LUT Packed 256 (10 iterations for average)\n");
+    double avg_packed_256_time = benchmark_matmul(
+        "Matmul_lut_packed_256",
+        [&]() { matmul_lut_packed_256(A_packed_T, B_T, C_simd, weight_scale, M, N, K); },
+        C_simd, M, N, num_iterations
+    );
+    printf("\nComparing kernel output (C) with reference (C_)...\n");
+    compare_matrices(C_simd, C_, M, N, 1e-1, "Matmul_lut_packed_256 comparison");
     
     // Print performance comparison
     double speedup_lut = (double)naive_duration.count() / (double)avg_lut_time;
@@ -2384,19 +2476,8 @@ int main() {
     double speedup_simd = (double)naive_duration.count() / (double)avg_simd_time;
     double speedup_packed = (double)naive_duration.count() / (double)avg_packed_time;
     double speedup_microkernel = (double)naive_duration.count() / (double)avg_microkernel_time;
-    /*double speedup_vec_simd = (double)naive_duration.count() / (double)avg_vec_simd_time;
-    double speedup_vec_simd2 = (double)naive_duration.count() / (double)avg_vec_simd2_time;
-    double speedup_vec_packed = (double)naive_duration.count() / (double)avg_vec_packed_time;
-    double speedup_vec_packed2 = (double)naive_duration.count() / (double)avg_vec_packed2_time;
-    double speedup_vec_packed3 = (double)naive_duration.count() / (double)avg_vec_packed3_time;
-    double speedup_vec_micro_kernel = (double)naive_duration.count() / (double)avg_vec_micro_kernel_time;
-    double speedup_vec_packed4 = (double)naive_duration.count() / (double)avg_vec_packed4_time;
-    double speedup_vec_packed5 = (double)naive_duration.count() / (double)avg_vec_packed5_time;
-    double speedup_vec_packed_256 = (double)naive_duration.count() / (double)avg_vec_packed_256_time;
-    double speedup_vec_packed_160 = (double)naive_duration.count() / (double)avg_vec_packed_160_time;*/
-    
-    //double speedup_simd2 = (double)naive_duration.count() / (double)avg_simd_time2;
-    //double speedup_microkernel = (double)naive_duration.count() / (double)avg_microkernel_time;
+    double speedup_packed_256 = (double)naive_duration.count() / (double)avg_packed_256_time;
+
     printf("\n=== PERFORMANCE COMPARISON ===\n");
     printf("matmul naive:   %.2f ms\n", (double)naive_duration.count());
     printf("Speedup (naive / lut)):   %.2fx\n", speedup_lut);
@@ -2406,6 +2487,8 @@ int main() {
     printf("Speedup (naive / lut_packed): %.2fx\n\n", speedup_packed);
     printf("LUT matmul_microkernel (avg):   %.2f ms\n", avg_microkernel_time);
     printf("Speedup (naive / microkernel): %.2fx\n\n", speedup_microkernel);
+    printf("LUT matmul_lut_packed_256 (avg):   %.2f ms\n", avg_packed_256_time);
+    printf("Speedup (naive / packed_256): %.2fx\n\n", speedup_packed_256);
     /*printf("LUT vecmul_lut_simd (avg):   %.2f ms\n", avg_vec_simd_time);
     printf("Speedup (naive / vecmul_lut_simd): %.2fx\n\n", speedup_vec_simd);
     printf("LUT vecmul_lut_simd2 (avg):   %.2f ms\n", avg_vec_simd2_time);
