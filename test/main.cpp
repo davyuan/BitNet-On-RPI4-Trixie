@@ -869,28 +869,17 @@ void matmul_lut_micro_kernel(uint8_t* A, float32_t* B, float32_t* C, float32_t* 
 
         #pragma omp for
         for (int j = 0; j < ne11; j += 2) {
-            if (j + 1 < ne11) {
-                ggml_preprocessor(ne01, ne10, B + (j * ne10), &LUT_Scales[0], QLUT0);
-                ggml_preprocessor(ne01, ne10, B + ((j + 1) * ne10), &LUT_Scales[1], QLUT1);
+            ggml_preprocessor(ne01, ne10, B + (j * ne10), &LUT_Scales[0], QLUT0);
+            ggml_preprocessor(ne01, ne10, B + ((j + 1) * ne10), &LUT_Scales[1], QLUT1);
 
-                for (int ii = 0; ii < ne01; ii += BM) {
-                    ggml_qgemm_lut_2col(ne01, ne11, ne10, ii, j, A, 
-                                    QLUT0, 
-                                    QLUT1,
-                                    ws, 
-                                    LUT_Scales, 
-                                    C);
-                } 
-            } else {
-                ggml_preprocessor(ne01, ne10, B + (j * ne10), &LUT_Scales[0], QLUT0);
-                for (int ii = 0; ii < ne01; ii += BM) {
-                    ggml_qgemm_lut( ne01, ne11, ne10, ii, j, A, 
-                                    QLUT0, 
-                                    ws, 
-                                    LUT_Scales, 
-                                    C);
-                }
-            }
+            for (int ii = 0; ii < ne01; ii += 256) {
+                ggml_qgemm_lut_2col_256(ne01, ne11, ne10, ii, j, A, 
+                                QLUT0, 
+                                QLUT1,
+                                ws, 
+                                LUT_Scales, 
+                                C);
+            } 
         }
 
         aligned_free(QLUT0);
