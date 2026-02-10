@@ -1047,6 +1047,20 @@ void matmul_lut_packed_M(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, 
                 const int8x16_t vl3 = vld1q_s8(QLUT + (k + 3) * 32 + 16);
 
                 for (int i = 0; i < M; i += 128) {
+                    if (i + 128 < M) {
+                        // Prefetch next 256 bytes of tempvals (4 cache lines)
+                        __builtin_prefetch(&tempvals[i + 128], 1, 3);
+                        __builtin_prefetch(&tempvals[i + 128 + 32], 1, 3);
+                        __builtin_prefetch(&tempvals[i + 128 + 64], 1, 3);
+                        __builtin_prefetch(&tempvals[i + 128 + 96], 1, 3);
+
+                        // Prefetch weights for next i-tile
+                        __builtin_prefetch(A + k * row_stride + (i + 128) / 2, 0, 3);
+                        __builtin_prefetch(A + (k + 1) * row_stride + (i + 128) / 2, 0, 3);
+                        __builtin_prefetch(A + (k + 2) * row_stride + (i + 128) / 2, 0, 3);
+                        __builtin_prefetch(A + (k + 3) * row_stride + (i + 128) / 2, 0, 3);
+                    }
+
                     int16x8_t acc[16];
                     for (int b = 0; b < 16; b++) {
                         acc[b] = vld1q_s16(&tempvals[i + b * 8]);
