@@ -1021,52 +1021,30 @@ void matmul_lut_packed_M(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, 
 
     #pragma omp parallel num_threads(4)
     {
-        int8_t* QLUT = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
-        float32_t* LUT_Scales = (float32_t*)aligned_malloc(sizeof(float32_t));
-        int16_t* tempvals = (int16_t*)aligned_malloc(M * sizeof(int16_t));
+        int8_t* QLUT0 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
+        int8_t* QLUT1 = (int8_t*)aligned_malloc(K * 16 * sizeof(int8_t));    
+        float32_t* LUT_Scales0 = (float32_t*)aligned_malloc(sizeof(float32_t));
+        float32_t* LUT_Scales1 = (float32_t*)aligned_malloc(sizeof(float32_t));
 
         #pragma omp for
-        for (int j = 0; j < N; j++) {
-            ggml_preprocessor(M, K, (void*)(B + j * K), (void*)(&LUT_Scales[0]), (void*)QLUT);
-            memset(tempvals, 0, M * sizeof(int16_t));
-            const float32x4_t v_rescale = vdupq_n_f32(weight_scale / LUT_Scales[0]);
+        for (int j = 0; j < N; j += 2) {
+            ggml_preprocessor(M, K, (void*)(B + j * K), (void*)(&LUT_Scales0[0]), (void*)QLUT0);
+            ggml_preprocessor(M, K, (void*)(B + (j + 1) * K), (void*)(&LUT_Scales1[0]), (void*)QLUT1);
 
-            for (int k = 0; k < KK; k += 4) {
-                if (k + 4 < KK) {
-                    __builtin_prefetch(QLUT + (k + 4) * 32, 0, 3);
-                    __builtin_prefetch(QLUT + (k + 4) * 32 + 32, 0, 3);
-                    __builtin_prefetch(QLUT + (k + 4) * 32 + 64, 0, 3);
-                    __builtin_prefetch(QLUT + (k + 4) * 32 + 96, 0, 3);
+            for (int i = 0; i < M; i += 64) {
+                int16x8_t acc0_j0[8], acc0_j1[8];
+                for (int b = 0; b < 8; b++) {
+                    acc0_j0[b] = vdupq_n_s16(0);
+                    acc0_j1[b] = vdupq_n_s16(0);
                 }
 
-                const int8x16_t vh0 = vld1q_s8(QLUT + k * 32);
-                const int8x16_t vl0 = vld1q_s8(QLUT + k * 32 + 16);
-                const int8x16_t vh1 = vld1q_s8(QLUT + (k + 1) * 32);
-                const int8x16_t vl1 = vld1q_s8(QLUT + (k + 1) * 32 + 16);
-                const int8x16_t vh2 = vld1q_s8(QLUT + (k + 2) * 32);
-                const int8x16_t vl2 = vld1q_s8(QLUT + (k + 2) * 32 + 16);
-                const int8x16_t vh3 = vld1q_s8(QLUT + (k + 3) * 32);
-                const int8x16_t vl3 = vld1q_s8(QLUT + (k + 3) * 32 + 16);
+                for (int k = 0; k < KK; k++) {
+                    const int8x16_t vh_j0 = vld1q_s8(QLUT0 + k * 32);
+                    const int8x16_t vl_j0 = vld1q_s8(QLUT0 + k * 32 + 16);
+                    const int8x16_t vh_j1 = vld1q_s8(QLUT1 + k * 32);
+                    const int8x16_t vl_j1 = vld1q_s8(QLUT1 + k * 32 + 16);
 
-                for (int i = 0; i < M; i += 128) {
-                    if (i + 128 < M) {
-                        // Prefetch next 256 bytes of tempvals (4 cache lines)
-                        __builtin_prefetch(&tempvals[i + 128], 1, 3);
-                        __builtin_prefetch(&tempvals[i + 128 + 32], 1, 3);
-                        __builtin_prefetch(&tempvals[i + 128 + 64], 1, 3);
-                        __builtin_prefetch(&tempvals[i + 128 + 96], 1, 3);
-
-                        // Prefetch weights for next i-tile (4*64 bytes = 256 bytes)
-                        __builtin_prefetch(A + k * row_stride + (i + 128) / 2, 0, 3);
-                        __builtin_prefetch(A + (k + 1) * row_stride + (i + 128) / 2, 0, 3);
-                        __builtin_prefetch(A + (k + 2) * row_stride + (i + 128) / 2, 0, 3);
-                        __builtin_prefetch(A + (k + 3) * row_stride + (i + 128) / 2, 0, 3);
-                    }
-
-                    int16x8_t acc[16];
-                    for (int b = 0; b < 16; b++) {
-                        acc[b] = vld1q_s16(&tempvals[i + b * 8]);
-                    }
+                    const uint8x16x2_t w = vld1q_u8_x2(A + k * row_stride + i / 2);
 
 #define PROCESS_ONE_K(w_reg, vh, vl, a0, a1, a2, a3) { \
                         uint8x16_t ut = vshrq_n_u8(w_reg, 4); uint8x16_t ub = vandq_u8(w_reg, vec_mask); \
@@ -1078,60 +1056,34 @@ void matmul_lut_packed_M(uint8_t* A, float32_t* B, float32_t* C, float32_t* ws, 
                         reconstruct_int16_pair2(h, l, o0, o1); a2 = vaddq_s16(a2, o0); a3 = vaddq_s16(a3, o1); \
                     }
 
-                    {
-                        const uint8x16x4_t w0 = vld1q_u8_x4(A + k * row_stride + i / 2);
-                        PROCESS_ONE_K(w0.val[0], vh0, vl0, acc[0], acc[1], acc[2], acc[3]);
-                        PROCESS_ONE_K(w0.val[1], vh0, vl0, acc[4], acc[5], acc[6], acc[7]);
-                        PROCESS_ONE_K(w0.val[2], vh0, vl0, acc[8], acc[9], acc[10], acc[11]);
-                        PROCESS_ONE_K(w0.val[3], vh0, vl0, acc[12], acc[13], acc[14], acc[15]);
-                    }
-                    {
-                        const uint8x16x4_t w1 = vld1q_u8_x4(A + (k + 1) * row_stride + i / 2);
-                        PROCESS_ONE_K(w1.val[0], vh1, vl1, acc[0], acc[1], acc[2], acc[3]);
-                        PROCESS_ONE_K(w1.val[1], vh1, vl1, acc[4], acc[5], acc[6], acc[7]);
-                        PROCESS_ONE_K(w1.val[2], vh1, vl1, acc[8], acc[9], acc[10], acc[11]);
-                        PROCESS_ONE_K(w1.val[3], vh1, vl1, acc[12], acc[13], acc[14], acc[15]);
-                    }
-                    {
-                        const uint8x16x4_t w2 = vld1q_u8_x4(A + (k + 2) * row_stride + i / 2);
-                        PROCESS_ONE_K(w2.val[0], vh2, vl2, acc[0], acc[1], acc[2], acc[3]);
-                        PROCESS_ONE_K(w2.val[1], vh2, vl2, acc[4], acc[5], acc[6], acc[7]);
-                        PROCESS_ONE_K(w2.val[2], vh2, vl2, acc[8], acc[9], acc[10], acc[11]);
-                        PROCESS_ONE_K(w2.val[3], vh2, vl2, acc[12], acc[13], acc[14], acc[15]);
-                    }
-                    {
-                        const uint8x16x4_t w3 = vld1q_u8_x4(A + (k + 3) * row_stride + i / 2);
-                        PROCESS_ONE_K(w3.val[0], vh3, vl3, acc[0], acc[1], acc[2], acc[3]);
-                        PROCESS_ONE_K(w3.val[1], vh3, vl3, acc[4], acc[5], acc[6], acc[7]);
-                        PROCESS_ONE_K(w3.val[2], vh3, vl3, acc[8], acc[9], acc[10], acc[11]);
-                        PROCESS_ONE_K(w3.val[3], vh3, vl3, acc[12], acc[13], acc[14], acc[15]);
-                    }
-
+                    PROCESS_ONE_K(w.val[0], vh_j0, vl_j0, acc0_j0[0], acc0_j0[1], acc0_j0[2], acc0_j0[3]);
+                    PROCESS_ONE_K(w.val[1], vh_j0, vl_j0, acc0_j0[4], acc0_j0[5], acc0_j0[6], acc0_j0[7]);
+                    PROCESS_ONE_K(w.val[0], vh_j1, vl_j1, acc0_j1[0], acc0_j1[1], acc0_j1[2], acc0_j1[3]);
+                    PROCESS_ONE_K(w.val[1], vh_j1, vl_j1, acc0_j1[4], acc0_j1[5], acc0_j1[6], acc0_j1[7]);
 #undef PROCESS_ONE_K
-
-                    for (int b = 0; b < 16; b++) {
-                        vst1q_s16(&tempvals[i + b * 8], acc[b]);
-                    }
                 }
-            }
 
-            // Final rescale and write results to C
-            for (int i = 0; i < M; i += 8) {
-                if (i + 32 < M) {
-                    __builtin_prefetch(&tempvals[i + 32], 0, 3);
-                    __builtin_prefetch(&C[j * M + i + 32], 1, 3);
+                const float32x4_t v_rescale0 = vdupq_n_f32(weight_scale / LUT_Scales0[0]);
+                const float32x4_t v_rescale1 = vdupq_n_f32(weight_scale / LUT_Scales1[0]);
+
+                for (int b = 0; b < 8; b++) {
+                    int16x8_t v0 = acc0_j0[b];
+                    vst1q_f32(&C[j * M + i + b * 8],     vmulq_f32(v_rescale0, vcvtq_f32_s32(vmovl_s16(vget_low_s16(v0)))));
+                    vst1q_f32(&C[j * M + i + b * 8 + 4], vmulq_f32(v_rescale0, vcvtq_f32_s32(vmovl_s16(vget_high_s16(v0)))));
+
+                    int16x8_t v1 = acc0_j1[b];
+                    vst1q_f32(&C[(j + 1) * M + i + b * 8],     vmulq_f32(v_rescale1, vcvtq_f32_s32(vmovl_s16(vget_low_s16(v1)))));
+                    vst1q_f32(&C[(j + 1) * M + i + b * 8 + 4], vmulq_f32(v_rescale1, vcvtq_f32_s32(vmovl_s16(vget_high_s16(v1)))));
                 }
-                int16x8_t v_int = vld1q_s16(&tempvals[i]);
-                vst1q_f32(&C[j * M + i], vmulq_f32(v_rescale, vcvtq_f32_s32(vmovl_s16(vget_low_s16(v_int)))));
-                vst1q_f32(&C[j * M + i + 4], vmulq_f32(v_rescale, vcvtq_f32_s32(vmovl_s16(vget_high_s16(v_int)))));
             }
         }
 
-        aligned_free(QLUT);
-        aligned_free(LUT_Scales);
-        aligned_free(tempvals);
+        aligned_free(QLUT0);
+        aligned_free(QLUT1);
+        aligned_free(LUT_Scales0);
+        aligned_free(LUT_Scales1);
     }
-}      
+}
 
 /* A(K/2 x M), B(N x K)
    QLUT(K*16), QLUT is contructed for each row of B. each K has 32 bytes (first 16 high bytes and then 16 low bytes)
